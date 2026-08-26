@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestor de Projetos &amp; Gantt</title>
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="authGate" class="auth-gate aberto">
+  <div class="auth-card">
+    <div class="logo" style="font-size:20px;margin-bottom:4px;">📊 Gestor de Projetos</div>
+    <p class="hint" id="authSub">Inicia sessão para continuar.</p>
+    <form id="formAuth">
+      <label id="labelAuthNome" style="display:none;">Nome
+        <input type="text" id="authNome" placeholder="O teu nome" autocomplete="name">
+      </label>
+      <label>Email
+        <input type="email" id="authEmail" required autocomplete="email">
+      </label>
+      <label>Password
+        <input type="password" id="authPassword" required autocomplete="current-password" minlength="6">
+      </label>
+      <button type="submit" class="btn btn-primary" id="btnAuthSubmit" style="width:100%">Entrar</button>
+      <p id="authMsg" class="calc-line" style="border:none;padding:4px 0 0;"></p>
+    </form>
+    <p class="hint" style="text-align:center;margin-top:10px;">
+      <a href="#" id="linkAlternarAuth">Ainda não tens conta? Cria uma.</a>
+    </p>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo">📊 Gestor de Projetos</span>
+  </div>
+  <div class="topbar-right">
+    <div class="conta-menu-wrap" id="contaMenuWrap" style="display:none;">
+      <button id="authUserInfo" class="conta-menu-trigger"></button>
+      <div class="conta-menu" id="contaMenuDropdown">
+        <button id="btnMinhaConta">⚙ Conta</button>
+        <button id="btnSair">⏻ Sair</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="grupos-nav" id="gruposNav">
+  <button class="grupo-btn active" data-grupo="planeamento">📅 Planeamento</button>
+  <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
+  <button class="grupo-btn" data-grupo="registos">🧾 Registos</button>
+</nav>
+<nav class="tabs" id="tabsNav">
+  <div class="tabs-grupo active" data-grupo="planeamento">
+    <button class="tab-btn active" data-tab="gantt">Gantt do Projeto</button>
+    <button class="tab-btn" data-tab="projetos">Projetos</button>
+    <button class="tab-btn" data-tab="portefolio">Portefólio</button>
+    <button class="tab-btn" data-tab="acompanhamento" id="tabBtnAcompanhamento">Acompanhamento</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="equipa">
+    <button class="tab-btn" data-tab="recursos">Pessoas</button>
+    <button class="tab-btn" data-tab="capacidade">Capacidade</button>
+    <button class="tab-btn" data-tab="feriados">Feriados &amp; Ausências</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="registos">
+    <button class="tab-btn" data-tab="registo">Registo de Horas</button>
+    <button class="tab-btn" data-tab="faturacao" id="tabBtnFaturacao">Faturação</button>
+  </div>
+</nav>
+
+<!-- ===================== TAB: GANTT ===================== -->
+<section class="tab-panel active" id="tab-gantt">
+  <div class="gantt-topbar">
+    <select id="selProjeto" title="Escolher projeto"></select>
+    <button id="btnNovoProjeto" class="btn">+ Novo Projeto</button>
+    <button id="btnDuplicarProjeto" class="btn" title="Duplicar projeto atual">Duplicar</button>
+    <button id="btnEliminarProjeto" class="btn btn-danger" title="Eliminar projeto atual">Eliminar</button>
+  </div>
+
+  <div class="layout" id="layoutGantt">
+    <aside class="sidebar" id="sidebarGantt">
+      <button id="btnToggleSidebar" class="sidebar-toggle" title="Fechar painel lateral">⟨</button>
+      <section class="card">
+        <h3>Dados do Projeto</h3>
+        <div class="row-2">
+          <label>ID interno
+            <input type="text" id="projIdInterno" placeholder="ex.: PRJ-2026-014">
+          </label>
+          <label>Estado
+            <select id="projEstado">
+              <option>Por iniciar</option>
+              <option>Em curso</option>
+              <option>Concluído</option>
+              <option>Cancelado</option>
+            </select>
+          </label>
+        </div>
+        <label>Nome
+          <input type="text" id="projNome" placeholder="Nome do projeto">
+        </label>
+        <label>Cliente
+          <input type="text" id="projCliente" placeholder="Nome do cliente">
+        </label>
+        <label>Descrição
+          <textarea id="projDescricao" rows="2" placeholder="Descrição / objetivo"></textarea>
+        </label>
+        <div class="row-2">
+          <label>Início
+            <input type="date" id="projInicio">
+          </label>
+          <label>Fim previsto
+            <input type="date" id="projFim">
+          </label>
+        </div>
+        <div class="row-2">
+          <label>Horas vendidas
+            <input type="number" min="0" id="projHorasVendidas" placeholder="0">
+          </label>
+          <label>Valor vendido (€)
+            <input type="number" min="0" id="projValorVendido" placeholder="0">
+          </label>
+        </div>
+        <div class="calc-line">€/hora médio: <b id="projValorHoraMedio">—</b></div>
+        <div class="calc-line" id="projVersaoLinha">Versão: <b id="projVersao">—</b></div>
+        <div class="calc-line" id="projFaturacaoLinha">Faturação planeada: <b id="projFaturacaoResumo">—</b></div>
+        <div class="calc-line"><a href="#" data-tab="faturacao" class="link-tab">💶 Ver faturação deste projeto</a></div>
+        <label>Gestor de Projeto
+          <select id="projGestorId"><option value="">Sem gestor atribuído</option></select>
+        </label>
+      </section>
+
+      <section class="card" id="cardConsultores">
+        <h3>Consultores do Projeto</h3>
+        <div id="listaConsultoresProjeto" class="hint">Nenhum consultor atribuído.</div>
+        <p class="hint" style="margin-top:8px;">Associa/remove consultores atribuindo-os às tarefas, na tabela ao lado.</p>
+      </section>
+
+      <section class="card" id="cardConsumoHoras">
+        <h3>Consumo de Horas</h3>
+        <div class="calc-line">Real acumulado: <b id="projHorasReais">—</b></div>
+        <div class="calc-line">Reprevisão (EAC): <b id="projHorasEAC">—</b></div>
+        <div class="calc-line">Saldo disponível: <b id="projHorasSaldo">—</b></div>
+        <div class="calc-line" id="projEstadoOrcLinha">Estado: <b id="projEstadoOrc">—</b></div>
+      </section>
+
+      <section class="card">
+        <h3>Legenda</h3>
+        <div class="legenda-item"><span class="legenda-cor tarefa"></span> Tarefa</div>
+        <div class="legenda-item"><span class="legenda-cor subtarefa"></span> Subtarefa</div>
+        <div class="legenda-item"><span class="legenda-cor resumo"></span> Tarefa-resumo (auto)</div>
+        <div class="legenda-item"><span class="legenda-cor critico"></span> Atrasada</div>
+        <div class="legenda-item"><span class="legenda-marca fatura"></span> Fatura prevista</div>
+        <div class="legenda-item"><span class="legenda-marca fatura emitida"></span> Fatura emitida</div>
+        <p class="hint">Arraste a barra no Gantt para mover datas, os cantos para redimensionar, e o ponto ● na ponta direita para outra barra para criar uma dependência. Arraste as barras verticais ⋮⋮ para ajustar o tamanho dos painéis.</p>
+      </section>
+    </aside>
+
+    <div class="resizer" id="resizerSidebar" title="Arrastar para redimensionar"></div>
+
+    <main class="conteudo">
+      <div class="toolbar">
+        <button id="btnAddTarefa" class="btn btn-primary btn-sm">+ Tarefa</button>
+        <button id="btnAddSubtarefa" class="btn btn-sm">+ Subtarefa</button>
+        <button id="btnSubir" class="btn btn-sm" title="Mover para cima entre as tarefas irmãs">↑ Subir</button>
+        <button id="btnDescer" class="btn btn-sm" title="Mover para baixo entre as tarefas irmãs">↓ Descer</button>
+        <button id="btnIndent" class="btn btn-sm" title="Tornar subtarefa da tarefa acima">→ Indentar</button>
+        <button id="btnOutdent" class="btn btn-sm" title="Promover a tarefa de topo">← Promover</button>
+        <button id="btnDelTarefa" class="btn btn-sm btn-danger">🗑 Eliminar</button>
+        <button id="btnDesfazer" class="btn btn-sm" title="Desfazer (Ctrl+Z)" disabled>↶ Desfazer</button>
+        <button id="btnRefazer" class="btn btn-sm" title="Refazer (Ctrl+Y)" disabled>↷ Refazer</button>
+        <span class="spacer"></span>
+        <label class="zoom-label">Zoom: <span id="zoomLabel">Semanas</span>
+          <input type="range" id="selZoom" class="zoom-slider" min="2" max="60" step="1" value="14" title="Arrasta para ajustar o zoom do Gantt">
+        </label>
+      </div>
+
+      <div class="split" id="splitGantt">
+        <div class="painel-tabela" id="painelTabela">
+          <table class="tabela-tarefas" id="tabelaTarefas">
+            <thead>
+              <tr>
+                <th class="col-nome" data-col="nome">Tarefa<span class="col-resizer"></span></th>
+                <th class="col-data" data-col="inicio">Início<span class="col-resizer"></span></th>
+                <th class="col-data" data-col="fim">Fim<span class="col-resizer"></span></th>
+                <th class="col-dur" data-col="dias">Dias<span class="col-resizer"></span></th>
+                <th class="col-prog" data-col="prog">% Concl.<span class="col-resizer"></span></th>
+                <th class="col-prog" data-col="horasReais" title="Soma das horas registadas para esta tarefa">Horas Reais<span class="col-resizer"></span></th>
+                <th class="col-rec" data-col="recursos">Consultores<span class="col-resizer"></span></th>
+                <th class="col-pred" data-col="pred">Predecessoras<span class="col-resizer"></span></th>
+              </tr>
+            </thead>
+            <tbody id="corpoTabelaTarefas"></tbody>
+          </table>
+        </div>
+        <div class="resizer" id="resizerTabela" title="Arrastar para redimensionar"></div>
+        <div class="painel-gantt" id="painelGantt">
+          <div id="ganttContainer"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ===================== TAB: PROJETOS ===================== -->
+<section class="tab-panel" id="tab-projetos">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Projetos</h2>
+      <div>
+        <button id="btnMigrarDadosLocais" class="btn btn-sm" style="display:none;border-color:var(--azul);color:var(--azul);" title="Carrega os dados que já estavam neste browser (localStorage) para a base de dados partilhada — só deve ser usado uma vez">☁ Carregar dados locais para a nuvem</button>
+        <button id="btnNovoProjeto2" class="btn btn-primary btn-sm">+ Novo Projeto</button>
+      </div>
+    </div>
+    <p class="pagina-sub">Projetos partilhados por toda a equipa, guardados na base de dados. "Abrir" para editar o Gantt.</p>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaProjetos">
+        <thead>
+          <tr>
+            <th>ID interno</th><th>Nome</th><th>Cliente</th><th>Gestor</th><th>Início</th><th>Fim</th>
+            <th>Horas vendidas</th><th>Valor vendido (€)</th><th>€/h médio</th><th>Estado</th>
+            <th>Real (h)</th><th>Reprevisão / EAC (h)</th><th>Saldo (h)</th><th>% Consumido</th><th>Estado Orçamental</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaProjetos"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: PORTEFÓLIO ===================== -->
+<section class="tab-panel" id="tab-portefolio">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Portefólio de Projetos</h2>
+    </div>
+    <p class="pagina-sub">Visão integrada de todos os projetos carregados. <b>Prazo</b> compara % concluído com % do calendário já decorrido. <b>Orçamento</b> compara horas vendidas com horas planeadas no Gantt (ou horas reais registadas, quando existirem).</p>
+    <div class="legend-row" id="statsPortefolio"></div>
+    <div class="grid-portfolio" id="gridPortefolio"></div>
+
+    <h2 style="margin-top:28px;">Vista Gantt Integrada</h2>
+    <p class="pagina-sub">Escolhe os projetos a mostrar em conjunto, numa única linha temporal (só leitura — para editar, abre o projeto no separador Gantt). Cada projeto aparece com uma barra de grupo, seguida das suas fases/tarefas de topo.</p>
+    <div class="toolbar" style="border:1px solid var(--cinza-200);border-bottom:none;border-radius:var(--radius) var(--radius) 0 0;">
+      <div id="chipsProjetosPortGantt" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <span class="spacer"></span>
+      <label class="zoom-label">Zoom: <span id="zoomLabelPortGantt">Semanas</span>
+        <input type="range" id="selZoomPortGantt" class="zoom-slider" min="2" max="60" step="1" value="14" title="Arrasta para ajustar o zoom do Gantt">
+      </label>
+    </div>
+    <div class="split-portfolio" id="splitPortGantt">
+      <div class="painel-tabela" id="painelTabelaPortGantt" style="width:300px;">
+        <table class="tabela-tarefas" id="tabelaPortGantt">
+          <thead><tr><th class="col-nome">Projeto / Tarefa</th><th class="col-data">Início</th><th class="col-data">Fim</th><th class="col-prog">%</th></tr></thead>
+          <tbody id="corpoTabelaPortGantt"></tbody>
+        </table>
+      </div>
+      <div class="resizer" id="resizerPortGantt" title="Arrastar para redimensionar"></div>
+      <div class="painel-gantt" id="painelGanttPortfolio">
+        <div id="ganttContainerPortfolio"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: ACOMPANHAMENTO ===================== -->
+<section class="tab-panel" id="tab-acompanhamento">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Acompanhamento — <span id="acompanhamentoProjetoNome">—</span></h2>
+      <button id="btnAddPontoSituacao" class="btn btn-primary btn-sm">+ Ponto de Situação</button>
+    </div>
+    <p class="pagina-sub">Pontos de situação e next steps do projeto escolhido no separador "Gantt do Projeto". Visível só para o Administrador e o Gestor deste projeto.</p>
+    <div id="acompanhamentoSemProjeto" class="hint" style="display:none;">Escolhe um projeto no separador "Gantt do Projeto" primeiro.</div>
+    <div id="acompanhamentoConteudo">
+      <h3>Pontos de Situação</h3>
+      <div class="table-scroll">
+        <table class="tabela-crud" id="tabelaPontosSituacao">
+          <thead><tr><th style="width:120px">Data</th><th>Feedback</th><th></th></tr></thead>
+          <tbody id="corpoPontosSituacao"></tbody>
+        </table>
+      </div>
+
+      <div class="pagina-head" style="margin-top:24px;">
+        <h3>Next Steps</h3>
+        <button id="btnAddProximoPasso" class="btn btn-primary btn-sm">+ Next Step</button>
+      </div>
+      <div class="table-scroll">
+        <table class="tabela-crud" id="tabelaProximosPassos">
+          <thead>
+            <tr><th>Descrição</th><th>Tarefa</th><th style="width:110px">Estado</th><th>Notas</th><th></th></tr>
+          </thead>
+          <tbody id="corpoProximosPassos"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: PESSOAS (RECURSOS + ACESSO) ===================== -->
+<section class="tab-panel" id="tab-recursos">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Pessoas</h2>
+      <button id="btnAddRecursoTab" class="btn btn-primary btn-sm">+ Pessoa</button>
+    </div>
+    <p class="pagina-sub">Lista central de pessoas, partilhada por todos os projetos — os mesmos dados de custo/alocação usados no Gantt e na Capacidade. Quem cria conta na plataforma aparece aqui automaticamente (ligado pelo email); define aqui o "Acesso" de quem já tem conta (Administrador/Utilizador). Margem bruta calculada automaticamente.</p>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaRecursosCentral">
+        <thead>
+          <tr>
+            <th>Nome</th><th>Email</th><th>Cargo</th><th>Equipa</th><th>Preço custo (€/h)</th><th>Preço venda (€/h)</th>
+            <th>Margem bruta</th><th>Acesso</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaRecursosCentral"></tbody>
+      </table>
+    </div>
+
+    <div class="pagina-head" style="margin-top:28px;">
+      <h2>Equipas</h2>
+      <button id="btnAddEquipa" class="btn btn-primary btn-sm">+ Equipa</button>
+    </div>
+    <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central.</p>
+    <div class="table-scroll" style="max-width:420px;">
+      <table class="tabela-crud" id="tabelaEquipas">
+        <thead><tr><th>Nome</th><th></th></tr></thead>
+        <tbody id="corpoTabelaEquipas"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: CAPACIDADE ===================== -->
+<section class="tab-panel" id="tab-capacidade">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Capacidade &amp; Alocação</h2>
+      <div style="display:flex;gap:10px;">
+        <label class="zoom-label">Equipa:
+          <select id="selEquipaCap">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label class="zoom-label">Horizonte:
+          <select id="selHorizonteCap">
+            <option value="3">3 meses</option>
+            <option value="6" selected>6 meses</option>
+            <option value="12">12 meses</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <p class="pagina-sub">Alocação = horas nominais das tarefas atribuídas a cada consultor, em todos os projetos carregados. Capacidade = dias úteis × 8h (100% alocáveis a projetos), já a descontar fins de semana, feriados e ausências. Sobre-alocação = mais tarefas atribuídas do que capacidade disponível no mesmo período.</p>
+
+    <div class="legend-row">
+      <span><span class="legend-swatch" style="background:#cde4d8;"></span> Confortável (&lt;80%)</span>
+      <span><span class="legend-swatch" style="background:#f3e3b6;"></span> Perto do limite (80–100%)</span>
+      <span><span class="legend-swatch" style="background:#f1cfc9;"></span> Sobre-alocado (&gt;100%)</span>
+      <span><span class="legend-swatch" style="background:#f4f5f7;"></span> Sem capacidade/alocação</span>
+    </div>
+
+    <div class="table-scroll">
+      <table class="heatmap-cap" id="tabelaHeatmapCap">
+        <thead><tr id="heatmapCapHead"><th>Consultor</th></tr></thead>
+        <tbody id="heatmapCapBody"></tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:24px;">Detalhe por Consultor</h2>
+    <div class="grid-capacidade" id="gridCapacidade"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: FERIADOS & AUSÊNCIAS ===================== -->
+<section class="tab-panel" id="tab-feriados">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Feriados</h2>
+      <button id="btnAddFeriado" class="btn btn-primary btn-sm">+ Feriado</button>
+    </div>
+    <p class="pagina-sub">Datas não úteis para toda a equipa (feriados nacionais/empresa) — ficheiro central.</p>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaFeriados">
+        <thead><tr><th>Data</th><th>Descrição</th><th></th></tr></thead>
+        <tbody id="corpoTabelaFeriados"></tbody>
+      </table>
+    </div>
+
+    <div class="pagina-head" style="margin-top:28px;">
+      <h2>Ausências</h2>
+      <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
+    </div>
+    <p class="pagina-sub">Férias, baixas e outras ausências individuais por consultor — ficheiro central.</p>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaAusencias">
+        <thead><tr><th>Consultor</th><th>Tipo</th><th>Início</th><th>Fim</th><th>Notas</th><th></th></tr></thead>
+        <tbody id="corpoTabelaAusencias"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: REGISTO DE HORAS ===================== -->
+<section class="tab-panel" id="tab-registo">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Registar Horas</h2>
+    </div>
+    <p class="pagina-sub">Regista aqui as horas diárias por projeto/tarefa — fica guardado de imediato e é logo visível para toda a equipa, sem precisares de enviar nem reimportar nada.</p>
+
+    <div class="card" style="max-width:640px;">
+      <form id="formRegisto">
+        <div class="row-2">
+          <label>Pessoa
+            <select id="regPessoa" required><option value="">Seleciona…</option></select>
+          </label>
+          <label>Data
+            <input type="date" id="regData" required>
+          </label>
+        </div>
+        <div class="row-2">
+          <label>Projeto
+            <select id="regProjeto" required><option value="">Seleciona…</option></select>
+          </label>
+          <label>Tarefa
+            <select id="regTarefa" required><option value="">Seleciona…</option></select>
+          </label>
+        </div>
+        <label>Horas
+          <input type="number" id="regHoras" min="0.25" step="0.25" placeholder="ex.: 2.5" required>
+        </label>
+        <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
+          <textarea id="regNotas" rows="2"></textarea>
+        </label>
+        <button type="submit" class="btn btn-primary">Registar Horas</button>
+        <span id="regMsg" class="calc-line" style="border:none;padding:0;margin-left:10px;display:inline-block;"></span>
+      </form>
+    </div>
+
+    <h2 style="margin-top:24px;">Registos</h2>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Pessoa <select id="fRegPessoa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Projeto <select id="fRegProjeto"><option value="">Todos</option></select></label>
+      <label class="zoom-label">De <input type="date" id="fRegDe"></label>
+      <label class="zoom-label">Até <input type="date" id="fRegAte"></label>
+      <label class="zoom-label">Pesquisar <input type="text" id="fRegTexto" placeholder="tarefa, notas…"></label>
+      <button id="btnLimparFiltrosRegisto" class="btn btn-sm">Limpar filtros</button>
+    </div>
+    <div class="legend-row" id="statsRegisto"></div>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaRegistos">
+        <thead>
+          <tr>
+            <th data-sort="data">Data</th>
+            <th data-sort="pessoa">Pessoa</th>
+            <th data-sort="projeto">Projeto</th>
+            <th data-sort="tarefaNome">Tarefa</th>
+            <th data-sort="horas">Horas</th>
+            <th data-sort="notas">Notas</th>
+            <th data-sort="origem">Origem</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaRegistos"></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="paginacaoRegistos"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: FATURAÇÃO ===================== -->
+<section class="tab-panel" id="tab-faturacao">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Faturação</h2>
+      <button id="btnAddFatura" class="btn btn-primary btn-sm" title="Adiciona ao projeto selecionado no filtro abaixo (ou ao projeto ativo no Gantt, se o filtro estiver em 'Todos')">+ Fatura</button>
+    </div>
+    <p class="pagina-sub">Plano de faturação de cada projeto — quantas faturas, montante ou percentagem de cada uma, e data prevista. Regista aqui também a emissão (data, responsável e nº de registo). As faturas previstas aparecem identificadas no Gantt do respetivo projeto.</p>
+
+    <div class="legend-row" id="statsFaturacao"></div>
+
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Projeto <select id="fFatProjeto"><option value="">Todos</option></select></label>
+      <label class="zoom-label">De <input type="date" id="fFatDe"></label>
+      <label class="zoom-label">Até <input type="date" id="fFatAte"></label>
+      <label class="zoom-label">Nº de registo <input type="text" id="fFatNumRegisto" placeholder="ex.: FT 2026/123"></label>
+      <button id="btnLimparFiltrosFaturacao" class="btn btn-sm">Limpar filtros</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaFaturas">
+        <thead>
+          <tr>
+            <th data-sort="projeto">Projeto</th>
+            <th data-sort="dataPrevista">Data prevista</th>
+            <th data-sort="tipo">Tipo</th>
+            <th data-sort="percentagem">%</th>
+            <th data-sort="valor">Valor</th>
+            <th data-sort="emitida">Emitida</th>
+            <th data-sort="dataEmissao">Data emissão</th>
+            <th data-sort="emitidoPor">Emitido por</th>
+            <th data-sort="numeroRegisto">Nº registo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaFaturas"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <span id="modalTitulo">Título</span>
+      <button id="modalFechar" class="btn-icon">✕</button>
+    </div>
+    <div class="modal-body" id="modalCorpo"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="lib/supabase.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/gantt.js"></script>
+<script src="js/capacidade.js"></script>
+<script src="js/portfolio-gantt.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Ficheiros locais de dados (Excel de clientes/projetos) — não fazem parte da app publicada
+# desde que os dados passaram a viver no Supabase; não devem ir para o repositório nem para produção.
+Base de Dados/
+
+# Ficheiros de sistema
+.DS_Store
+Thumbs.db
