@@ -3047,6 +3047,9 @@ const App = {
     const tabela = document.getElementById(tabelaId);
     if (!tabela) return;
     const larguras = this.lerPrefsUI()[prefChave] || {};
+    // "table-layout:fixed" só entra depois de existir pelo menos uma largura guardada — antes
+    // disso a tabela mantém-se com o dimensionamento automático de sempre, por conteúdo (ver CSS).
+    if (Object.keys(larguras).length) tabela.classList.add('colunas-ajustadas');
     Array.from(tabela.querySelectorAll('thead th[data-col]')).forEach(th => {
       const col = th.dataset.col;
       if (larguras[col]) th.style.width = larguras[col] + 'px';
@@ -3066,6 +3069,7 @@ const App = {
         if (!arrastando) return;
         arrastando = false;
         handle.classList.remove('ativo');
+        tabela.classList.add('colunas-ajustadas');
         const atuais = this.lerPrefsUI()[prefChave] || {};
         atuais[col] = Math.round(th.getBoundingClientRect().width);
         this.gravarPrefUI(prefChave, atuais);
