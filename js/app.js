@@ -1200,20 +1200,22 @@ const App = {
     return !!d && d.getFullYear() === ano && d.getMonth() === mes;
   },
   // Horas planeadas do projeto num mês específico — só conta os dias de cada tarefa que caem
-  // dentro desse mês — usado para construir a reprevisão.
+  // dentro desse mês — usado para construir a reprevisão. Uma tarefa sem nenhum consultor
+  // atribuído não entra na conta (0h): sem alguém indicado, não há esforço real associado a
+  // somar, só um marco/fase de calendário — contá-la como "1 pessoa a tempo inteiro" por omissão
+  // inflava artificialmente a reprevisão sempre que várias tarefas por atribuir se sobrepunham.
   planeadoMesProjeto(p, ano, mes) {
     const inicioMes = new Date(ano, mes, 1);
     const fimMes = new Date(ano, mes + 1, 0);
     let total = 0;
     p.tarefas.forEach(t => {
       if (this.temFilhos(p, t.id)) return;
+      if (!t.recursoIds.length) return;
       const inicioT = DateUtil.parseISO(t.inicio), fimT = DateUtil.parseISO(t.fim);
       const inicio = inicioT > inicioMes ? inicioT : inicioMes;
       const fim = fimT < fimMes ? fimT : fimMes;
       if (inicio > fim) return;
-      const fatorRecursos = t.recursoIds.length
-        ? t.recursoIds.reduce((soma, rid) => soma + this.pctAlocacao(t, rid) / 100, 0)
-        : 1;
+      const fatorRecursos = t.recursoIds.reduce((soma, rid) => soma + this.pctAlocacao(t, rid) / 100, 0);
       for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
         if (!Capacidade.ehFimDeSemana(d)) total += Capacidade.HORAS_DIA * fatorRecursos;
       }
