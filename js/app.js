@@ -1904,8 +1904,8 @@ const App = {
         const temContexto = res.capacidade > 0 || res.alocado > 0;
         const texto = !temContexto ? '—' : (isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠');
         let dica = '';
-        if (res.diasSobreAlocado > 0) dica += ` — ⚠ ${res.diasSobreAlocado} dia(s) sobre-alocado(s) (duplo agendamento)`;
-        if (res.diasConflitoDisponibilidade > 0) dica += ` — ⚠ ${res.diasConflitoDisponibilidade} dia(s) em conflito com ausência/feriado`;
+        if (res.diasSobreAlocado > 0) dica += ` — ⚠ sobre-alocado(a) em ${this.formatarDatasConflito(res.datasSobreAlocado)} (duplo agendamento)`;
+        if (res.diasConflitoDisponibilidade > 0) dica += ` — ⚠ conflito com ausência/feriado em ${this.formatarDatasConflito(res.datasConflitoDisponibilidade)}`;
         return `<td class="occ-${cls}" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade${dica}">${texto}</td>`;
       }).join('');
       tr.innerHTML = `<th>${escapeHtml(r.nome)}</th>${celulas}`;
@@ -1914,8 +1914,8 @@ const App = {
       const mesAtual = resumos[0];
       const revenueTotal = resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0);
       const projetos = Capacidade.projetosDoRecurso(r.id);
-      const sobreAlocados = resumos.filter(res => res.diasSobreAlocado > 0).map(res => res.label);
-      const emConflito = resumos.filter(res => res.diasConflitoDisponibilidade > 0).map(res => res.label);
+      const datasSobreAlocado = resumos.reduce((acc, res) => acc.concat(res.datasSobreAlocado), []);
+      const datasConflito = resumos.reduce((acc, res) => acc.concat(res.datasConflitoDisponibilidade), []);
       const clsMesAtual = Capacidade.classeResumo(mesAtual);
 
       const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
@@ -1932,11 +1932,13 @@ const App = {
           ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
         <div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>
-        ${sobreAlocados.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${sobreAlocados.map(escapeHtml).join(', ')}</div>` : ''}
-        ${emConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${emConflito.map(escapeHtml).join(', ')}</div>` : ''}
+        ${datasSobreAlocado.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarDatasConflito(datasSobreAlocado, 10)}</div>` : ''}
+        ${datasConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${this.formatarDatasConflito(datasConflito, 10)}</div>` : ''}
         <div class="cap-projetos">
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
-        </div>`;
+        </div>
+        <button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>`;
+      card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
       e.gridCapacidade.appendChild(card);
     });
   },
@@ -3151,6 +3153,14 @@ const App = {
   // pessoa gera um evento "input" com isTrusted=true; uma extensão a escrever o valor por fora
   // gera um (ou nenhum) evento com isTrusted=false. Guarda o valor a cada foco e repõe-no sempre
   // que aparecer uma alteração não fidedigna.
+  // Formata uma lista de datas ISO (já ordenada cronologicamente) como "13/07, 22/07 +3 dia(s)",
+  // limitando a `limite` datas visíveis para o texto não crescer sem controlo num período longo.
+  formatarDatasConflito(datasISO, limite) {
+    limite = limite || 6;
+    const visiveis = datasISO.slice(0, limite).map(iso => DateUtil.formatShort(DateUtil.parseISO(iso)));
+    const resto = datasISO.length - visiveis.length;
+    return escapeHtml(visiveis.join(', ') + (resto > 0 ? ` +${resto} dia(s)` : ''));
+  },
   bloquearPreenchimentoAutomatico(input) {
     let valorAntesDoFoco = input.value;
     input.addEventListener('focus', () => { valorAntesDoFoco = input.value; });

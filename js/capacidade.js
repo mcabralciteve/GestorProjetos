@@ -87,18 +87,23 @@ const Capacidade = {
   // "diasConflitoDisponibilidade" — trabalho agendado num dia sem disponibilidade (feriado/ausência),
   // que não é sobre-alocação, é a agenda a ignorar uma indisponibilidade já conhecida.
   resumoPeriodo(recurso, inicio, fim) {
-    let capacidade = 0, alocado = 0, diasSobreAlocado = 0, diasConflitoDisponibilidade = 0;
+    let capacidade = 0, alocado = 0;
+    const datasSobreAlocado = [], datasConflitoDisponibilidade = [];
     for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
       if (this.ehFimDeSemana(d)) continue;
       const cap = this.capacidadeDiaria(d, recurso);
       const aloc = this.alocacaoDiaria(d, recurso.id);
       capacidade += cap;
       alocado += aloc;
-      if (cap === 0) { if (aloc > 0) diasConflitoDisponibilidade++; }
-      else if (aloc > this.HORAS_DIA) diasSobreAlocado++;
+      if (cap === 0) { if (aloc > 0) datasConflitoDisponibilidade.push(DateUtil.toISO(d)); }
+      else if (aloc > this.HORAS_DIA) datasSobreAlocado.push(DateUtil.toISO(d));
     }
     const pct = capacidade > 0 ? (alocado / capacidade) : (alocado > 0 ? Infinity : 0);
-    return { capacidade, alocado, pct, diasSobreAlocado, diasConflitoDisponibilidade };
+    return {
+      capacidade, alocado, pct,
+      diasSobreAlocado: datasSobreAlocado.length, diasConflitoDisponibilidade: datasConflitoDisponibilidade.length,
+      datasSobreAlocado, datasConflitoDisponibilidade
+    };
   },
   resumoMes(recurso, ano, mes) {
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
