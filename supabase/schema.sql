@@ -83,6 +83,9 @@ alter table public.projetos add column if not exists gestor_id uuid references p
 drop table if exists public.projeto_consultores;
 
 -- ---------- Tarefas ----------
+-- "ordem" guarda a posição da tarefa na lista (a app usa-a para saber a ordem das tarefas-irmãs no
+-- Gantt) — sem isto, o Postgres pode devolver as linhas por qualquer ordem física, que não reflete
+-- reordenações feitas na app (Subir/Descer/Indentar/Promover não mudam nenhuma outra coluna).
 create table if not exists public.tarefas (
   id uuid primary key default gen_random_uuid(),
   projeto_id uuid not null references public.projetos(id) on delete cascade,
@@ -91,11 +94,14 @@ create table if not exists public.tarefas (
   inicio date not null,
   fim date not null,
   progresso int not null default 0,
+  ordem int not null default 0,
   -- predecessoras guardadas como jsonb: [{"id": "<uuid da tarefa predecessora>", "tipo": "FS", "atraso": 0}, ...]
   predecessores jsonb not null default '[]'::jsonb
 );
 create index if not exists tarefas_projeto_id_idx on public.tarefas(projeto_id);
 create index if not exists tarefas_parent_id_idx on public.tarefas(parent_id);
+
+alter table public.tarefas add column if not exists ordem int not null default 0;
 
 -- ---------- Alocação de recursos a tarefas (substitui "recursoIds" + "alocacoesHoras") ----------
 create table if not exists public.tarefa_recursos (

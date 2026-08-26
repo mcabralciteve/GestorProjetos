@@ -109,8 +109,8 @@ const Sync = {
       // Duas passagens por causa da auto-referência tarefas.parent_id → tarefas.id: insere tudo
       // com parent_id nulo primeiro (ordem do array não importa), só depois liga cada tarefa à
       // sua mãe — evita ter de ordenar topologicamente a árvore antes de gravar.
-      const linhasBase = tarefas.map(t => ({
-        id: t.id, projeto_id: projeto.id, parent_id: null, nome: t.nome,
+      const linhasBase = tarefas.map((t, idx) => ({
+        id: t.id, projeto_id: projeto.id, parent_id: null, nome: t.nome, ordem: idx,
         inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || []
       }));
       r = await supabaseClient.from('tarefas').upsert(linhasBase);
@@ -189,7 +189,7 @@ const Sync = {
       supabaseClient.from('ausencias').select('*'),
       supabaseClient.from('registos').select('*'),
       supabaseClient.from('projetos').select('*'),
-      supabaseClient.from('tarefas').select('*'),
+      supabaseClient.from('tarefas').select('*').order('ordem', { ascending: true }),
       supabaseClient.from('tarefa_recursos').select('*'),
       supabaseClient.from('faturas').select('*'),
       supabaseClient.from('pontos_situacao').select('*'),
