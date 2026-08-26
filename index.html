@@ -6,6 +6,14 @@
 <title>Gestor de Projetos &amp; Gantt</title>
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 <link rel="stylesheet" href="css/style.css">
+<script>
+  // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
+  // tema claro antes do resto da app carregar.
+  try {
+    var prefs = JSON.parse(localStorage.getItem('gp_ui_prefs')) || {};
+    if (prefs.tema === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro');
+  } catch (e) { /* ignora */ }
+</script>
 </head>
 <body>
 
@@ -37,6 +45,7 @@
     <span class="logo">📊 Gestor de Projetos</span>
   </div>
   <div class="topbar-right">
+    <button id="btnAlternarTema" class="btn-icon" title="Alternar tema claro/escuro" style="font-size:17px;">🌙</button>
     <div class="conta-menu-wrap" id="contaMenuWrap" style="display:none;">
       <button id="authUserInfo" class="conta-menu-trigger"></button>
       <div class="conta-menu" id="contaMenuDropdown">

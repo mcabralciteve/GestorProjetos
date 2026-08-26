@@ -61,10 +61,26 @@ const App = {
 
   init() {
     this.cacheEls();
+    this.aplicarTema(this.lerPrefsUI().tema || 'claro');
     this.capturarEstadoLocalPreLogin();
     this.state = this.estadoVazio();
     this.wireEvents();
     this.atualizarBotoesHistorico();
+  },
+  // O tema em si já é aplicado antes de qualquer script correr (ver <script> no <head> do
+  // index.html, para não haver flash do tema errado) — isto só mantém o botão/estado coerentes.
+  aplicarTema(tema) {
+    document.documentElement.setAttribute('data-tema', tema);
+    if (this.els.btnAlternarTema) {
+      this.els.btnAlternarTema.textContent = tema === 'escuro' ? '☀️' : '🌙';
+      this.els.btnAlternarTema.title = tema === 'escuro' ? 'Mudar para tema claro' : 'Mudar para tema escuro';
+    }
+  },
+  alternarTema() {
+    const atual = document.documentElement.getAttribute('data-tema') === 'escuro' ? 'escuro' : 'claro';
+    const novo = atual === 'escuro' ? 'claro' : 'escuro';
+    this.aplicarTema(novo);
+    this.gravarPrefUI('tema', novo);
   },
 
   cacheEls() {
@@ -134,6 +150,7 @@ const App = {
       layoutGantt: document.getElementById('layoutGantt'),
       btnDesfazer: document.getElementById('btnDesfazer'),
       btnRefazer: document.getElementById('btnRefazer'),
+      btnAlternarTema: document.getElementById('btnAlternarTema'),
       formRegisto: document.getElementById('formRegisto'),
       regPessoa: document.getElementById('regPessoa'),
       regData: document.getElementById('regData'),
@@ -1273,7 +1290,7 @@ const App = {
     const projetos = this.meusProjetosEnvolvidos();
     if (!projetos.length) {
       e.statsPortefolio.innerHTML = '';
-      e.gridPortefolio.innerHTML = '<p style="color:#9ca3af">Sem projetos carregados.</p>';
+      e.gridPortefolio.innerHTML = '<p style="color:var(--cinza-500)">Sem projetos carregados.</p>';
       return;
     }
     const contagemPrazo = { verde: 0, amarelo: 0, vermelho: 0, neutro: 0 };
@@ -1344,7 +1361,7 @@ const App = {
 
     e.chipsProjetosPortGantt.innerHTML = projetos.map(p => `
       <button type="button" class="chip-projeto ${this.selecaoPortGantt.has(p.id) ? 'ativo' : ''}" data-chip-projeto="${p.id}">${escapeHtml(p.idInterno || p.nome)}</button>
-    `).join('') || '<span style="color:#9ca3af;font-size:12px;">Sem projetos.</span>';
+    `).join('') || '<span style="color:var(--cinza-500);font-size:12px;">Sem projetos.</span>';
     e.chipsProjetosPortGantt.querySelectorAll('[data-chip-projeto]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.chipProjeto;
@@ -1380,7 +1397,7 @@ const App = {
         <td>${DateUtil.formatShort(DateUtil.parseISO(t.fim))}</td>
         <td>${t.progresso}%</td>
       </tr>`;
-    }).join('') : '<tr class="empty-row"><td colspan="4" style="text-align:center;color:#9ca3af;padding:16px">Seleciona pelo menos um projeto.</td></tr>';
+    }).join('') : '<tr class="empty-row"><td colspan="4" style="text-align:center;color:var(--cinza-500);padding:16px">Seleciona pelo menos um projeto.</td></tr>';
     e.corpoTabelaPortGantt.querySelectorAll('[data-toggle-projeto]').forEach(span => {
       span.addEventListener('click', () => {
         const id = span.dataset.toggleProjeto;
@@ -1820,11 +1837,11 @@ const App = {
       : this.state.recursos;
 
     if (this.state.recursos.length === 0) {
-      e.gridCapacidade.innerHTML = '<p style="color:#9ca3af">Sem consultores definidos. Adiciona no separador "Pessoas".</p>';
+      e.gridCapacidade.innerHTML = '<p style="color:var(--cinza-500)">Sem consultores definidos. Adiciona no separador "Pessoas".</p>';
       return;
     }
     if (recursosFiltrados.length === 0) {
-      e.gridCapacidade.innerHTML = '<p style="color:#9ca3af">Nenhum consultor nesta equipa.</p>';
+      e.gridCapacidade.innerHTML = '<p style="color:var(--cinza-500)">Nenhum consultor nesta equipa.</p>';
       return;
     }
 
@@ -1864,7 +1881,7 @@ const App = {
         <div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>
         ${sobreAlocados.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${sobreAlocados.map(escapeHtml).join(', ')}</div>` : ''}
         <div class="cap-projetos">
-          ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:#9ca3af">Sem alocações.</span>'}
+          ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
         </div>`;
       e.gridCapacidade.appendChild(card);
     });
@@ -2055,12 +2072,12 @@ const App = {
         <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
         <td>${escapeHtml(r.pessoa)}</td>
         <td>${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}</td>
-        <td>${escapeHtml(r.tarefaNome) || '<span style="color:#9ca3af">—</span>'}</td>
+        <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
         <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
         <td>${escapeHtml(r.notas)}</td>
-        <td><span style="color:#9ca3af;font-size:11px">${escapeHtml(r.origem)}</span></td>
+        <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
         <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>
-      </tr>`).join('') : '<tr class="empty-row"><td colspan="8" style="text-align:center;color:#9ca3af;padding:20px">Sem registos para os filtros selecionados.</td></tr>';
+      </tr>`).join('') : '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
     e.corpoTabelaRegistos.querySelectorAll('[data-eliminar]').forEach(btn => {
       btn.addEventListener('click', () => this.eliminarRegisto(btn.dataset.eliminar));
     });
@@ -2150,7 +2167,7 @@ const App = {
 
     e.corpoTabelaFaturas.innerHTML = '';
     if (!filtradas.length) {
-      e.corpoTabelaFaturas.innerHTML = '<tr class="empty-row"><td colspan="10" style="text-align:center;color:#9ca3af;padding:20px">Sem faturas para os filtros selecionados.</td></tr>';
+      e.corpoTabelaFaturas.innerHTML = '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:20px">Sem faturas para os filtros selecionados.</td></tr>';
       return;
     }
     filtradas.forEach(({ projeto: p, fatura: fat }) => {
@@ -2265,7 +2282,7 @@ const App = {
     if (!podeVer) return;
 
     const pontos = [...p.pontosSituacao].sort((a, b) => b.data.localeCompare(a.data) || b.criadoEm.localeCompare(a.criadoEm));
-    e.corpoPontosSituacao.innerHTML = pontos.length ? '' : '<tr class="empty-row"><td colspan="3" style="text-align:center;color:#9ca3af;padding:16px">Sem pontos de situação registados.</td></tr>';
+    e.corpoPontosSituacao.innerHTML = pontos.length ? '' : '<tr class="empty-row"><td colspan="3" style="text-align:center;color:var(--cinza-500);padding:16px">Sem pontos de situação registados.</td></tr>';
     pontos.forEach(ps => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -2284,7 +2301,7 @@ const App = {
     const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
     const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
     const passos = [...p.proximosPassos].sort((a, b) => (!!a.fechado === !!b.fechado) ? b.criadoEm.localeCompare(a.criadoEm) : (a.fechado ? 1 : -1));
-    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="5" style="text-align:center;color:#9ca3af;padding:16px">Sem next steps registados.</td></tr>';
+    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="5" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
       const dis = pp.fechado ? 'disabled' : '';
@@ -2320,7 +2337,7 @@ const App = {
       if (btn) btn.style.display = podeEditar ? '' : 'none';
     });
     if (!p) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px">Sem projeto carregado — cria um novo ou importa um ficheiro de projeto.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo ou importa um ficheiro de projeto.</td></tr>';
       return;
     }
     const lista = this.flatten(p);
@@ -2363,9 +2380,9 @@ const App = {
         fim: `<td><input type="date" value="${t.fim}" data-campo="fim" ${(filhos || !podeEditar) ? 'disabled' : ''} style="${atrasada ? 'color:#dc2626;font-weight:600' : ''}"></td>`,
         dias: `<td><input type="number" min="1" value="${duracao}" data-campo="duracao" ${(filhos || !podeEditar) ? 'disabled' : ''} style="width:40px"></td>`,
         prog: `<td><input type="number" min="0" max="100" value="${t.progresso}" data-campo="progresso" ${(filhos || !podeEditar) ? 'disabled' : ''} style="width:44px"></td>`,
-        horasReais: `<td title="Soma dos registos de horas ligados a esta tarefa">${horasReais > 0 ? horasReais.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) + 'h' : '<span style="color:#9ca3af">—</span>'}</td>`,
-        recursos: `<td class="rec-cell" data-acao="recursos">${nomesRec || '<span style="color:#9ca3af">+ associar</span>'}</td>`,
-        pred: `<td class="pred-cell-wrap" data-acao="pred">${filhos ? '<span style="color:#9ca3af">n/d</span>' : (chipsPred || '<span style="color:#9ca3af">+ ligar</span>')}</td>`
+        horasReais: `<td title="Soma dos registos de horas ligados a esta tarefa">${horasReais > 0 ? horasReais.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) + 'h' : '<span style="color:var(--cinza-500)">—</span>'}</td>`,
+        recursos: `<td class="rec-cell" data-acao="recursos">${nomesRec || '<span style="color:var(--cinza-500)">+ associar</span>'}</td>`,
+        pred: `<td class="pred-cell-wrap" data-acao="pred">${filhos ? '<span style="color:var(--cinza-500)">n/d</span>' : (chipsPred || '<span style="color:var(--cinza-500)">+ ligar</span>')}</td>`
       };
       tr.innerHTML = this.ordemColunasTarefas().map(k => celulas[k]).join('');
 
@@ -2573,7 +2590,7 @@ const App = {
             }).join('')}
           </tbody>
         </table>
-      </div>` : '<p style="color:#9ca3af">Sem alocações em nenhum projeto carregado.</p>';
+      </div>` : '<p style="color:var(--cinza-500)">Sem alocações em nenhum projeto carregado.</p>';
     this.abrirModal(`Alocações — ${r.nome}`, html, { largo: true });
     this.els.modalCorpo.querySelectorAll('[data-horas-alocacao-tarefa]').forEach(inp => {
       inp.addEventListener('change', () => {
@@ -2621,7 +2638,7 @@ const App = {
         return `
         <label class="rec-check">
           <input type="checkbox" value="${r.id}" ${marcado ? 'checked' : ''}>
-          <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:#9ca3af">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
+          <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:var(--cinza-500)">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
           <span class="rec-horas-wrap">
             <input type="number" class="rec-horas" min="0" step="0.25" value="${horas}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
             ${livreHoras !== null ? `<span class="hint-livre" title="Horas livres deste consultor neste período, sem ultrapassar 100% em nenhum dia, dadas as outras tarefas desta pessoa">Livre: ${livreHoras.toFixed(1)}h</span>` : ''}
@@ -2671,7 +2688,7 @@ const App = {
         <span style="flex:1">${pt ? escapeHtml(pt.nome) : '?'} — ${pr.tipo}${pr.atraso ? ' +' + pr.atraso + 'd' : ''}</span>
         <button class="btn-icon" data-remover="${pr.id}">🗑</button>
       </div>`;
-    }).join('') || '<p style="color:#9ca3af">Sem predecessoras.</p>';
+    }).join('') || '<p style="color:var(--cinza-500)">Sem predecessoras.</p>';
     const html = `
       <div id="listaPred">${linhasAtuais}</div>
       <hr style="margin:12px 0;border:none;border-top:1px solid #e5e7eb">
@@ -2825,6 +2842,7 @@ const App = {
     document.getElementById('modalFechar').addEventListener('click', () => this.fecharModal());
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
+    this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
     document.getElementById('btnAddPontoSituacao').addEventListener('click', () => this.criarPontoSituacao());
     document.getElementById('btnAddProximoPasso').addEventListener('click', () => this.criarProximoPasso());
 

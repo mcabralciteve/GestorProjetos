@@ -18,7 +18,7 @@ const Gantt = {
     headerWrap.style.position = 'sticky';
     headerWrap.style.top = '0';
     headerWrap.style.zIndex = '3';
-    headerWrap.style.background = '#fff';
+    headerWrap.style.background = 'var(--branco)';
     headerWrap.appendChild(this.criarHeaderSVG(rangeStart, totalDias, pxPerDia, totalWidth));
     container.appendChild(headerWrap);
 
@@ -61,7 +61,7 @@ const Gantt = {
     svg.style.borderBottom = '1px solid var(--cinza-300)';
     // fundo
     const bg = document.createElementNS(this.SVGNS, 'rect');
-    bg.setAttribute('width', totalWidth); bg.setAttribute('height', this.HEADER_H); bg.setAttribute('fill', '#f4f5f7');
+    bg.setAttribute('width', totalWidth); bg.setAttribute('height', this.HEADER_H); bg.setAttribute('fill', 'var(--cinza-100)');
     svg.appendChild(bg);
 
     // fins de semana
@@ -128,7 +128,7 @@ const Gantt = {
     svg.dataset.role = 'gantt-body';
 
     const defs = document.createElementNS(this.SVGNS, 'defs');
-    defs.innerHTML = `<marker id="seta" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"></path></marker>`;
+    defs.innerHTML = `<marker id="seta" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--cinza-500)"></path></marker>`;
     svg.appendChild(defs);
 
     const totalDias = Math.round(totalWidth / pxPerDia);

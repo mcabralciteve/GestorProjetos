@@ -41,7 +41,7 @@ const PortfolioGantt = {
 
     container.innerHTML = '';
     if (!linhas.length) {
-      container.innerHTML = '<p style="color:#9ca3af;padding:12px;">Seleciona pelo menos um projeto.</p>';
+      container.innerHTML = '<p style="color:var(--cinza-500);padding:12px;">Seleciona pelo menos um projeto.</p>';
       return;
     }
 
@@ -49,7 +49,7 @@ const PortfolioGantt = {
     headerWrap.style.position = 'sticky';
     headerWrap.style.top = '0';
     headerWrap.style.zIndex = '3';
-    headerWrap.style.background = '#fff';
+    headerWrap.style.background = 'var(--branco)';
     headerWrap.appendChild(Gantt.criarHeaderSVG(rangeStart, totalDias, pxPerDia, totalWidth));
     container.appendChild(headerWrap);
 

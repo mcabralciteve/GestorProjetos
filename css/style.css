@@ -15,6 +15,50 @@
   --radius:6px;
   --linha-altura:32px;
 }
+/* Tema escuro — troca só os valores das variáveis; o resto da folha de estilos já usa var(...)
+   em todo o lado, por isso a esmagadora maioria da interface adapta-se sozinha. */
+:root[data-tema="escuro"]{
+  --azul:#3b82f6;
+  --azul-esc:#60a5fa;
+  --cinza-100:#12161d;
+  --cinza-200:#232a34;
+  --cinza-300:#333d4a;
+  --cinza-500:#8b95a3;
+  --cinza-700:#c3ccd6;
+  --cinza-900:#eef1f5;
+  --verde:#34d399;
+  --amarelo:#fbbf24;
+  --vermelho:#f87171;
+  --roxo:#a78bfa;
+  --branco:#1a1f28;
+}
+:root[data-tema="escuro"] input,
+:root[data-tema="escuro"] select,
+:root[data-tema="escuro"] textarea{color-scheme:dark;}
+/* Cores específicas que não vêm das variáveis acima (fundos claros escolhidos a pensar no tema
+   claro) — equivalentes escuros para os estados de destaque/aviso/crítico mais usados. */
+:root[data-tema="escuro"] .btn-danger:hover,
+:root[data-tema="escuro"] .linha-sobreposta td,
+:root[data-tema="escuro"] .linha-sobre-faturado td,
+:root[data-tema="escuro"] .cap-alerta{background:#3a1f1f;}
+:root[data-tema="escuro"] .tabela-crud tbody tr:hover,
+:root[data-tema="escuro"] .tabela-tarefas tr:hover td,
+:root[data-tema="escuro"] .linha-tarefa-port td:hover{background:#1f2530;}
+:root[data-tema="escuro"] .resizer:hover,
+:root[data-tema="escuro"] .resizer.ativo{background:#1e3a5f;}
+:root[data-tema="escuro"] .tabela-tarefas tr.selecionada td,
+:root[data-tema="escuro"] .tabela-tarefas tr.selecionada:hover td,
+:root[data-tema="escuro"] .gantt-row-bg.selecionada{fill:#1c2a3d;background:#1c2a3d;}
+:root[data-tema="escuro"] .badge-rec.critico,
+:root[data-tema="escuro"] td.occ-critico{background:#4a2020;color:#f3b4b0;}
+:root[data-tema="escuro"] .badge-rec.aviso,
+:root[data-tema="escuro"] td.occ-aviso{background:#4a3a15;color:#f0cf8a;}
+:root[data-tema="escuro"] td.occ-ok{background:#1c3a2c;color:#a8e0c0;}
+:root[data-tema="escuro"] .pred-tag{background:#232a44;}
+:root[data-tema="escuro"] .gantt-weekend{fill:#1c212a;}
+:root[data-tema="escuro"] .gantt-row-bg.par{fill:#171b22;}
+:root[data-tema="escuro"] .disp-tag.disp-aviso,
+:root[data-tema="escuro"] .rag-texto.rag-amarelo{color:#d9a441;}
 *{box-sizing:border-box;}
 html,body{height:100%;}
 body{
