@@ -60,18 +60,11 @@ const App = {
   ordenacaoRegistos: { campo: 'data', dir: 'desc' },
 
   init() {
-    console.log('[TIMING] App.init início', performance.now());
     this.cacheEls();
-    console.log('[TIMING] depois cacheEls', performance.now());
     this.capturarEstadoLocalPreLogin();
-    console.log('[TIMING] depois capturarEstadoLocalPreLogin', performance.now());
     this.state = this.estadoVazio();
     this.wireEvents();
-    console.log('[TIMING] depois wireEvents', performance.now());
-    document.addEventListener('auth-mudou', (e) => this.aoMudarSessao(e.detail));
-    console.log('[TIMING] listener auth-mudou registado', performance.now());
     this.atualizarBotoesHistorico();
-    console.log('[TIMING] App.init fim', performance.now());
   },
 
   cacheEls() {
@@ -190,17 +183,13 @@ const App = {
   // dispara este aviso várias vezes para a MESMA sessão (ao entrar, e depois periodicamente para
   // renovar o token), e recarregar nessas alturas apagaria qualquer edição ainda não guardada.
   async aoMudarSessao(session) {
-    console.log('[TIMING] aoMudarSessao chamado', performance.now(), 'sessaoAtiva antes:', this.sessaoAtiva);
     const autenticadoAgora = !!session;
     this.usuarioAtualId = autenticadoAgora ? session.user.id : null;
     if (autenticadoAgora && !this.sessaoAtiva) {
       this.sessaoAtiva = true;
-      console.log('[TIMING] antes carregarDeSupabase', performance.now());
       try {
         await Sync.carregarDeSupabase();
-        console.log('[TIMING] depois carregarDeSupabase (sucesso)', performance.now());
       } catch (err) {
-        console.log('[TIMING] depois carregarDeSupabase (erro)', performance.now());
         console.error(err);
         this.toast('Erro ao carregar dados da nuvem: ' + err.message);
         this.state = this.estadoVazio();
@@ -3027,4 +3016,9 @@ function escapeHtml(s) {
 }
 function escapeAttr(s) { return escapeHtml(s); }
 
+// Registado já na análise do script (não dentro de App.init(), que só corre no DOMContentLoaded) —
+// js/auth.js pode disparar "auth-mudou" muito cedo (ao correr onAuthStateChange logo que é
+// registado), antes do DOMContentLoaded chegar a acontecer; registar o listener aqui garante que
+// nunca perde esse primeiro aviso por uma questão de ordem/tempo entre os dois ficheiros.
+document.addEventListener('auth-mudou', (e) => App.aoMudarSessao(e.detail));
 document.addEventListener('DOMContentLoaded', () => App.init());

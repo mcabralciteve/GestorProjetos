@@ -182,23 +182,19 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    console.log('[TIMING] carregarDeSupabase início', performance.now());
-    const marcar = (nome, promessa) => promessa.then(r => { console.log('[TIMING] query', nome, 'terminou', performance.now()); return r; });
-    console.log('[TIMING] antes de disparar as 11 queries', performance.now());
     const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp] = await Promise.all([
-      marcar('equipas', supabaseClient.from('equipas').select('*')),
-      marcar('recursos', supabaseClient.from('recursos').select('*')),
-      marcar('feriados', supabaseClient.from('feriados').select('*')),
-      marcar('ausencias', supabaseClient.from('ausencias').select('*')),
-      marcar('registos', supabaseClient.from('registos').select('*')),
-      marcar('projetos', supabaseClient.from('projetos').select('*')),
-      marcar('tarefas', supabaseClient.from('tarefas').select('*').order('ordem', { ascending: true })),
-      marcar('tarefa_recursos', supabaseClient.from('tarefa_recursos').select('*')),
-      marcar('faturas', supabaseClient.from('faturas').select('*')),
-      marcar('pontos_situacao', supabaseClient.from('pontos_situacao').select('*')),
-      marcar('proximos_passos', supabaseClient.from('proximos_passos').select('*'))
+      supabaseClient.from('equipas').select('*'),
+      supabaseClient.from('recursos').select('*'),
+      supabaseClient.from('feriados').select('*'),
+      supabaseClient.from('ausencias').select('*'),
+      supabaseClient.from('registos').select('*'),
+      supabaseClient.from('projetos').select('*'),
+      supabaseClient.from('tarefas').select('*').order('ordem', { ascending: true }),
+      supabaseClient.from('tarefa_recursos').select('*'),
+      supabaseClient.from('faturas').select('*'),
+      supabaseClient.from('pontos_situacao').select('*'),
+      supabaseClient.from('proximos_passos').select('*')
     ]);
-    console.log('[TIMING] todas as queries terminaram', performance.now());
     [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp].forEach(r => { if (r.error) throw r.error; });
 
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome }));
