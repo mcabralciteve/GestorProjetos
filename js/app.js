@@ -1642,14 +1642,34 @@ const App = {
     const admin = this.souAdmin();
     const opcoesGestor = '<option value="">Sem gestor</option>' +
       this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
-    this.meusProjetosEnvolvidos().forEach(p => {
+    const linhas = this.meusProjetosEnvolvidos().map(p => ({ p, orc: this.avaliarOrcamentoProjeto(p) }));
+    const ordenadas = this.aplicarOrdenacaoTabela('tabelaProjetos', linhas, (l, campo) => {
+      const { p, orc } = l;
+      switch (campo) {
+        case 'nome': return p.nome.toLowerCase();
+        case 'cliente': return (p.cliente || '').toLowerCase();
+        case 'gestor': return this.nomeUtilizador(p.gestorId).toLowerCase();
+        case 'dataInicio': return p.dataInicio || '';
+        case 'dataFim': return p.dataFim || '';
+        case 'horasVendidas': return p.horasVendidas || 0;
+        case 'valorVendido': return p.valorVendido || 0;
+        case 'valorHoraMedio': return p.horasVendidas ? (p.valorVendido || 0) / p.horasVendidas : 0;
+        case 'estado': return p.estado || '';
+        case 'real': return orc.totalReal;
+        case 'eac': return orc.eac;
+        case 'saldo': return orc.saldoDisponivel === null ? -Infinity : orc.saldoDisponivel;
+        case 'pctConsumido': return orc.pctConsumido === null ? -Infinity : orc.pctConsumido;
+        case 'estadoOrc': return orc.motivo || '';
+        default: return (p.idInterno || '').toLowerCase();
+      }
+    });
+    ordenadas.forEach(({ p, orc }) => {
       const tr = document.createElement('tr');
-      const orc = this.avaliarOrcamentoProjeto(p);
       const corNivel = { verde: 'var(--verde)', amarelo: 'var(--amarelo)', vermelho: 'var(--vermelho)', neutro: 'var(--cinza-500)' };
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" style="width:100px" ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" style="width:100px" autocomplete="off" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" style="min-width:160px" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" style="width:120px" ${dis}></td>
         <td>${admin
@@ -1707,7 +1727,20 @@ const App = {
     const tbody = this.els.corpoTabelaRecursosCentral;
     tbody.innerHTML = '';
     const opcoesEquipas = '<option value="">Sem equipa</option>' + this.state.equipas.map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
-    this.state.recursos.forEach(r => {
+    const nomeEquipaDe = (r) => (this.state.equipas.find(eq => eq.id === r.equipaId) || {}).nome || '';
+    const recursos = this.aplicarOrdenacaoTabela('tabelaRecursosCentral', this.state.recursos, (r, campo) => {
+      switch (campo) {
+        case 'email': return (r.email || '').toLowerCase();
+        case 'papel': return (r.papel || '').toLowerCase();
+        case 'equipa': return nomeEquipaDe(r).toLowerCase();
+        case 'precoCusto': return r.precoCusto || 0;
+        case 'precoVenda': return r.precoVenda || 0;
+        case 'margem': return r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda) : 0;
+        case 'acesso': return (this.state.utilizadores.find(u => u.recursoId === r.id) || {}).papel || '';
+        default: return r.nome.toLowerCase();
+      }
+    });
+    recursos.forEach(r => {
       const margem = r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda * 100) : 0;
       const perfil = this.state.utilizadores.find(u => u.recursoId === r.id);
       const tr = document.createElement('tr');
@@ -1757,7 +1790,8 @@ const App = {
     const tbody = this.els.corpoTabelaEquipas;
     if (!tbody) return;
     tbody.innerHTML = '';
-    this.state.equipas.forEach(eq => {
+    const equipas = this.aplicarOrdenacaoTabela('tabelaEquipas', this.state.equipas, (eq) => eq.nome.toLowerCase());
+    equipas.forEach(eq => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
@@ -1781,7 +1815,8 @@ const App = {
   renderTabelaFeriados() {
     const tbody = this.els.corpoTabelaFeriados;
     tbody.innerHTML = '';
-    this.state.feriados.slice().sort((a, b) => a.data < b.data ? -1 : 1).forEach(f => {
+    const feriados = this.aplicarOrdenacaoTabela('tabelaFeriados', this.state.feriados, (f, campo) => campo === 'descricao' ? (f.descricao || '').toLowerCase() : f.data);
+    feriados.forEach(f => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="date" value="${f.data}" data-campo="data"></td>
@@ -1798,7 +1833,17 @@ const App = {
     const tbody = this.els.corpoTabelaAusencias;
     tbody.innerHTML = '';
     const opcoesRecursos = this.state.recursos.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
-    this.state.ausencias.forEach(a => {
+    const nomeRecursoDe = (a) => (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '';
+    const ausencias = this.aplicarOrdenacaoTabela('tabelaAusencias', this.state.ausencias, (a, campo) => {
+      switch (campo) {
+        case 'recurso': return nomeRecursoDe(a).toLowerCase();
+        case 'tipo': return a.tipo || '';
+        case 'dataFim': return a.dataFim || '';
+        case 'notas': return (a.notas || '').toLowerCase();
+        default: return a.dataInicio || '';
+      }
+    });
+    ausencias.forEach(a => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><select data-campo="recursoId">${opcoesRecursos}</select></td>
@@ -2281,7 +2326,7 @@ const App = {
     if (btnAddPP) btnAddPP.style.display = (podeVer && admin) ? '' : 'none';
     if (!podeVer) return;
 
-    const pontos = [...p.pontosSituacao].sort((a, b) => b.data.localeCompare(a.data) || b.criadoEm.localeCompare(a.criadoEm));
+    const pontos = this.aplicarOrdenacaoTabela('tabelaPontosSituacao', p.pontosSituacao, (ps, campo) => campo === 'feedback' ? (ps.feedback || '').toLowerCase() : ps.data);
     e.corpoPontosSituacao.innerHTML = pontos.length ? '' : '<tr class="empty-row"><td colspan="3" style="text-align:center;color:var(--cinza-500);padding:16px">Sem pontos de situação registados.</td></tr>';
     pontos.forEach(ps => {
       const tr = document.createElement('tr');
@@ -2300,7 +2345,15 @@ const App = {
 
     const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
     const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
-    const passos = [...p.proximosPassos].sort((a, b) => (!!a.fechado === !!b.fechado) ? b.criadoEm.localeCompare(a.criadoEm) : (a.fechado ? 1 : -1));
+    const passos = this.aplicarOrdenacaoTabela('tabelaProximosPassos', p.proximosPassos, (pp, campo) => {
+      switch (campo) {
+        case 'descricao': return (pp.descricao || '').toLowerCase();
+        case 'tarefa': return ((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
+        case 'estado': return pp.estado || '';
+        case 'notas': return (pp.notas || '').toLowerCase();
+        default: return pp.fechado ? 1 : 0;
+      }
+    });
     e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="5" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
@@ -2908,6 +2961,25 @@ const App = {
     this.tornarColunasRedimensionaveis('tabelaTarefas', 'colunasTarefas');
     this.tornarColunasReordenaveis('tabelaTarefas', 'ordemTarefas');
     if (prefs.sidebarColapsada) this.alternarSidebar(true);
+
+    // Colunas ajustáveis + cabeçalhos ordenáveis nas restantes tabelas de dados da app.
+    this.tornarColunasRedimensionaveis('tabelaProjetos', 'colunasProjetos');
+    this.ligarOrdenacaoTabela('tabelaProjetos', { campo: 'idInterno', dir: 'asc' }, () => this.renderTabelaProjetos());
+    this.tornarColunasRedimensionaveis('tabelaPontosSituacao', 'colunasPontosSituacao');
+    this.ligarOrdenacaoTabela('tabelaPontosSituacao', { campo: 'data', dir: 'desc' }, () => this.renderAcompanhamento());
+    this.tornarColunasRedimensionaveis('tabelaProximosPassos', 'colunasProximosPassos');
+    this.ligarOrdenacaoTabela('tabelaProximosPassos', { campo: 'fechado', dir: 'asc' }, () => this.renderAcompanhamento());
+    this.tornarColunasRedimensionaveis('tabelaRecursosCentral', 'colunasRecursos');
+    this.ligarOrdenacaoTabela('tabelaRecursosCentral', { campo: 'nome', dir: 'asc' }, () => this.renderTabelaRecursosCentral());
+    this.tornarColunasRedimensionaveis('tabelaEquipas', 'colunasEquipas');
+    this.ligarOrdenacaoTabela('tabelaEquipas', { campo: 'nome', dir: 'asc' }, () => this.renderTabelaEquipas());
+    this.tornarColunasRedimensionaveis('tabelaFeriados', 'colunasFeriados');
+    this.ligarOrdenacaoTabela('tabelaFeriados', { campo: 'data', dir: 'asc' }, () => this.renderTabelaFeriados());
+    this.tornarColunasRedimensionaveis('tabelaAusencias', 'colunasAusencias');
+    this.ligarOrdenacaoTabela('tabelaAusencias', { campo: 'dataInicio', dir: 'asc' }, () => this.renderTabelaAusencias());
+    // Faturação e Registo de Horas já tinham ordenação própria — só ganham colunas ajustáveis.
+    this.tornarColunasRedimensionaveis('tabelaRegistos', 'colunasRegistos');
+    this.tornarColunasRedimensionaveis('tabelaFaturas', 'colunasFaturas');
   },
   // Fecha/abre a barra lateral da aba Gantt para ganhar largura útil para a tabela/Gantt.
   alternarSidebar(forcarColapsar) {
@@ -2998,6 +3070,43 @@ const App = {
         atuais[col] = Math.round(th.getBoundingClientRect().width);
         this.gravarPrefUI(prefChave, atuais);
       });
+    });
+  },
+  // ---------- Ordenação genérica por cabeçalho (clique num <th data-sort>) ----------
+  // Um único mecanismo, reutilizado por várias tabelas — cada uma só precisa de: cabeçalhos com
+  // "data-sort", chamar ligarOrdenacaoTabela() uma vez a montar os eventos, e chamar
+  // aplicarOrdenacaoTabela() dentro do próprio render para ordenar as linhas antes de as desenhar.
+  ordenacoesTabelas: {},
+  ligarOrdenacaoTabela(tabelaId, padrao, renderFn) {
+    this.ordenacoesTabelas[tabelaId] = padrao;
+    const thead = document.querySelector(`#${tabelaId} thead`);
+    if (!thead) return;
+    thead.addEventListener('click', (ev) => {
+      const th = ev.target.closest('th[data-sort]');
+      if (!th) return;
+      const campo = th.dataset.sort;
+      const atual = this.ordenacoesTabelas[tabelaId];
+      if (atual.campo === campo) atual.dir = atual.dir === 'asc' ? 'desc' : 'asc';
+      else this.ordenacoesTabelas[tabelaId] = { campo, dir: 'asc' };
+      renderFn();
+    });
+  },
+  // Devolve "linhas" ordenadas segundo o estado guardado para "tabelaId" (valorFn extrai, de cada
+  // linha, o valor comparável para a coluna atual) e atualiza as setas nos cabeçalhos.
+  aplicarOrdenacaoTabela(tabelaId, linhas, valorFn) {
+    const estado = this.ordenacoesTabelas[tabelaId];
+    document.querySelectorAll(`#${tabelaId} thead th[data-sort]`).forEach(th => {
+      const ativo = estado && th.dataset.sort === estado.campo;
+      th.classList.toggle('ord-asc', !!ativo && estado.dir === 'asc');
+      th.classList.toggle('ord-desc', !!ativo && estado.dir === 'desc');
+    });
+    if (!estado) return linhas;
+    const mult = estado.dir === 'desc' ? -1 : 1;
+    return linhas.slice().sort((a, b) => {
+      const va = valorFn(a, estado.campo), vb = valorFn(b, estado.campo);
+      if (va < vb) return -1 * mult;
+      if (va > vb) return 1 * mult;
+      return 0;
     });
   },
   tornarRedimensionavel(handle, alvo, min, max, aoSoltar) {
