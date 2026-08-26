@@ -1662,7 +1662,7 @@ const App = {
         <td>${this.formatarValorHoraMedio(p)}</td>
         <td>
           <select data-campo="estado" ${dis}>
-            ${['Por iniciar', 'Em curso', 'Concluído', 'Cancelado'].map(op => `<option ${p.estado === op ? 'selected' : ''}>${op}</option>`).join('')}
+            ${['Adjudicado', 'Por iniciar', 'Em curso', 'Concluído', 'Cancelado'].map(op => `<option ${p.estado === op ? 'selected' : ''}>${op}</option>`).join('')}
           </select>
         </td>
         <td>${orc.totalReal.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}</td>
