@@ -1702,7 +1702,9 @@ const App = {
           this.renderTudo();
         });
       }
-      tr.querySelector('[data-campo="idInterno"]').addEventListener('focus', (ev) => ev.target.removeAttribute('readonly'), { once: true });
+      const inpIdInterno = tr.querySelector('[data-campo="idInterno"]');
+      inpIdInterno.addEventListener('focus', (ev) => ev.target.removeAttribute('readonly'), { once: true });
+      this.bloquearPreenchimentoAutomatico(inpIdInterno);
       tr.querySelectorAll('input[data-campo],select[data-campo="estado"]').forEach(inp => {
         inp.addEventListener('change', () => {
           p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value.trim();
@@ -2817,9 +2819,10 @@ const App = {
     document.getElementById('btnDuplicarProjeto').addEventListener('click', () => this.duplicarProjeto());
     document.getElementById('btnEliminarProjeto').addEventListener('click', () => this.eliminarProjeto());
 
-    // "readonly" até ao primeiro clique — truque para o Chrome não o preencher sozinho com um
-    // valor antigo guardado no autofill (autocomplete="off"/"new-password" sozinhos não chegaram).
+    // "readonly" até ao primeiro clique (trava o autofill do próprio browser) + bloqueio de
+    // preenchimento não fidedigno (trava extensões como o RoboForm — ver bloquearPreenchimentoAutomatico).
     e.projIdInterno.addEventListener('focus', () => e.projIdInterno.removeAttribute('readonly'), { once: true });
+    this.bloquearPreenchimentoAutomatico(e.projIdInterno);
     e.projIdInterno.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().idInterno = e.projIdInterno.value.trim(); e.projIdInterno.value = this.projetoAtivo().idInterno; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projEstado.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().estado = e.projEstado.value; this.persist(); this.renderTabelaProjetos(); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
@@ -3134,6 +3137,20 @@ const App = {
       arrastando = false;
       handle.classList.remove('ativo');
       aoSoltar(Math.round(alvo.getBoundingClientRect().width));
+    });
+  },
+  // Bloqueia gestores de password/preenchimento automático (RoboForm, LastPass, etc.) num campo
+  // de texto. Estas extensões escrevem o valor diretamente via JavaScript — autocomplete="off",
+  // "new-password" e até readonly não as trava, porque só bloqueiam o próprio browser, não uma
+  // extensão a mexer no DOM. A diferença fica no evento: uma tecla realmente premida por uma
+  // pessoa gera um evento "input" com isTrusted=true; uma extensão a escrever o valor por fora
+  // gera um (ou nenhum) evento com isTrusted=false. Guarda o valor a cada foco e repõe-no sempre
+  // que aparecer uma alteração não fidedigna.
+  bloquearPreenchimentoAutomatico(input) {
+    let valorAntesDoFoco = input.value;
+    input.addEventListener('focus', () => { valorAntesDoFoco = input.value; });
+    input.addEventListener('input', (ev) => {
+      if (!ev.isTrusted && input.value !== valorAntesDoFoco) input.value = valorAntesDoFoco;
     });
   },
   lerPrefsUI() {
