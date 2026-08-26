@@ -1761,6 +1761,8 @@ const App = {
           <button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>
         </td>`;
       tr.querySelector('[data-campo="equipaId"]').value = r.equipaId || '';
+      this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="nome"]'));
+      this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="email"]'));
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => this.atualizarRecurso(r.id, inp.dataset.campo, inp.value));
       });
