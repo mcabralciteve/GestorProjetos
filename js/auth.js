@@ -5,14 +5,20 @@ const Auth = {
   modoRegisto: false,
 
   async init() {
+    console.log('[TIMING] Auth.init início', performance.now());
     this.cacheEls();
     this.wireEvents();
+    console.log('[TIMING] antes getSession', performance.now());
     const { data: { session } } = await supabaseClient.auth.getSession();
+    console.log('[TIMING] depois getSession', performance.now());
     this.atualizarUI(session);
     document.dispatchEvent(new CustomEvent('auth-mudou', { detail: session }));
+    console.log('[TIMING] auth-mudou disparado (init)', performance.now());
     supabaseClient.auth.onAuthStateChange((_evento, session) => {
+      console.log('[TIMING] onAuthStateChange disparou:', _evento, performance.now());
       this.atualizarUI(session);
       document.dispatchEvent(new CustomEvent('auth-mudou', { detail: session }));
+      console.log('[TIMING] auth-mudou disparado (onAuthStateChange)', performance.now());
     });
   },
 
