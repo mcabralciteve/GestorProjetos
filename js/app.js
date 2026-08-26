@@ -1669,7 +1669,7 @@ const App = {
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" style="width:100px" autocomplete="off" ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" style="width:100px" autocomplete="new-password" spellcheck="false" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" style="min-width:160px" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" style="width:120px" ${dis}></td>
         <td>${admin
@@ -1704,7 +1704,7 @@ const App = {
       }
       tr.querySelectorAll('input[data-campo],select[data-campo="estado"]').forEach(inp => {
         inp.addEventListener('change', () => {
-          p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value;
+          p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value.trim();
           this.persist();
           this.renderTabelaProjetos();
           if (p.id === this.state.projetoAtivoId) { this.renderInfoProjeto(); this.renderProjetoSelect(); }
@@ -2816,7 +2816,7 @@ const App = {
     document.getElementById('btnDuplicarProjeto').addEventListener('click', () => this.duplicarProjeto());
     document.getElementById('btnEliminarProjeto').addEventListener('click', () => this.eliminarProjeto());
 
-    e.projIdInterno.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().idInterno = e.projIdInterno.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
+    e.projIdInterno.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().idInterno = e.projIdInterno.value.trim(); e.projIdInterno.value = this.projetoAtivo().idInterno; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projEstado.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().estado = e.projEstado.value; this.persist(); this.renderTabelaProjetos(); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projCliente.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().cliente = e.projCliente.value; this.persist(); this.renderTabelaProjetos(); });
