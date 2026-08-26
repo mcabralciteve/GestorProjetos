@@ -31,11 +31,34 @@ const Capacidade = {
     });
     return out;
   },
-  // Cada tarefa contribui HORAS_DIA × (percentagem de alocação do recurso nessa tarefa / 100)
-  // — por omissão 100% (tempo inteiro) quando a tarefa não define uma percentagem específica.
+  // Reparte "horasTotais" só pelos dias em que o recurso está disponível dentro de [inicioISO,
+  // fimISO] — uma tarefa de poucas horas espalhada por um período longo (ex.: 16h entre julho e
+  // dezembro) não obriga a trabalhar precisamente em cada dia do calendário, só nos dias em que a
+  // pessoa está mesmo disponível; um dia de ausência/feriado nunca "recebe" horas. Exceção: se
+  // NENHUM dia do período está disponível, reparte pelos dias úteis do calendário — o trabalho não
+  // cabe de forma nenhuma, mas continua a aparecer nalgum lado em vez de desaparecer silenciosamente.
+  horasNoDia(horasTotais, inicioISO, fimISO, recursoId, date) {
+    if (horasTotais <= 0) return 0;
+    const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
+    let diasUteis = 0, diasDisp = 0;
+    for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
+      if (this.ehFimDeSemana(d)) continue;
+      diasUteis++;
+      if (this.capacidadeDiaria(d, { id: recursoId }) > 0) diasDisp++;
+    }
+    if (diasDisp === 0) return diasUteis > 0 ? horasTotais / diasUteis : 0;
+    if (this.capacidadeDiaria(date, { id: recursoId }) === 0) return 0;
+    return horasTotais / diasDisp;
+  },
+  horasTarefaNoDia(tarefa, recursoId, date) {
+    return this.horasNoDia(App.horasAlocadas(tarefa, recursoId), tarefa.inicio, tarefa.fim, recursoId, date);
+  },
+  // Cada tarefa contribui as horas que lhe cabem neste dia, distribuídas apenas pelos dias
+  // disponíveis da sua própria duração (ver horasNoDia) — não uma fração fixa de todos os dias
+  // do calendário entre o início e o fim da tarefa.
   alocacaoDiaria(date, recursoId) {
     return this.tarefasAtivasNoDia(date, recursoId).reduce((soma, x) => {
-      return soma + this.HORAS_DIA * (App.pctAlocacao(x.tarefa, recursoId) / 100);
+      return soma + this.horasTarefaNoDia(x.tarefa, recursoId, date);
     }, 0);
   },
 
@@ -53,7 +76,7 @@ const Capacidade = {
       const cap = this.capacidadeDiaria(d, recurso);
       if (cap === 0) continue;
       const outras = this.tarefasAtivasNoDia(d, recurso.id).filter(x => x.tarefa.id !== taskId);
-      const outrasHoras = outras.reduce((soma, x) => soma + this.HORAS_DIA * (App.pctAlocacao(x.tarefa, recurso.id) / 100), 0);
+      const outrasHoras = outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.tarefa, recurso.id, d), 0);
       livre += Math.max(0, cap - outrasHoras);
     }
     return livre;
@@ -174,6 +197,11 @@ const Capacidade = {
     pctTarefa = pctTarefa === undefined ? 100 : pctTarefa;
     const inicio = DateUtil.parseISO(inicioISO);
     const fim = DateUtil.parseISO(fimISO);
+    // Recupera o total de horas de "esta tarefa" a partir da percentagem média (o inverso do
+    // cálculo em App.pctAlocacao) para poder repartir só pelos seus próprios dias disponíveis,
+    // tal como as outras tarefas — não uma fração fixa de todos os dias do período.
+    const diasUteisEstaTarefa = App.diasUteisEntre(inicioISO, fimISO);
+    const estaHorasTotais = diasUteisEstaTarefa > 0 ? (pctTarefa / 100) * diasUteisEstaTarefa * this.HORAS_DIA : 0;
 
     // Além de contar os dias problemáticos, guarda o detalhe (datas exatas, motivo, e com que
     // outras tarefas colide) para o diagnóstico poder ser específico em vez de genérico.
@@ -187,8 +215,8 @@ const Capacidade = {
       // par (projeto, tarefa) para excluir a tarefa em avaliação, senão uma tarefa de outro
       // projeto com o mesmo número de ID fica (erradamente) também excluída da soma.
       const outras = this.tarefasAtivasNoDia(d, recurso.id).filter(x => !(x.projeto.id === projetoId && x.tarefa.id === taskId));
-      const outrasHoras = outras.reduce((soma, x) => soma + this.HORAS_DIA * (App.pctAlocacao(x.tarefa, recurso.id) / 100), 0);
-      const estaHoras = this.HORAS_DIA * (pctTarefa / 100);
+      const outrasHoras = outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.tarefa, recurso.id, d), 0);
+      const estaHoras = this.horasNoDia(estaHorasTotais, inicioISO, fimISO, recurso.id, d);
       capacidadePeriodo += cap;
       demandaPeriodo += outrasHoras + estaHoras;
       if (cap === 0) {
