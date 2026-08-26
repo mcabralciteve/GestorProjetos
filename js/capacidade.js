@@ -82,21 +82,23 @@ const Capacidade = {
   },
 
   // Resume capacidade/alocação de um recurso num intervalo de dias (dias úteis apenas).
-  // "diasConflito" conta dias com um problema real: trabalho agendado num dia indisponível
-  // (feriado/ausência), ou mais do que uma tarefa a tempo inteiro no mesmo dia.
+  // Distingue dois problemas bem diferentes, que antes eram tratados como um só "diasConflito":
+  // "diasSobreAlocado" — duplo agendamento real (mais do que 8h de tarefas no mesmo dia disponível);
+  // "diasConflitoDisponibilidade" — trabalho agendado num dia sem disponibilidade (feriado/ausência),
+  // que não é sobre-alocação, é a agenda a ignorar uma indisponibilidade já conhecida.
   resumoPeriodo(recurso, inicio, fim) {
-    let capacidade = 0, alocado = 0, diasConflito = 0;
+    let capacidade = 0, alocado = 0, diasSobreAlocado = 0, diasConflitoDisponibilidade = 0;
     for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
       if (this.ehFimDeSemana(d)) continue;
       const cap = this.capacidadeDiaria(d, recurso);
       const aloc = this.alocacaoDiaria(d, recurso.id);
       capacidade += cap;
       alocado += aloc;
-      if (cap === 0) { if (aloc > 0) diasConflito++; }
-      else if (aloc > this.HORAS_DIA) diasConflito++;
+      if (cap === 0) { if (aloc > 0) diasConflitoDisponibilidade++; }
+      else if (aloc > this.HORAS_DIA) diasSobreAlocado++;
     }
     const pct = capacidade > 0 ? (alocado / capacidade) : (alocado > 0 ? Infinity : 0);
-    return { capacidade, alocado, pct, diasConflito };
+    return { capacidade, alocado, pct, diasSobreAlocado, diasConflitoDisponibilidade };
   },
   resumoMes(recurso, ano, mes) {
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
@@ -135,11 +137,15 @@ const Capacidade = {
     return out;
   },
 
-  // Classificação visual (heatmap/cartões/badges) a partir de um resumo: só é "crítico" quando
-  // existem dias de conflito real; caso contrário reflete apenas o nível de ocupação.
+  // Classificação visual (heatmap/cartões/badges) a partir de um resumo, por ordem de gravidade:
+  // "crítico" (vermelho) só para duplo agendamento real; "conflito" (laranja) quando há trabalho
+  // agendado num dia sem disponibilidade (feriado/ausência) — não é sobre-alocação, é a agenda a
+  // ignorar uma indisponibilidade conhecida; "aviso" (amarelo) perto do limite de carga; "ok" (verde)
+  // tudo bem.
   classeResumo(resumo) {
-    if (resumo.diasConflito > 0) return 'critico';
-    if (resumo.pct >= 0.8) return 'aviso';
+    if (resumo.diasSobreAlocado > 0) return 'critico';
+    if (resumo.diasConflitoDisponibilidade > 0) return 'conflito';
+    if (resumo.pct >= 0.9) return 'aviso';
     if (resumo.pct > 0) return 'ok';
     return 'vazio';
   },
@@ -198,7 +204,10 @@ const Capacidade = {
     const semFolgaNoPeriodo = demandaPeriodo > capacidadePeriodo;
     if (detalheSobreAlocado.length > 0 || (detalheIndisponivel.length > 0 && semFolgaNoPeriodo)) {
       return {
-        nivel: 'critico', diasIndisponivel: detalheIndisponivel.length, diasSobreAlocado: detalheSobreAlocado.length,
+        // "critico" só quando há duplo agendamento real; um dia indisponível sem folga para
+        // compensar é "conflito" (agenda vs. disponibilidade), não sobre-alocação.
+        nivel: detalheSobreAlocado.length > 0 ? 'critico' : 'conflito',
+        diasIndisponivel: detalheIndisponivel.length, diasSobreAlocado: detalheSobreAlocado.length,
         detalheIndisponivel, detalheSobreAlocado, semFolgaNoPeriodo,
         capacidade: capacidadePeriodo, alocado: demandaPeriodo,
         pct: capacidadePeriodo > 0 ? demandaPeriodo / capacidadePeriodo : Infinity, mesLabel: ''
@@ -207,7 +216,7 @@ const Capacidade = {
 
     const meses = this.mesesEntre(inicio, fim).map(m => Object.assign({ resumo: this.resumoMes(recurso, m.ano, m.mes) }, m));
     const pior = meses.reduce((p, m) => (m.resumo.pct > p.resumo.pct ? m : p), meses[0]);
-    const nivel = this.classeResumo(Object.assign({}, pior.resumo, { diasConflito: 0 }));
+    const nivel = this.classeResumo(Object.assign({}, pior.resumo, { diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 }));
     return Object.assign({ nivel, diasIndisponivel: detalheIndisponivel.length, diasSobreAlocado: 0, mesLabel: pior.label }, pior.resumo);
   },
   descreverProblema(nomeRecurso, resultado) {
@@ -226,6 +235,10 @@ const Capacidade = {
         partes.push(`sobre-alocado(a) em ${lista || resultado.diasSobreAlocado + ' dia(s)'}${comQuem}`);
       }
       return `${nomeRecurso} está ${partes.join(' e ')}.`;
+    }
+    if (resultado.nivel === 'conflito') {
+      const lista = (resultado.detalheIndisponivel || []).map(d => `${DateUtil.formatShort(d.data)} (${d.motivo})`).join(', ');
+      return `${nomeRecurso} tem trabalho agendado em dia(s) sem disponibilidade — indisponível em ${lista || resultado.diasIndisponivel + ' dia(s) úteis deste período'}, sem folga no período para compensar (${resultado.alocado.toFixed(0)}h pedidas de ${resultado.capacidade.toFixed(0)}h disponíveis).`;
     }
     if (resultado.nivel === 'aviso') {
       return `${nomeRecurso} está perto do limite de capacidade em ${resultado.mesLabel}: ${resultado.alocado.toFixed(0)}h alocadas de ${resultado.capacidade.toFixed(0)}h disponíveis (${Math.round(resultado.pct * 100)}%) — ver separador Capacidade.`;

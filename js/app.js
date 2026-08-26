@@ -1903,7 +1903,9 @@ const App = {
         const cls = Capacidade.classeResumo(res);
         const temContexto = res.capacidade > 0 || res.alocado > 0;
         const texto = !temContexto ? '—' : (isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠');
-        const dica = res.diasConflito > 0 ? ` — ⚠ ${res.diasConflito} dia(s) em conflito (indisponível ou sobre-alocado)` : '';
+        let dica = '';
+        if (res.diasSobreAlocado > 0) dica += ` — ⚠ ${res.diasSobreAlocado} dia(s) sobre-alocado(s) (duplo agendamento)`;
+        if (res.diasConflitoDisponibilidade > 0) dica += ` — ⚠ ${res.diasConflitoDisponibilidade} dia(s) em conflito com ausência/feriado`;
         return `<td class="occ-${cls}" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade${dica}">${texto}</td>`;
       }).join('');
       tr.innerHTML = `<th>${escapeHtml(r.nome)}</th>${celulas}`;
@@ -1912,7 +1914,8 @@ const App = {
       const mesAtual = resumos[0];
       const revenueTotal = resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0);
       const projetos = Capacidade.projetosDoRecurso(r.id);
-      const sobreAlocados = resumos.filter(res => res.diasConflito > 0).map(res => res.label);
+      const sobreAlocados = resumos.filter(res => res.diasSobreAlocado > 0).map(res => res.label);
+      const emConflito = resumos.filter(res => res.diasConflitoDisponibilidade > 0).map(res => res.label);
       const clsMesAtual = Capacidade.classeResumo(mesAtual);
 
       const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
@@ -1930,6 +1933,7 @@ const App = {
         </div>
         <div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>
         ${sobreAlocados.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${sobreAlocados.map(escapeHtml).join(', ')}</div>` : ''}
+        ${emConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${emConflito.map(escapeHtml).join(', ')}</div>` : ''}
         <div class="cap-projetos">
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
         </div>`;
@@ -2619,7 +2623,7 @@ const App = {
       l.resultado = Capacidade.avaliarAtribuicao(r, l.projeto.id, l.tarefa.id, l.tarefa.inicio, l.tarefa.fim, pct);
     });
 
-    const numConflito = linhas.filter(l => l.resultado.nivel === 'critico').length;
+    const numConflito = linhas.filter(l => l.resultado.nivel === 'critico' || l.resultado.nivel === 'conflito').length;
     const resumoTopo = linhas.length
       ? `<p class="hint" style="margin:0 0 10px;">${linhas.length} alocação(ões) em ${new Set(linhas.map(l => l.projeto.id)).size} projeto(s).${numConflito ? ` <b style="color:#dc2626;">⚠ ${numConflito} com conflito de alocação.</b>` : ' Sem conflitos de alocação.'} Ajusta as horas de alocação diretamente aqui para resolver.</p>`
       : '';
@@ -2632,10 +2636,10 @@ const App = {
           <tbody>
             ${linhas.map(l => {
               const disp = this.rotuloDisponibilidade(l.resultado);
-              const emConflito = l.resultado.nivel === 'critico';
+              const classeLinha = l.resultado.nivel === 'critico' ? 'linha-sobreposta' : (l.resultado.nivel === 'conflito' ? 'linha-conflito' : '');
               const dias = DateUtil.diffDays(DateUtil.parseISO(l.tarefa.inicio), DateUtil.parseISO(l.tarefa.fim)) + 1;
               const dicaEstado = Capacidade.descreverProblema(r.nome, l.resultado) || 'Sem conflitos conhecidos neste período.';
-              return `<tr class="${emConflito ? 'linha-sobreposta' : ''}">
+              return `<tr class="${classeLinha}">
                 <td><span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dicaEstado)}">${disp.texto}</span></td>
                 <td>${escapeHtml(l.projeto.nome)}</td>
                 <td>${escapeHtml(l.projeto.cliente || '—')}</td>
@@ -2661,14 +2665,13 @@ const App = {
   rotuloDisponibilidade(resultado) {
     if (resultado.nivel === 'critico') {
       const temAusencia = resultado.diasIndisponivel > 0;
-      const temSobreAlocacao = resultado.diasSobreAlocado > 0;
-      if (temAusencia && !temSobreAlocacao) {
-        const motivos = new Set((resultado.detalheIndisponivel || []).map(d => d.motivo));
-        const motivo = motivos.size === 1 ? Array.from(motivos)[0] : 'ausência';
-        return { texto: `● Ausente (${motivo.charAt(0).toUpperCase()}${motivo.slice(1)})`, classe: 'critico' };
-      }
-      if (temSobreAlocacao && !temAusencia) return { texto: '● Sobre-alocado', classe: 'critico' };
-      return { texto: '● Ausente / sobre-alocado', classe: 'critico' };
+      if (temAusencia) return { texto: '● Ausente / sobre-alocado', classe: 'critico' };
+      return { texto: '● Sobre-alocado', classe: 'critico' };
+    }
+    if (resultado.nivel === 'conflito') {
+      const motivos = new Set((resultado.detalheIndisponivel || []).map(d => d.motivo));
+      const motivo = motivos.size === 1 ? Array.from(motivos)[0] : 'ausência';
+      return { texto: `● Ausente (${motivo.charAt(0).toUpperCase()}${motivo.slice(1)})`, classe: 'conflito' };
     }
     if (resultado.nivel === 'aviso') return { texto: `● Perto do limite (${Math.round(resultado.pct * 100)}%)`, classe: 'aviso' };
     return { texto: '● Livre', classe: 'ok' };
@@ -2681,7 +2684,7 @@ const App = {
       this.abrirModal(`Associar consultores — ${t.nome}`, '<p>Sem consultores definidos. Adiciona no separador "Pessoas".</p>');
       return;
     }
-    const ordemNivel = { critico: 0, aviso: 1, ok: 2, vazio: 2 };
+    const ordemNivel = { critico: 0, conflito: 1, aviso: 2, ok: 3, vazio: 3 };
     const linhas = this.state.recursos.map(r => ({ r, horas: this.horasAlocadas(t, r.id), resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
