@@ -492,6 +492,28 @@ const App = {
   meusProjetosEnvolvidos() {
     return Object.values(this.state.projetos).filter(p => this.estouEnvolvidoEm(p.id));
   },
+  // Consultores "do projeto" para efeitos de responsável de next step — quem já tem o recurso
+  // atribuído a alguma tarefa deste projeto (mesma definição usada por souConsultorDe).
+  consultoresDoProjeto(p) {
+    const ids = new Set();
+    p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => ids.add(rid)));
+    return this.state.recursos.filter(r => ids.has(r.id));
+  },
+  // Um next step só pode ser criado por quem pode editar o projeto (admin ou o gestor desse
+  // projeto). Editar um já existente: nunca depois de fechado (fica um registo histórico, e fechar
+  // continua a ser só do Administrador) — antes disso, o Administrador pode sempre, o Gestor só o
+  // que ele próprio criou.
+  podeEditarProximoPasso(p, pp) {
+    if (pp.fechado) return false;
+    if (this.souAdmin()) return true;
+    return this.souGestorDe(p.id) && pp.criadoPor === this.perfilAtual()?.recursoId;
+  },
+  // Eliminar: o Administrador pode sempre (mesmo já fechado); o Gestor só o que criou e só
+  // enquanto não estiver fechado.
+  podeEliminarProximoPasso(p, pp) {
+    if (this.souAdmin()) return true;
+    return !pp.fechado && this.souGestorDe(p.id) && pp.criadoPor === this.perfilAtual()?.recursoId;
+  },
 
   // UUID gerado no cliente — aceite tal e qual pelo Postgres como chave primária (a base de
   // dados só usa o valor por omissão quando nenhum é fornecido), por isso não há round-trip
@@ -523,10 +545,11 @@ const App = {
   novoPontoSituacaoObj(feedback, criadoPor) {
     return { id: crypto.randomUUID(), data: DateUtil.todayISO(), feedback: feedback || '', criadoPor: criadoPor || null, criadoEm: new Date().toISOString() };
   },
-  novoProximoPassoObj(descricao, tarefaId, pontoSituacaoId, criadoPor) {
+  novoProximoPassoObj(descricao, tarefaId, pontoSituacaoId, responsavelId, criadoPor) {
     const agora = new Date().toISOString();
     return {
       id: crypto.randomUUID(), tarefaId: tarefaId || null, pontoSituacaoId: pontoSituacaoId || null,
+      responsavelId: responsavelId || null,
       descricao: descricao || '', estado: 'aberto', notas: '', fechado: false, fechadoEm: null,
       criadoPor: criadoPor || null, criadoEm: agora, atualizadoEm: agora
     };
@@ -2263,9 +2286,11 @@ const App = {
   },
 
   // ---------- Tab: Acompanhamento (pontos de situação + next steps) ----------
-  // Só o Administrador cria/apaga pontos de situação e cria/fecha next steps; o Gestor do projeto
-  // só atualiza estado/notas dos next steps já existentes. Mostra sempre o projeto ativo do Gantt
-  // (não tem filtro de projeto próprio, ao contrário da Faturação).
+  // Pontos de situação: só o Administrador cria/edita/apaga. Next steps: Administrador e Gestor do
+  // projeto podem criar (sempre associados a uma sessão de ponto de situação, com um consultor do
+  // projeto como responsável); cada um só edita/apaga os que criou, exceto o Administrador que pode
+  // editar/apagar qualquer um (ver podeEditarProximoPasso/podeEliminarProximoPasso). Mostra sempre o
+  // projeto ativo do Gantt (não tem filtro de projeto próprio, ao contrário da Faturação).
   criarPontoSituacao() {
     if (!this.souAdmin()) return;
     const p = this.projetoAtivo();
@@ -2291,25 +2316,34 @@ const App = {
     this.persist();
     this.renderAcompanhamento();
   },
+  // Um next step tem sempre de estar associado a uma sessão já existente — não há para onde o
+  // associar sem pelo menos um Ponto de Situação criado primeiro (só o Administrador cria esses).
   criarProximoPasso() {
-    if (!this.souAdmin()) return;
     const p = this.projetoAtivo();
-    if (!p) return;
+    if (!p || !this.possoEditarProjeto(p.id)) return;
     const ultimoPonto = [...p.pontosSituacao].sort((a, b) => a.criadoEm.localeCompare(b.criadoEm)).pop();
-    p.proximosPassos.push(this.novoProximoPassoObj('Novo next step', null, ultimoPonto ? ultimoPonto.id : null, this.perfilAtual()?.recursoId));
+    if (!ultimoPonto) { this.toast('Cria primeiro um Ponto de Situação — um next step tem de estar associado a uma sessão.'); return; }
+    p.proximosPassos.push(this.novoProximoPassoObj('Novo next step', null, ultimoPonto.id, null, this.perfilAtual()?.recursoId));
     this.persist();
     this.renderAcompanhamento();
   },
-  // "estado"/"notas" podem ser editados por quem pode editar o projeto (admin ou gestor);
-  // "descricao"/"tarefaId" só pelo admin, que é quem define o next step. Nada se edita depois de fechado.
   atualizarProximoPasso(id, campo, valor) {
     const p = this.projetoAtivo();
-    if (!p || !this.possoEditarProjeto(p.id)) return;
+    if (!p) return;
     const pp = p.proximosPassos.find(x => x.id === id);
-    if (!pp || pp.fechado) return;
-    if (['descricao', 'tarefaId'].includes(campo) && !this.souAdmin()) return;
-    pp[campo] = campo === 'tarefaId' ? (valor || null) : valor;
+    if (!pp || !this.podeEditarProximoPasso(p, pp)) return;
+    pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId'].includes(campo) ? (valor || null) : valor;
     pp.atualizadoEm = new Date().toISOString();
+    this.persist();
+    this.renderAcompanhamento();
+  },
+  eliminarProximoPasso(id) {
+    const p = this.projetoAtivo();
+    if (!p) return;
+    const pp = p.proximosPassos.find(x => x.id === id);
+    if (!pp || !this.podeEliminarProximoPasso(p, pp)) return;
+    if (!confirm('Eliminar este next step?')) return;
+    p.proximosPassos = p.proximosPassos.filter(x => x.id !== id);
     this.persist();
     this.renderAcompanhamento();
   },
@@ -2336,7 +2370,12 @@ const App = {
     e.acompanhamentoSemProjeto.textContent = p ? 'Não tens acesso ao acompanhamento deste projeto.' : 'Escolhe um projeto no separador "Gantt do Projeto" primeiro.';
     const admin = this.souAdmin();
     if (btnAddPS) btnAddPS.style.display = (podeVer && admin) ? '' : 'none';
-    if (btnAddPP) btnAddPP.style.display = (podeVer && admin) ? '' : 'none';
+    if (btnAddPP) {
+      btnAddPP.style.display = podeVer ? '' : 'none';
+      const semSessao = podeVer && !p.pontosSituacao.length;
+      btnAddPP.disabled = semSessao;
+      btnAddPP.title = semSessao ? 'Cria primeiro um Ponto de Situação — um next step tem de estar associado a uma sessão.' : '';
+    }
     if (!podeVer) return;
 
     const pontos = this.aplicarOrdenacaoTabela('tabelaPontosSituacao', p.pontosSituacao, (ps, campo) => campo === 'feedback' ? (ps.feedback || '').toLowerCase() : ps.data);
@@ -2358,36 +2397,60 @@ const App = {
 
     const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
     const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+    const sessoesOrdenadas = [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
+    const opcoesSessao = sessoesOrdenadas.map(ps => `<option value="${ps.id}">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 30)) : ''}</option>`).join('');
+    const consultores = this.consultoresDoProjeto(p);
+    const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+
     const passos = this.aplicarOrdenacaoTabela('tabelaProximosPassos', p.proximosPassos, (pp, campo) => {
       switch (campo) {
         case 'descricao': return (pp.descricao || '').toLowerCase();
+        case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
         case 'tarefa': return ((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
+        case 'responsavel': return ((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
         case 'estado': return pp.estado || '';
         case 'notas': return (pp.notas || '').toLowerCase();
         default: return pp.fechado ? 1 : 0;
       }
     });
-    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="5" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
+    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
-      const dis = pp.fechado ? 'disabled' : '';
+      const podeEditar = this.podeEditarProximoPasso(p, pp);
+      const podeEliminar = this.podeEliminarProximoPasso(p, pp);
+      const dis = podeEditar ? '' : 'disabled';
+      const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
+      const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
       tr.innerHTML = `
-        <td>${admin ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px" ${dis}>` : escapeHtml(pp.descricao)}</td>
-        <td>${admin ? `<select data-campo="tarefaId" ${dis}>${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}</td>
+        <td>${podeEditar ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px">` : escapeHtml(pp.descricao)}</td>
+        <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessao}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
+        <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}</td>
+        <td>${podeEditar ? `<select data-campo="responsavelId">${opcoesResponsavel}</select>` : escapeHtml((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '—')}</td>
         <td><select data-campo="estado" ${dis}>
           <option value="aberto" ${pp.estado === 'aberto' ? 'selected' : ''}>Aberto</option>
           <option value="em_curso" ${pp.estado === 'em_curso' ? 'selected' : ''}>Em curso</option>
           <option value="concluido" ${pp.estado === 'concluido' ? 'selected' : ''}>Concluído</option>
         </select></td>
-        <td><textarea data-campo="notas" rows="1" style="width:100%;resize:vertical;" ${dis}>${escapeHtml(pp.notas)}</textarea></td>
-        <td class="col-acoes">${admin ? (pp.fechado ? '<span class="hint">Fechado</span>' : '<button class="btn btn-sm" data-acao="fechar">Fechar</button>') : ''}</td>`;
+        <td>${podeEditar ? `<textarea data-campo="notas" rows="1" style="width:100%;resize:vertical;">${escapeHtml(pp.notas)}</textarea>` : escapeHtml(pp.notas)}</td>
+        <td class="hint" title="Criado por">${escapeHtml(nomeCriador)}</td>
+        <td class="col-acoes">
+          ${admin && !pp.fechado ? '<button class="btn btn-sm" data-acao="fechar">Fechar</button>' : ''}
+          ${pp.fechado ? '<span class="hint">Fechado</span>' : ''}
+          ${podeEliminar ? '<button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>' : ''}
+        </td>`;
+      const selSessao = tr.querySelector('[data-campo="pontoSituacaoId"]');
+      if (selSessao) selSessao.value = pp.pontoSituacaoId || '';
       const selTarefa = tr.querySelector('[data-campo="tarefaId"]');
       if (selTarefa) selTarefa.value = pp.tarefaId || '';
+      const selResponsavel = tr.querySelector('[data-campo="responsavelId"]');
+      if (selResponsavel) selResponsavel.value = pp.responsavelId || '';
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => this.atualizarProximoPasso(pp.id, inp.dataset.campo, inp.value));
       });
       const btnFechar = tr.querySelector('[data-acao="fechar"]');
       if (btnFechar) btnFechar.addEventListener('click', () => this.fecharProximoPasso(pp.id));
+      const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
+      if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProximoPasso(pp.id));
       e.corpoProximosPassos.appendChild(tr);
     });
   },

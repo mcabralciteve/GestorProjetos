@@ -172,6 +172,7 @@ const Sync = {
     if (proximosPassos.length) {
       const linhasPP = proximosPassos.map(pp => ({
         id: pp.id, projeto_id: projeto.id, tarefa_id: pp.tarefaId || null, ponto_situacao_id: pp.pontoSituacaoId || null,
+        responsavel_id: pp.responsavelId || null,
         descricao: pp.descricao, estado: pp.estado, notas: pp.notas, fechado: !!pp.fechado, fechado_em: pp.fechadoEm || null,
         criado_por: pp.criadoPor || null, criado_em: pp.criadoEm, atualizado_em: pp.atualizadoEm
       }));
@@ -261,8 +262,8 @@ const Sync = {
     pp.data.forEach(p => {
       if (!projetos[p.projeto_id]) return;
       projetos[p.projeto_id].proximosPassos.push({
-        id: p.id, tarefaId: p.tarefa_id, pontoSituacaoId: p.ponto_situacao_id, descricao: p.descricao,
-        estado: p.estado, notas: p.notas, fechado: !!p.fechado, fechadoEm: p.fechado_em,
+        id: p.id, tarefaId: p.tarefa_id, pontoSituacaoId: p.ponto_situacao_id, responsavelId: p.responsavel_id,
+        descricao: p.descricao, estado: p.estado, notas: p.notas, fechado: !!p.fechado, fechadoEm: p.fechado_em,
         criadoPor: p.criado_por, criadoEm: p.criado_em, atualizadoEm: p.atualizado_em
       });
     });

@@ -146,9 +146,12 @@ create table if not exists public.registos (
 create index if not exists registos_projeto_id_idx on public.registos(projeto_id);
 
 -- ---------- Acompanhamento: pontos de situação e next steps por projeto ----------
--- Só o Administrador cria (registados numa reunião com o Gestor); o Gestor só atualiza estado e
--- notas dos next steps já existentes. Visível só para Administrador + Gestor desse projeto — a
--- app trata a visibilidade, não há RLS reforçado (mesma decisão do resto do esquema).
+-- Pontos de situação: só o Administrador cria/edita/apaga (registados numa reunião com o Gestor).
+-- Next steps: Administrador e Gestor do projeto podem criar (sempre associados a uma sessão de
+-- ponto de situação, com um consultor do projeto como responsável); cada um só edita/apaga os que
+-- criou, exceto o Administrador que pode editar/apagar qualquer um. Visível só para Administrador
+-- + Gestor desse projeto — a app trata a visibilidade e a autoria, não há RLS reforçado (mesma
+-- decisão do resto do esquema).
 create table if not exists public.pontos_situacao (
   id uuid primary key default gen_random_uuid(),
   projeto_id uuid not null references public.projetos(id) on delete cascade,
@@ -174,6 +177,9 @@ create table if not exists public.proximos_passos (
   atualizado_em timestamptz not null default now()
 );
 create index if not exists proximos_passos_projeto_id_idx on public.proximos_passos(projeto_id);
+-- Responsável pelo next step: um consultor do projeto (recurso já atribuído a alguma tarefa), não
+-- necessariamente quem o criou (Administrador ou Gestor).
+alter table public.proximos_passos add column if not exists responsavel_id uuid references public.recursos(id) on delete set null;
 
 -- ============================================================================
 -- Migração pontual: versões anteriores tinham uma tabela "profiles" separada
