@@ -32,7 +32,8 @@ const Auth = {
       btnSair: document.getElementById('btnSair'),
       btnMinhaConta: document.getElementById('btnMinhaConta'),
       contaMenuWrap: document.getElementById('contaMenuWrap'),
-      contaMenuDropdown: document.getElementById('contaMenuDropdown')
+      contaMenuDropdown: document.getElementById('contaMenuDropdown'),
+      btnAtualizarDados: document.getElementById('btnAtualizarDados')
     };
   },
 
@@ -104,6 +105,7 @@ const Auth = {
     const autenticado = !!session;
     this.els.gate.classList.toggle('aberto', !autenticado);
     this.els.contaMenuWrap.style.display = autenticado ? '' : 'none';
+    if (this.els.btnAtualizarDados) this.els.btnAtualizarDados.style.display = autenticado ? '' : 'none';
     this.els.userInfo.textContent = autenticado ? '👤 ' + (session.user.user_metadata?.nome || session.user.email) : '';
     if (!autenticado) this.fecharMenuConta();
     if (autenticado) this.els.password.value = '';

@@ -294,12 +294,53 @@ const App = {
   // e uma delas assumir, erradamente, que a outra já lá tinha posto os dados.
   sincronizarEmSegundoPlano(anteriorJSON, atualJSON) {
     if (!this.sessaoAtiva) return;
+    // Conta gravações ainda a decorrer — "atualizarDaNuvem" usa isto para avisar antes de
+    // substituir o estado local por dados do servidor enquanto ainda há algo a caminho.
+    this._pendentesSincronizacao = (this._pendentesSincronizacao || 0) + 1;
     this._filaSincronizacao = (this._filaSincronizacao || Promise.resolve())
       .then(() => Sync.sincronizarComSupabase(anteriorJSON, atualJSON))
       .catch(err => {
         console.error(err);
         if (this.sessaoAtiva) this.toast('Erro ao guardar na nuvem: ' + err.message);
-      });
+      })
+      .finally(() => { this._pendentesSincronizacao = Math.max(0, (this._pendentesSincronizacao || 1) - 1); });
+  },
+  // Recarrega tudo a partir do Supabase — para quando o próprio (ex.: por SQL direto) ou outra
+  // pessoa mudou algo na base de dados e a app ainda mostra a versão antiga em memória.
+  // "opts.silencioso" (usado ao voltar à aba) nunca interrompe com um confirm() nem mostra toast de
+  // sucesso; só o clique manual no botão pergunta antes de descartar uma gravação ainda a decorrer.
+  async atualizarDaNuvem(opts) {
+    opts = opts || {};
+    if (!this.sessaoAtiva || this._atualizandoDaNuvem) return;
+    if (this._pendentesSincronizacao > 0) {
+      if (opts.silencioso) return;
+      if (!confirm('Ainda há alterações a ser guardadas na nuvem. Se atualizares agora podes ver dados desatualizados por instantes. Continuar?')) return;
+    }
+    this._atualizandoDaNuvem = true;
+    const btn = document.getElementById('btnAtualizarDados');
+    if (btn) btn.disabled = true;
+    try {
+      await Sync.carregarDeSupabase();
+      if (!this.estouEnvolvidoEm(this.state.projetoAtivoId)) {
+        const primeiro = this.meusProjetosEnvolvidos()[0];
+        this.state.projetoAtivoId = primeiro ? primeiro.id : null;
+      }
+      this._ultimoEstadoPersistido = JSON.stringify(this.state);
+      this.undoStack = [];
+      this.redoStack = [];
+      this.selecionadaId = null;
+      this.selecionadasIds = new Set();
+      this.renderProjetoSelect();
+      this.renderTudo();
+      this.atualizarBotaoMigracao();
+      if (!opts.silencioso) this.toast('Dados atualizados.');
+    } catch (err) {
+      console.error(err);
+      this.toast('Erro ao atualizar: ' + err.message);
+    } finally {
+      this._atualizandoDaNuvem = false;
+      if (btn) btn.disabled = false;
+    }
   },
   _mudancaRelevante(strAntes, strDepois) {
     if (strAntes === strDepois) return false;
@@ -3096,6 +3137,11 @@ const App = {
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
+    const btnAtualizar = document.getElementById('btnAtualizarDados');
+    if (btnAtualizar) btnAtualizar.addEventListener('click', () => this.atualizarDaNuvem());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.atualizarDaNuvem({ silencioso: true });
+    });
     document.getElementById('btnAddPontoSituacao').addEventListener('click', () => this.criarPontoSituacao());
     document.getElementById('btnAddProximoPasso').addEventListener('click', () => this.criarProximoPasso());
 
