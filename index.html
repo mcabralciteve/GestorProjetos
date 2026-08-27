@@ -67,6 +67,7 @@
     <button class="tab-btn" data-tab="projetos">Projetos</button>
     <button class="tab-btn" data-tab="portefolio">Portefólio</button>
     <button class="tab-btn" data-tab="acompanhamento" id="tabBtnAcompanhamento">Acompanhamento</button>
+    <button class="tab-btn" data-tab="todosPassos" id="tabBtnTodosPassos">Todos os Next Steps</button>
   </div>
   <div class="tabs-grupo" data-grupo="equipa">
     <button class="tab-btn" data-tab="recursos">Pessoas</button>
@@ -320,6 +321,8 @@
               <th data-col="sessao" data-sort="sessao" style="width:130px">Sessão<span class="col-resizer"></span></th>
               <th data-col="tarefa" data-sort="tarefa">Tarefa<span class="col-resizer"></span></th>
               <th data-col="responsavel" data-sort="responsavel" style="width:140px">Responsável<span class="col-resizer"></span></th>
+              <th data-col="dataPrevista" data-sort="dataPrevista" style="width:120px">Data Prevista<span class="col-resizer"></span></th>
+              <th data-col="dataReal" data-sort="dataReal" style="width:120px">Data Real<span class="col-resizer"></span></th>
               <th data-col="estado" data-sort="estado" style="width:110px">Estado<span class="col-resizer"></span></th>
               <th data-col="notas" data-sort="notas">Notas<span class="col-resizer"></span></th>
               <th data-col="criadoPor" style="width:120px">Criado por<span class="col-resizer"></span></th>
@@ -559,6 +562,52 @@
           </tr>
         </thead>
         <tbody id="corpoTabelaFaturas"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: TODOS OS NEXT STEPS (ADMIN) ===================== -->
+<section class="tab-panel" id="tab-todosPassos">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Todos os Next Steps</h2>
+    </div>
+    <p class="pagina-sub">Visão geral, só para o Administrador, de todos os next steps de todos os projetos — usa os filtros para encontrar rapidamente o que precisas. Clica em "Abrir" para ir para o Acompanhamento desse projeto e editar.</p>
+
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Projeto <select id="fPassoProjeto"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Sessão <select id="fPassoSessao"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Responsável <select id="fPassoResponsavel"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Estado <select id="fPassoEstado">
+        <option value="">Todos</option>
+        <option value="aberto">Aberto</option>
+        <option value="em_curso">Em curso</option>
+        <option value="concluido">Concluído</option>
+        <option value="abandonado">Abandonado</option>
+      </select></label>
+      <label class="zoom-label">Criado de <input type="date" id="fPassoCriadoDe"></label>
+      <label class="zoom-label">Criado até <input type="date" id="fPassoCriadoAte"></label>
+      <button id="btnLimparFiltrosPassos" class="btn btn-sm">Limpar filtros</button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaTodosPassos">
+        <thead>
+          <tr>
+            <th data-col="projeto" data-sort="projeto">Projeto<span class="col-resizer"></span></th>
+            <th data-col="sessao" data-sort="sessao" style="width:110px">Sessão<span class="col-resizer"></span></th>
+            <th data-col="descricao" data-sort="descricao">Descrição<span class="col-resizer"></span></th>
+            <th data-col="responsavel" data-sort="responsavel" style="width:140px">Responsável<span class="col-resizer"></span></th>
+            <th data-col="dataPrevista" data-sort="dataPrevista" style="width:110px">Data Prevista<span class="col-resizer"></span></th>
+            <th data-col="dataReal" data-sort="dataReal" style="width:110px">Data Real<span class="col-resizer"></span></th>
+            <th data-col="estado" data-sort="estado" style="width:110px">Estado<span class="col-resizer"></span></th>
+            <th data-col="criadoPor" data-sort="criadoPor" style="width:120px">Criado por<span class="col-resizer"></span></th>
+            <th data-col="criadoEm" data-sort="criadoEm" style="width:110px">Criado em<span class="col-resizer"></span></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTodosPassos"></tbody>
       </table>
     </div>
   </div>

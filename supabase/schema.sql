@@ -180,6 +180,13 @@ create index if not exists proximos_passos_projeto_id_idx on public.proximos_pas
 -- Responsável pelo next step: um consultor do projeto (recurso já atribuído a alguma tarefa), não
 -- necessariamente quem o criou (Administrador ou Gestor).
 alter table public.proximos_passos add column if not exists responsavel_id uuid references public.recursos(id) on delete set null;
+-- Data prevista de execução e data em que foi de facto executado, além do "estado" (fase) e do
+-- "fechado" (revisto e arrumado pelo Administrador numa reunião seguinte) — são conceitos
+-- independentes: um next step pode estar "concluído" sem ainda ter sido formalmente fechado.
+alter table public.proximos_passos add column if not exists data_prevista date;
+alter table public.proximos_passos add column if not exists data_real date;
+alter table public.proximos_passos drop constraint if exists proximos_passos_estado_check;
+alter table public.proximos_passos add constraint proximos_passos_estado_check check (estado in ('aberto', 'em_curso', 'concluido', 'abandonado'));
 
 -- ============================================================================
 -- Migração pontual: versões anteriores tinham uma tabela "profiles" separada

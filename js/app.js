@@ -56,6 +56,7 @@ const App = {
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
+  filtrosTodosPassos: { projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
   ordenacaoFaturas: { campo: 'dataPrevista', dir: 'asc' },
   ordenacaoRegistos: { campo: 'data', dir: 'desc' },
 
@@ -108,6 +109,14 @@ const App = {
       acompanhamentoConteudo: document.getElementById('acompanhamentoConteudo'),
       corpoPontosSituacao: document.getElementById('corpoPontosSituacao'),
       corpoProximosPassos: document.getElementById('corpoProximosPassos'),
+      tabBtnTodosPassos: document.getElementById('tabBtnTodosPassos'),
+      fPassoProjeto: document.getElementById('fPassoProjeto'),
+      fPassoSessao: document.getElementById('fPassoSessao'),
+      fPassoResponsavel: document.getElementById('fPassoResponsavel'),
+      fPassoEstado: document.getElementById('fPassoEstado'),
+      fPassoCriadoDe: document.getElementById('fPassoCriadoDe'),
+      fPassoCriadoAte: document.getElementById('fPassoCriadoAte'),
+      corpoTodosPassos: document.getElementById('corpoTodosPassos'),
       projHorasReais: document.getElementById('projHorasReais'),
       projHorasEAC: document.getElementById('projHorasEAC'),
       projHorasSaldo: document.getElementById('projHorasSaldo'),
@@ -500,12 +509,12 @@ const App = {
     return this.state.recursos.filter(r => ids.has(r.id));
   },
   // Um next step só pode ser criado por quem pode editar o projeto (admin ou o gestor desse
-  // projeto). Editar um já existente: nunca depois de fechado (fica um registo histórico, e fechar
-  // continua a ser só do Administrador) — antes disso, o Administrador pode sempre, o Gestor só o
-  // que ele próprio criou.
+  // projeto). Editar um já existente: o Administrador pode sempre, mesmo depois de fechado (é quem
+  // decide o que fica arrumado); o Gestor só o que ele próprio criou, e só enquanto não estiver
+  // fechado (fica um registo histórico assim que o Administrador o fecha).
   podeEditarProximoPasso(p, pp) {
-    if (pp.fechado) return false;
     if (this.souAdmin()) return true;
+    if (pp.fechado) return false;
     return this.souGestorDe(p.id) && pp.criadoPor === this.perfilAtual()?.recursoId;
   },
   // Eliminar: o Administrador pode sempre (mesmo já fechado); o Gestor só o que criou e só
@@ -549,7 +558,7 @@ const App = {
     const agora = new Date().toISOString();
     return {
       id: crypto.randomUUID(), tarefaId: tarefaId || null, pontoSituacaoId: pontoSituacaoId || null,
-      responsavelId: responsavelId || null,
+      responsavelId: responsavelId || null, dataPrevista: null, dataReal: null,
       descricao: descricao || '', estado: 'aberto', notas: '', fechado: false, fechadoEm: null,
       criadoPor: criadoPor || null, criadoEm: agora, atualizadoEm: agora
     };
@@ -1560,6 +1569,7 @@ const App = {
     this.renderTabelaRegistos();
     this.renderFaturacao();
     this.renderAcompanhamento();
+    this.renderTodosPassos();
   },
 
   // Esconde/mostra grupos de navegação, separadores e botões consoante o papel do utilizador
@@ -1572,11 +1582,12 @@ const App = {
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = admin ? '' : 'none';
     if (e.tabBtnFaturacao) e.tabBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
+    if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
     ['btnNovoProjeto', 'btnNovoProjeto2', 'btnDuplicarProjeto', 'btnEliminarProjeto'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'capacidade', 'feriados'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos'].includes(this.abaAtiva)) this.irParaAba('gantt');
     if (!gestorDeAlgo && ['faturacao', 'acompanhamento'].includes(this.abaAtiva)) this.irParaAba('gantt');
   },
 
@@ -2332,7 +2343,7 @@ const App = {
     if (!p) return;
     const pp = p.proximosPassos.find(x => x.id === id);
     if (!pp || !this.podeEditarProximoPasso(p, pp)) return;
-    pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId'].includes(campo) ? (valor || null) : valor;
+    pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId', 'dataPrevista', 'dataReal'].includes(campo) ? (valor || null) : valor;
     pp.atualizadoEm = new Date().toISOString();
     this.persist();
     this.renderAcompanhamento();
@@ -2347,11 +2358,18 @@ const App = {
     this.persist();
     this.renderAcompanhamento();
   },
+  // Se o estado ainda não é "Concluído" nem "Abandonado", pergunta primeiro se quer corrigir o
+  // estado antes de fechar — quem responder "sim" só cancela este fecho (o estado corrige-se no
+  // próprio select da linha; o fecho fica para o próximo clique em "Fechar").
   fecharProximoPasso(id) {
     if (!this.souAdmin()) return;
     const p = this.projetoAtivo();
     const pp = p && p.proximosPassos.find(x => x.id === id);
     if (!pp) return;
+    if (!['concluido', 'abandonado'].includes(pp.estado)) {
+      const corrigirEstado = confirm('O estado ainda não está "Concluído" nem "Abandonado". Queres alterar o estado antes de fechar este next step?');
+      if (corrigirEstado) return;
+    }
     pp.fechado = true;
     pp.fechadoEm = pp.atualizadoEm = new Date().toISOString();
     this.persist();
@@ -2408,12 +2426,14 @@ const App = {
         case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
         case 'tarefa': return ((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
         case 'responsavel': return ((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
+        case 'dataPrevista': return pp.dataPrevista || '';
+        case 'dataReal': return pp.dataReal || '';
         case 'estado': return pp.estado || '';
         case 'notas': return (pp.notas || '').toLowerCase();
         default: return pp.fechado ? 1 : 0;
       }
     });
-    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
+    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
       const podeEditar = this.podeEditarProximoPasso(p, pp);
@@ -2426,10 +2446,13 @@ const App = {
         <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessao}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
         <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}</td>
         <td>${podeEditar ? `<select data-campo="responsavelId">${opcoesResponsavel}</select>` : escapeHtml((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '—')}</td>
+        <td>${podeEditar ? `<input type="date" value="${pp.dataPrevista || ''}" data-campo="dataPrevista">` : escapeHtml(pp.dataPrevista ? DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : '—')}</td>
+        <td>${podeEditar ? `<input type="date" value="${pp.dataReal || ''}" data-campo="dataReal">` : escapeHtml(pp.dataReal ? DateUtil.formatShort(DateUtil.parseISO(pp.dataReal)) : '—')}</td>
         <td><select data-campo="estado" ${dis}>
           <option value="aberto" ${pp.estado === 'aberto' ? 'selected' : ''}>Aberto</option>
           <option value="em_curso" ${pp.estado === 'em_curso' ? 'selected' : ''}>Em curso</option>
           <option value="concluido" ${pp.estado === 'concluido' ? 'selected' : ''}>Concluído</option>
+          <option value="abandonado" ${pp.estado === 'abandonado' ? 'selected' : ''}>Abandonado</option>
         </select></td>
         <td>${podeEditar ? `<textarea data-campo="notas" rows="1" style="width:100%;resize:vertical;">${escapeHtml(pp.notas)}</textarea>` : escapeHtml(pp.notas)}</td>
         <td class="hint" title="Criado por">${escapeHtml(nomeCriador)}</td>
@@ -2452,6 +2475,98 @@ const App = {
       const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
       if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProximoPasso(pp.id));
       e.corpoProximosPassos.appendChild(tr);
+    });
+  },
+  abrirProjetoNoAcompanhamento(id) {
+    this.selecionarProjeto(id);
+    this.renderProjetoSelect();
+    this.irParaAba('acompanhamento');
+  },
+
+  // ---------- Tab: Todos os Next Steps (visão global, só Administrador) ----------
+  // Só de leitura + navegação — para editar um next step, "Abrir" leva ao Acompanhamento do
+  // respetivo projeto, onde as mesmas regras de autoria/permissão de sempre se aplicam.
+  aplicarFiltrosTodosPassos() {
+    const e = this.els;
+    this.filtrosTodosPassos = {
+      projeto: e.fPassoProjeto.value, pontoSituacao: e.fPassoSessao.value, responsavel: e.fPassoResponsavel.value,
+      estado: e.fPassoEstado.value, criadoDe: e.fPassoCriadoDe.value, criadoAte: e.fPassoCriadoAte.value
+    };
+    this.renderTodosPassos();
+  },
+  renderTodosPassos() {
+    const e = this.els;
+    if (!e.corpoTodosPassos || !this.souAdmin()) return;
+    const todosProjetos = Object.values(this.state.projetos);
+    const f = this.filtrosTodosPassos;
+
+    const projAtual = e.fPassoProjeto.value;
+    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + todosProjetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.fPassoProjeto.value = projAtual;
+
+    // A lista de sessões filtra-se pelo projeto escolhido (se houver); se o projeto mudar e a
+    // sessão selecionada deixar de fazer sentido, o filtro de sessão reinicia sozinho.
+    const projetosParaSessoes = f.projeto ? todosProjetos.filter(p => p.id === f.projeto) : todosProjetos;
+    const opcoesSessao = [];
+    projetosParaSessoes.forEach(p => {
+      [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data)).forEach(ps => {
+        opcoesSessao.push(`<option value="${ps.id}">${escapeHtml(p.idInterno || p.nome)} — ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</option>`);
+      });
+    });
+    e.fPassoSessao.innerHTML = '<option value="">Todas</option>' + opcoesSessao.join('');
+    e.fPassoSessao.value = f.pontoSituacao;
+    if (e.fPassoSessao.value !== f.pontoSituacao) { f.pontoSituacao = ''; e.fPassoSessao.value = ''; }
+
+    const respAtual = e.fPassoResponsavel.value;
+    const responsaveisOrdenados = [...this.state.recursos].sort((a, b) => a.nome.localeCompare(b.nome));
+    e.fPassoResponsavel.innerHTML = '<option value="">Todos</option>' + responsaveisOrdenados.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    e.fPassoResponsavel.value = respAtual;
+
+    const linhas = [];
+    todosProjetos.forEach(p => p.proximosPassos.forEach(pp => linhas.push({ p, pp })));
+    const filtradas = linhas.filter(({ p, pp }) => {
+      if (f.projeto && p.id !== f.projeto) return false;
+      if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
+      if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
+      if (f.estado && pp.estado !== f.estado) return false;
+      if (f.criadoDe && pp.criadoEm.slice(0, 10) < f.criadoDe) return false;
+      if (f.criadoAte && pp.criadoEm.slice(0, 10) > f.criadoAte) return false;
+      return true;
+    });
+    const rotulosEstado = { aberto: 'Aberto', em_curso: 'Em curso', concluido: 'Concluído', abandonado: 'Abandonado' };
+    const ordenadas = this.aplicarOrdenacaoTabela('tabelaTodosPassos', filtradas, ({ p, pp }, campo) => {
+      switch (campo) {
+        case 'projeto': return (p.idInterno || p.nome).toLowerCase();
+        case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
+        case 'descricao': return (pp.descricao || '').toLowerCase();
+        case 'responsavel': return ((this.state.recursos.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
+        case 'dataPrevista': return pp.dataPrevista || '';
+        case 'dataReal': return pp.dataReal || '';
+        case 'estado': return pp.estado || '';
+        case 'criadoPor': return ((this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '').toLowerCase();
+        default: return pp.criadoEm || '';
+      }
+    });
+
+    e.corpoTodosPassos.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
+    ordenadas.forEach(({ p, pp }) => {
+      const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
+      const responsavel = this.state.recursos.find(r => r.id === pp.responsavelId);
+      const criador = this.state.recursos.find(r => r.id === pp.criadoPor);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
+        <td>${sessao ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(sessao.data))) : '—'}</td>
+        <td>${escapeHtml(pp.descricao)}</td>
+        <td>${escapeHtml(responsavel ? responsavel.nome : '—')}</td>
+        <td>${pp.dataPrevista ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista))) : '—'}</td>
+        <td>${pp.dataReal ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataReal))) : '—'}</td>
+        <td>${escapeHtml(rotulosEstado[pp.estado] || pp.estado)}${pp.fechado ? ' <span class="hint">(fechado)</span>' : ''}</td>
+        <td>${escapeHtml(criador ? criador.nome : '—')}</td>
+        <td>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.criadoEm.slice(0, 10))))}</td>
+        <td class="col-acoes"><button class="btn btn-sm" data-acao="abrir">Abrir</button></td>`;
+      tr.querySelector('[data-acao="abrir"]').addEventListener('click', () => this.abrirProjetoNoAcompanhamento(p.id));
+      e.corpoTodosPassos.appendChild(tr);
     });
   },
 
@@ -2591,7 +2706,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'registos', faturacao: 'registos' },
+  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'registos', faturacao: 'registos' },
   primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', registos: 'registo' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -2947,6 +3062,12 @@ const App = {
       e.fFatProjeto.value = ''; e.fFatDe.value = ''; e.fFatAte.value = ''; e.fFatNumRegisto.value = '';
       this.aplicarFiltrosFaturacao();
     });
+    [e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
+    document.getElementById('btnLimparFiltrosPassos').addEventListener('click', () => {
+      e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
+      e.fPassoEstado.value = ''; e.fPassoCriadoDe.value = ''; e.fPassoCriadoAte.value = '';
+      this.aplicarFiltrosTodosPassos();
+    });
     document.querySelector('#tabelaFaturas thead').addEventListener('click', (ev) => {
       const th = ev.target.closest('th[data-sort]');
       if (!th) return;
@@ -3048,6 +3169,8 @@ const App = {
     this.ligarOrdenacaoTabela('tabelaPontosSituacao', { campo: 'data', dir: 'desc' }, () => this.renderAcompanhamento());
     this.tornarColunasRedimensionaveis('tabelaProximosPassos', 'colunasProximosPassos');
     this.ligarOrdenacaoTabela('tabelaProximosPassos', { campo: 'fechado', dir: 'asc' }, () => this.renderAcompanhamento());
+    this.tornarColunasRedimensionaveis('tabelaTodosPassos', 'colunasTodosPassos');
+    this.ligarOrdenacaoTabela('tabelaTodosPassos', { campo: 'criadoEm', dir: 'desc' }, () => this.renderTodosPassos());
     this.tornarColunasRedimensionaveis('tabelaRecursosCentral', 'colunasRecursos');
     this.ligarOrdenacaoTabela('tabelaRecursosCentral', { campo: 'nome', dir: 'asc' }, () => this.renderTabelaRecursosCentral());
     this.tornarColunasRedimensionaveis('tabelaEquipas', 'colunasEquipas');
