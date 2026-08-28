@@ -319,9 +319,14 @@ const App = {
     this._atualizandoDaNuvem = true;
     const btn = document.getElementById('btnAtualizarDados');
     if (btn) btn.disabled = true;
+    // Sync.carregarDeSupabase() escolhe sempre o primeiro projeto por omissão — guarda o que
+    // estava ativo antes de recarregar, para voltar a esse mesmo projeto, não para o primeiro.
+    const projetoAnteriorId = this.state.projetoAtivoId;
     try {
       await Sync.carregarDeSupabase();
-      if (!this.estouEnvolvidoEm(this.state.projetoAtivoId)) {
+      if (projetoAnteriorId && this.state.projetos[projetoAnteriorId] && this.estouEnvolvidoEm(projetoAnteriorId)) {
+        this.state.projetoAtivoId = projetoAnteriorId;
+      } else if (!this.estouEnvolvidoEm(this.state.projetoAtivoId)) {
         const primeiro = this.meusProjetosEnvolvidos()[0];
         this.state.projetoAtivoId = primeiro ? primeiro.id : null;
       }
