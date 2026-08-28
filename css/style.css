@@ -573,22 +573,16 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .linha-tarefa-port td:hover{background:#f4f8fb;}
 
 /* ---------- Exportar Gantt para PDF (via diálogo de impressão do browser) ---------- */
-/* Ativado só quando App.exportarPdf() acrescenta a classe "a-imprimir-gantt" ao body — esconde
-   tudo menos o Gantt, e força overflow:visible em toda a cadeia de painéis para o SVG completo
-   (não só a parte visível no ecrã) sair na impressão/PDF. */
-body.a-imprimir-gantt *{visibility:hidden;}
-body.a-imprimir-gantt #ganttContainer,
-body.a-imprimir-gantt #ganttContainer *{visibility:visible;}
-body.a-imprimir-gantt #ganttContainer{position:absolute;top:0;left:0;}
-body.a-imprimir-gantt html,
-body.a-imprimir-gantt body,
-body.a-imprimir-gantt .layout,
-body.a-imprimir-gantt .conteudo,
-body.a-imprimir-gantt .split,
-body.a-imprimir-gantt .painel-gantt{overflow:visible !important;height:auto !important;}
+/* Regra sempre presente (só ativa em impressão/pré-visualização, nunca no ecrã) — esconde
+   explicitamente o resto da interface e deixa só o Gantt. Tentar esconder "tudo menos um
+   elemento" com visibility:hidden em cascata não é fiável aqui porque o Gantt é SVG, e a
+   visibility nem sempre se propaga bem entre elementos HTML e SVG misturados. */
 @media print{
-  body.a-imprimir-gantt *{visibility:hidden;}
-  body.a-imprimir-gantt #ganttContainer,
-  body.a-imprimir-gantt #ganttContainer *{visibility:visible;}
-  body.a-imprimir-gantt #ganttContainer{position:absolute;top:0;left:0;}
+  .topbar, .grupos-nav, .tabs, .gantt-topbar, .toolbar,
+  .sidebar, #resizerSidebar, .painel-tabela, #resizerTabela,
+  .toast, .modal-backdrop, #authGate{display:none !important;}
+  html, body, .layout, .conteudo, .split, .painel-gantt{
+    overflow:visible !important;height:auto !important;display:block !important;
+  }
+  #ganttContainer{position:static !important;}
 }

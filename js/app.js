@@ -2872,17 +2872,12 @@ const App = {
     }
     canvas.toBlob(blob => this.descarregarBlob(blob, this.nomeFicheiroExport(p, 'png')), 'image/png');
   },
-  // PDF via diálogo de impressão do browser — sem bibliotecas novas. A classe CSS
-  // "a-imprimir-gantt" esconde tudo menos o Gantt (ver style.css) só durante a impressão.
+  // PDF via diálogo de impressão do browser — sem bibliotecas novas. A regra @media print em
+  // style.css já esconde tudo menos o Gantt sozinha (só se ativa em impressão, nunca no ecrã).
   exportarPdf() {
     const p = this.projetoAtivo();
     if (!p) { this.toast('Escolhe um projeto primeiro.'); return; }
-    document.body.classList.add('a-imprimir-gantt');
-    const limpar = () => document.body.classList.remove('a-imprimir-gantt');
-    window.addEventListener('afterprint', limpar, { once: true });
     window.print();
-    // alguns browsers não disparam "afterprint" ao cancelar a caixa de diálogo — rede de segurança.
-    setTimeout(limpar, 4000);
   },
 
   // ---------- Abas ----------
