@@ -571,3 +571,24 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .linha-projeto-port td{background:var(--cinza-100);font-weight:600;color:var(--cinza-900);}
 .linha-tarefa-port td{cursor:pointer;}
 .linha-tarefa-port td:hover{background:#f4f8fb;}
+
+/* ---------- Exportar Gantt para PDF (via diálogo de impressão do browser) ---------- */
+/* Ativado só quando App.exportarPdf() acrescenta a classe "a-imprimir-gantt" ao body — esconde
+   tudo menos o Gantt, e força overflow:visible em toda a cadeia de painéis para o SVG completo
+   (não só a parte visível no ecrã) sair na impressão/PDF. */
+body.a-imprimir-gantt *{visibility:hidden;}
+body.a-imprimir-gantt #ganttContainer,
+body.a-imprimir-gantt #ganttContainer *{visibility:visible;}
+body.a-imprimir-gantt #ganttContainer{position:absolute;top:0;left:0;}
+body.a-imprimir-gantt html,
+body.a-imprimir-gantt body,
+body.a-imprimir-gantt .layout,
+body.a-imprimir-gantt .conteudo,
+body.a-imprimir-gantt .split,
+body.a-imprimir-gantt .painel-gantt{overflow:visible !important;height:auto !important;}
+@media print{
+  body.a-imprimir-gantt *{visibility:hidden;}
+  body.a-imprimir-gantt #ganttContainer,
+  body.a-imprimir-gantt #ganttContainer *{visibility:visible;}
+  body.a-imprimir-gantt #ganttContainer{position:absolute;top:0;left:0;}
+}

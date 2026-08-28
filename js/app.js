@@ -626,7 +626,10 @@ const App = {
       progresso: progresso || 0,
       recursoIds: recursoIds || [],
       alocacoesHoras: {},
-      predecessores: []
+      predecessores: [],
+      negrito: false,
+      italico: false,
+      cor: null
     };
   },
   // Dá um UUID novo a cada tarefa de uma lista, reescrevendo parentId/predecessores para
@@ -899,6 +902,37 @@ const App = {
     this.recalcularAgendamento(p);
     this.persist();
     this.renderTudo();
+  },
+  // Formatação do rótulo (negrito/itálico/cor) — só o nome inteiro, aplicada na tabela e no Gantt.
+  atualizarFormatoTarefa(id, campo, valor) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, id);
+    if (!t || !this.possoEditarProjeto(p.id)) return;
+    if (campo === 'cor') t.cor = valor || null; else t[campo] = !!valor;
+    this.persist();
+    this.renderTudo();
+  },
+  abrirModalFormatoTarefa(id) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, id);
+    if (!t) return;
+    const html = `
+      <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="fmtNegrito" ${t.negrito ? 'checked' : ''}> Negrito</label>
+      <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="fmtItalico" ${t.italico ? 'checked' : ''}> Itálico</label>
+      <label>Cor do texto
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="color" id="fmtCor" value="${t.cor || '#12222f'}" style="width:44px;padding:2px;">
+          <button class="btn btn-sm" id="fmtLimparCor">Sem cor</button>
+        </div>
+      </label>`;
+    this.abrirModal(`Formatar — ${t.nome}`, html);
+    document.getElementById('fmtNegrito').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'negrito', e.target.checked));
+    document.getElementById('fmtItalico').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'italico', e.target.checked));
+    document.getElementById('fmtCor').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'cor', e.target.value));
+    document.getElementById('fmtLimparCor').addEventListener('click', () => {
+      this.atualizarFormatoTarefa(id, 'cor', null);
+      document.getElementById('fmtCor').value = '#12222f';
+    });
   },
   moverTarefa(id, novoInicioISO, novoFimISO) {
     const p = this.projetoAtivo();
@@ -2658,7 +2692,9 @@ const App = {
         nome: `<td class="col-nome">
           <div class="nome-cell" style="padding-left:${nivel * 16}px">
             <span class="toggle-filhos">${filhos ? (this.colapsadas.has(t.id) ? '▶' : '▼') : ''}</span>
-            <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}>
+            <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}
+              style="${t.negrito ? 'font-weight:700;' : ''}${t.italico ? 'font-style:italic;' : ''}${t.cor ? 'color:' + escapeAttr(t.cor) + ';' : ''}">
+            ${podeEditar ? `<button class="btn-icon" data-acao="formatar" title="Formatar (negrito, itálico, cor)" style="flex-shrink:0;">🎨</button>` : ''}
           </div>
         </td>`,
         inicio: `<td><input type="date" value="${t.inicio}" data-campo="inicio" ${(filhos || !podeEditar) ? 'disabled' : ''}></td>`,
@@ -2689,6 +2725,8 @@ const App = {
         tr.querySelector('[data-acao="recursos"]').addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalRecursos(t.id); });
         const predCell = tr.querySelector('[data-acao="pred"]');
         if (predCell && !filhos) predCell.addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalPredecessoras(t.id); });
+        const btnFormatar = tr.querySelector('[data-acao="formatar"]');
+        if (btnFormatar) btnFormatar.addEventListener('click', (e) => { e.stopPropagation(); this.abrirModalFormatoTarefa(t.id); });
       }
 
       tbody.appendChild(tr);
@@ -2744,6 +2782,107 @@ const App = {
       selecionadasIds: this.selecionadasIds,
       colapsadas: this.colapsadas
     });
+  },
+
+  // ---------- Exportar Gantt (CSV / Imagem / PDF) ----------
+  nomeFicheiroExport(p, ext) {
+    return `Gantt_${(p.idInterno || p.nome)}_${DateUtil.todayISO()}.${ext}`.replace(/[\\/:*?"<>|]/g, '_');
+  },
+  descarregarBlob(blob, nomeFicheiro) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nomeFicheiro;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  csvEscape(v) {
+    const s = String(v === undefined || v === null ? '' : v);
+    // Delimitador ";" (não ",") porque em pt-PT a vírgula é o separador decimal — o Excel local
+    // só reconhece as colunas certas se usarmos ";".
+    return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  },
+  exportarCsv() {
+    const p = this.projetoAtivo();
+    if (!p) { this.toast('Escolhe um projeto primeiro.'); return; }
+    const lista = this.flatten(p);
+    const linhas = [['Tarefa', 'Início', 'Fim', 'Dias', '% Concl.', 'Horas Reais', 'Consultores', 'Predecessoras']];
+    lista.forEach(({ tarefa: t, nivel }) => {
+      const duracao = DateUtil.diffDays(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim)) + 1;
+      const horasReais = this.horasReaisTarefa(p, t);
+      const nomesRec = t.recursoIds.map(rid => (this.state.recursos.find(r => r.id === rid) || {}).nome).filter(Boolean).join('; ');
+      const nomesPred = t.predecessores.map(pr => { const pt = this.tarefaPorId(p, pr.id); return pt ? `${pt.nome} (${pr.tipo})` : ''; }).filter(Boolean).join('; ');
+      linhas.push(['  '.repeat(nivel) + t.nome, t.inicio, t.fim, duracao, t.progresso, horasReais || '', nomesRec, nomesPred]);
+    });
+    const csv = linhas.map(l => l.map(v => this.csvEscape(v)).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    this.descarregarBlob(blob, this.nomeFicheiroExport(p, 'csv'));
+  },
+  // Copia, do SVG ainda ligado ao documento (onde var(--...) e as classes CSS já estão
+  // resolvidas), as propriedades visuais para o clone que vai ser serializado sozinho — um SVG
+  // isolado (fora do documento) não tem acesso à folha de estilos nem às variáveis CSS.
+  inlinarEstilosSvg(orig, clone) {
+    const props = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'font-size', 'font-weight', 'font-style', 'font-family', 'opacity', 'text-anchor'];
+    const computado = getComputedStyle(orig);
+    props.forEach(prop => {
+      const v = computado.getPropertyValue(prop);
+      if (v) clone.style.setProperty(prop, v);
+    });
+    for (let i = 0; i < orig.children.length; i++) this.inlinarEstilosSvg(orig.children[i], clone.children[i]);
+  },
+  svgParaImagem(svgEl, w, h) {
+    return new Promise((resolve, reject) => {
+      const clone = svgEl.cloneNode(true);
+      this.inlinarEstilosSvg(svgEl, clone);
+      clone.setAttribute('width', w);
+      clone.setAttribute('height', h);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      const svgStr = new XMLSerializer().serializeToString(clone);
+      const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('falha ao converter o Gantt em imagem')); };
+      img.src = url;
+    });
+  },
+  async exportarImagem() {
+    const p = this.projetoAtivo();
+    if (!p) { this.toast('Escolhe um projeto primeiro.'); return; }
+    const svgs = this.els.ganttContainer.querySelectorAll('svg');
+    if (svgs.length < 2) { this.toast('Nada para exportar.'); return; }
+    const [headerSvg, bodySvg] = svgs;
+    const w = Math.max(parseFloat(headerSvg.getAttribute('width')) || 0, parseFloat(bodySvg.getAttribute('width')) || 0);
+    const hHeader = parseFloat(headerSvg.getAttribute('height')) || 0;
+    const hBody = parseFloat(bodySvg.getAttribute('height')) || 0;
+    const escala = 2; // exporta a 2x para ficar nítido também em ecrãs de alta densidade
+    const canvas = document.createElement('canvas');
+    canvas.width = w * escala;
+    canvas.height = (hHeader + hBody) * escala;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(escala, escala);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, hHeader + hBody);
+    try {
+      const imgHeader = await this.svgParaImagem(headerSvg, w, hHeader);
+      ctx.drawImage(imgHeader, 0, 0, w, hHeader);
+      const imgBody = await this.svgParaImagem(bodySvg, w, hBody);
+      ctx.drawImage(imgBody, 0, hHeader, w, hBody);
+    } catch (err) {
+      this.toast('Erro ao gerar a imagem: ' + err.message);
+      return;
+    }
+    canvas.toBlob(blob => this.descarregarBlob(blob, this.nomeFicheiroExport(p, 'png')), 'image/png');
+  },
+  // PDF via diálogo de impressão do browser — sem bibliotecas novas. A classe CSS
+  // "a-imprimir-gantt" esconde tudo menos o Gantt (ver style.css) só durante a impressão.
+  exportarPdf() {
+    const p = this.projetoAtivo();
+    if (!p) { this.toast('Escolhe um projeto primeiro.'); return; }
+    document.body.classList.add('a-imprimir-gantt');
+    const limpar = () => document.body.classList.remove('a-imprimir-gantt');
+    window.addEventListener('afterprint', limpar, { once: true });
+    window.print();
+    // alguns browsers não disparam "afterprint" ao cancelar a caixa de diálogo — rede de segurança.
+    setTimeout(limpar, 4000);
   },
 
   // ---------- Abas ----------
@@ -3137,6 +3276,9 @@ const App = {
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
+    document.getElementById('btnExportCsv').addEventListener('click', () => this.exportarCsv());
+    document.getElementById('btnExportImagem').addEventListener('click', () => this.exportarImagem());
+    document.getElementById('btnExportPdf').addEventListener('click', () => this.exportarPdf());
     const btnAtualizar = document.getElementById('btnAtualizarDados');
     if (btnAtualizar) btnAtualizar.addEventListener('click', () => this.atualizarDaNuvem());
     document.addEventListener('visibilitychange', () => {

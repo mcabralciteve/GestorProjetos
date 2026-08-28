@@ -111,7 +111,8 @@ const Sync = {
       // sua mãe — evita ter de ordenar topologicamente a árvore antes de gravar.
       const linhasBase = tarefas.map((t, idx) => ({
         id: t.id, projeto_id: projeto.id, parent_id: null, nome: t.nome, ordem: idx,
-        inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || []
+        inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || [],
+        negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
       }));
       r = await supabaseClient.from('tarefas').upsert(linhasBase);
       if (r.error) throw r.error;
@@ -234,7 +235,8 @@ const Sync = {
     tar.data.forEach(t => {
       const tarefa = {
         id: t.id, parentId: t.parent_id, nome: t.nome, inicio: t.inicio, fim: t.fim,
-        progresso: t.progresso, recursoIds: [], alocacoesHoras: {}, predecessores: t.predecessores || []
+        progresso: t.progresso, recursoIds: [], alocacoesHoras: {}, predecessores: t.predecessores || [],
+        negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
       };
       tarefaPorId[t.id] = tarefa;
       if (projetos[t.projeto_id]) projetos[t.projeto_id].tarefas.push(tarefa);

@@ -102,6 +102,11 @@ create index if not exists tarefas_projeto_id_idx on public.tarefas(projeto_id);
 create index if not exists tarefas_parent_id_idx on public.tarefas(parent_id);
 
 alter table public.tarefas add column if not exists ordem int not null default 0;
+-- Formatação do rótulo no Gantt/tabela — só o nome inteiro (negrito/itálico/cor), não texto rico
+-- dentro do nome.
+alter table public.tarefas add column if not exists negrito boolean not null default false;
+alter table public.tarefas add column if not exists italico boolean not null default false;
+alter table public.tarefas add column if not exists cor text;
 
 -- ---------- Alocação de recursos a tarefas (substitui "recursoIds" + "alocacoesHoras") ----------
 create table if not exists public.tarefa_recursos (

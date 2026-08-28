@@ -244,21 +244,39 @@ const Gantt = {
     const barY = y + (this.ROW_H - altura) / 2;
     const hojeISO = DateUtil.todayISO();
     const atrasada = t.fim < hojeISO && t.progresso < 100;
+    // Duração zero (início = fim) é automaticamente um marco — sem campo próprio na base de
+    // dados, é só o intervalo de datas a dizer isso. Só se aplica a tarefas-folha (uma
+    // tarefa-resumo com início = fim seria um caso extremo sem sentido prático).
+    const ehMarco = !temFilhos && t.inicio === t.fim;
+    const classeCor = atrasada ? 'atrasada' : (temFilhos ? 'resumo' : (t.parentId ? 'subtarefa' : 'tarefa'));
 
     const g = document.createElementNS(this.SVGNS, 'g');
     g.dataset.taskId = t.id;
     g.dataset.temFilhos = temFilhos ? '1' : '0';
 
+    // A "hitbox" fica sempre com a mesma geometria/handles de sempre (arrastar continua a
+    // funcionar tal e qual) — só o preenchimento visual muda: invisível, com um losango
+    // desenhado por cima quando é um marco.
     const bar = document.createElementNS(this.SVGNS, 'rect');
     bar.setAttribute('x', x); bar.setAttribute('y', barY);
     bar.setAttribute('width', w); bar.setAttribute('height', altura);
     bar.setAttribute('rx', 4);
-    bar.setAttribute('class', 'gantt-bar ' + (atrasada ? 'atrasada' : (temFilhos ? 'resumo' : (t.parentId ? 'subtarefa' : 'tarefa'))));
+    bar.setAttribute('class', 'gantt-bar ' + classeCor);
+    if (ehMarco) bar.style.opacity = '0';
     bar.dataset.papel = 'bar';
     bar.dataset.taskId = t.id;
     g.appendChild(bar);
 
-    if (t.progresso > 0) {
+    let fimVisual = x + w;
+    if (ehMarco) {
+      const cx = x + w / 2, cy = barY + altura / 2, r = altura / 2 + 3;
+      const losango = document.createElementNS(this.SVGNS, 'polygon');
+      losango.setAttribute('points', `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`);
+      losango.setAttribute('class', 'gantt-bar ' + classeCor);
+      losango.style.pointerEvents = 'none';
+      g.appendChild(losango);
+      fimVisual = cx + r;
+    } else if (t.progresso > 0) {
       const prog = document.createElementNS(this.SVGNS, 'rect');
       prog.setAttribute('x', x); prog.setAttribute('y', barY);
       prog.setAttribute('width', Math.max(w * (t.progresso / 100), 0)); prog.setAttribute('height', altura);
@@ -268,7 +286,7 @@ const Gantt = {
       g.appendChild(prog);
     }
 
-    if (w > 30) {
+    if (!ehMarco && w > 30) {
       const label = document.createElementNS(this.SVGNS, 'text');
       label.setAttribute('x', x + w / 2); label.setAttribute('y', barY + altura / 2 + 4);
       label.setAttribute('text-anchor', 'middle');
@@ -279,9 +297,14 @@ const Gantt = {
     }
 
     const nomeLabel = document.createElementNS(this.SVGNS, 'text');
-    nomeLabel.setAttribute('x', x + w + 6); nomeLabel.setAttribute('y', barY + altura / 2 + 4);
+    nomeLabel.setAttribute('x', fimVisual + 6); nomeLabel.setAttribute('y', barY + altura / 2 + 4);
     nomeLabel.setAttribute('class', 'gantt-label');
     nomeLabel.style.pointerEvents = 'none';
+    // Formatação por tarefa (negrito/itálico/cor), guardada na base de dados — aplicada só ao
+    // rótulo do nome, nunca à cor/estado normal da barra.
+    if (t.negrito) nomeLabel.style.fontWeight = '700';
+    if (t.italico) nomeLabel.style.fontStyle = 'italic';
+    if (t.cor) nomeLabel.style.fill = t.cor;
     nomeLabel.textContent = t.nome;
     g.appendChild(nomeLabel);
 
@@ -391,8 +414,15 @@ const Gantt = {
         bar.setAttribute('x', x); bar.setAttribute('width', w);
         const prog = g.querySelector('.gantt-bar-prog');
         if (prog) { prog.setAttribute('x', x); }
+        let fimVisual = x + w;
+        const losango = g.querySelector('polygon.gantt-bar');
+        if (losango) {
+          const cx = x + w / 2, cy = barY + altura / 2, r = altura / 2 + 3;
+          losango.setAttribute('points', `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`);
+          fimVisual = cx + r;
+        }
         const label = g.querySelector('.gantt-label');
-        if (label) label.setAttribute('x', x + w + 6);
+        if (label) label.setAttribute('x', fimVisual + 6);
         const hl = g.querySelector('[data-lado="esq"]'); if (hl) hl.setAttribute('x', x - 3);
         const hr = g.querySelector('[data-lado="dir"]'); if (hr) hr.setAttribute('x', x + w - 3);
         const conector = g.querySelector('[data-papel="conector"]'); if (conector) conector.setAttribute('cx', x + w + 8);
