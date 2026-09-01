@@ -87,6 +87,9 @@
 <!-- ===================== TAB: GANTT ===================== -->
 <section class="tab-panel active" id="tab-gantt">
   <div class="gantt-topbar">
+    <select id="selGestorFiltroGantt" title="Filtrar a lista de projetos por gestor" style="display:none;">
+      <option value="">Todos os gestores</option>
+    </select>
     <select id="selProjeto" title="Escolher projeto"></select>
     <button id="btnNovoProjeto" class="btn">+ Novo Projeto</button>
     <button id="btnDuplicarProjeto" class="btn" title="Duplicar projeto atual">Duplicar</button>
@@ -233,6 +236,31 @@
       </div>
     </div>
     <p class="pagina-sub">Projetos partilhados por toda a equipa, guardados na base de dados. "Abrir" para editar o Gantt.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Gestor <select id="fProjGestor"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Cliente <select id="fProjCliente"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Estado <select id="fProjEstado">
+        <option value="">Todos</option>
+        <option value="Adjudicado">Adjudicado</option>
+        <option value="Por iniciar">Por iniciar</option>
+        <option value="Em curso">Em curso</option>
+        <option value="Concluído">Concluído</option>
+        <option value="Cancelado">Cancelado</option>
+      </select></label>
+      <label class="zoom-label">Estado Orçamental <select id="fProjEstadoOrc">
+        <option value="">Todos</option>
+        <option value="verde">Dentro do orçamento</option>
+        <option value="amarelo">Perto do limite</option>
+        <option value="vermelho">Risco de derrapagem</option>
+        <option value="neutro">Sem orçamento definido</option>
+      </select></label>
+      <button id="btnLimparFiltrosProjetos" class="btn btn-sm">Limpar filtros</button>
+      <span class="spacer"></span>
+      <div class="conta-menu-wrap">
+        <button id="btnColunasProjetos" class="btn btn-sm">⚙ Colunas</button>
+        <div class="conta-menu" id="painelColunasProjetos" style="min-width:210px;padding:6px 0;"></div>
+      </div>
+    </div>
     <div class="table-scroll">
       <table class="tabela-crud" id="tabelaProjetos">
         <thead>

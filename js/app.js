@@ -57,6 +57,26 @@ const App = {
   TAMANHO_PAGINA_REGISTOS: 20,
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
   filtrosTodosPassos: { projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
+  filtrosProjetos: { gestorId: '', cliente: '', estado: '', estadoOrc: '' },
+  // Definição das colunas da tabela de Projetos, para o painel "⚙ Colunas" — a ordem aqui é só a
+  // do painel de checkboxes, não afeta a ordem real das colunas na tabela (essa é fixa no HTML).
+  COLUNAS_PROJETOS: [
+    { key: 'idInterno', label: 'ID interno' },
+    { key: 'nome', label: 'Nome' },
+    { key: 'cliente', label: 'Cliente' },
+    { key: 'gestor', label: 'Gestor' },
+    { key: 'dataInicio', label: 'Início' },
+    { key: 'dataFim', label: 'Fim' },
+    { key: 'horasVendidas', label: 'Horas vendidas' },
+    { key: 'valorVendido', label: 'Valor vendido (€)' },
+    { key: 'valorHoraMedio', label: '€/h médio' },
+    { key: 'estado', label: 'Estado' },
+    { key: 'real', label: 'Real (h)' },
+    { key: 'eac', label: 'Reprevisão / EAC (h)' },
+    { key: 'saldo', label: 'Saldo (h)' },
+    { key: 'pctConsumido', label: '% Consumido' },
+    { key: 'estadoOrc', label: 'Estado Orçamental' }
+  ],
   ordenacaoFaturas: { campo: 'dataPrevista', dir: 'asc' },
   ordenacaoRegistos: { campo: 'data', dir: 'desc' },
 
@@ -128,6 +148,13 @@ const App = {
       corpoTabelaFeriados: document.getElementById('corpoTabelaFeriados'),
       corpoTabelaAusencias: document.getElementById('corpoTabelaAusencias'),
       selEquipaCap: document.getElementById('selEquipaCap'),
+      selGestorFiltroGantt: document.getElementById('selGestorFiltroGantt'),
+      fProjGestor: document.getElementById('fProjGestor'),
+      fProjCliente: document.getElementById('fProjCliente'),
+      fProjEstado: document.getElementById('fProjEstado'),
+      fProjEstadoOrc: document.getElementById('fProjEstadoOrc'),
+      btnColunasProjetos: document.getElementById('btnColunasProjetos'),
+      painelColunasProjetos: document.getElementById('painelColunasProjetos'),
       selHorizonteCap: document.getElementById('selHorizonteCap'),
       selMesInicioCap: document.getElementById('selMesInicioCap'),
       heatmapCapHead: document.getElementById('heatmapCapHead'),
@@ -1630,8 +1657,18 @@ const App = {
 
   renderProjetoSelect() {
     const sel = this.els.selProjeto;
+    const selGestor = this.els.selGestorFiltroGantt;
+    let projetos = this.meusProjetosEnvolvidos();
+    if (this.souAdmin() && selGestor) {
+      const valorAtual = selGestor.value;
+      selGestor.innerHTML = '<option value="">Todos os gestores</option>' +
+        this.state.utilizadores.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}</option>`).join('');
+      selGestor.value = valorAtual;
+      this.filtroGestorGantt = selGestor.value;
+      if (this.filtroGestorGantt) projetos = projetos.filter(p => p.gestorId === this.filtroGestorGantt);
+    }
     sel.innerHTML = '';
-    this.meusProjetosEnvolvidos().forEach(p => {
+    projetos.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ' (' + p.cliente + ')' : '');
@@ -1671,6 +1708,7 @@ const App = {
     if (e.tabBtnFaturacao) e.tabBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
+    if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
     ['btnNovoProjeto', 'btnNovoProjeto2', 'btnDuplicarProjeto', 'btnEliminarProjeto'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
@@ -1766,7 +1804,25 @@ const App = {
     const admin = this.souAdmin();
     const opcoesGestor = '<option value="">Sem gestor</option>' +
       this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
-    const linhas = this.meusProjetosEnvolvidos().map(p => ({ p, orc: this.avaliarOrcamentoProjeto(p) }));
+    // Opções dos filtros (preservam o valor atual ao repopular).
+    const e = this.els;
+    const valorFiltroGestor = e.fProjGestor.value;
+    e.fProjGestor.innerHTML = '<option value="">Todos</option>' + this.state.utilizadores.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}</option>`).join('');
+    e.fProjGestor.value = valorFiltroGestor;
+    const valorFiltroCliente = e.fProjCliente.value;
+    const clientesDistintos = [...new Set(Object.values(this.state.projetos).map(p => p.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    e.fProjCliente.innerHTML = '<option value="">Todos</option>' + clientesDistintos.map(c => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+    e.fProjCliente.value = valorFiltroCliente;
+
+    const f = this.filtrosProjetos;
+    let linhas = this.meusProjetosEnvolvidos().map(p => ({ p, orc: this.avaliarOrcamentoProjeto(p) }));
+    linhas = linhas.filter(({ p, orc }) => {
+      if (f.gestorId && p.gestorId !== f.gestorId) return false;
+      if (f.cliente && p.cliente !== f.cliente) return false;
+      if (f.estado && p.estado !== f.estado) return false;
+      if (f.estadoOrc && orc.nivel !== f.estadoOrc) return false;
+      return true;
+    });
     const ordenadas = this.aplicarOrdenacaoTabela('tabelaProjetos', linhas, (l, campo) => {
       const { p, orc } = l;
       switch (campo) {
@@ -1841,6 +1897,54 @@ const App = {
       const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
       if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProjeto(p.id));
       tbody.appendChild(tr);
+    });
+    this.aplicarVisibilidadeColunasProjetos();
+  },
+  aplicarFiltrosProjetos() {
+    const e = this.els;
+    this.filtrosProjetos = {
+      gestorId: e.fProjGestor.value, cliente: e.fProjCliente.value,
+      estado: e.fProjEstado.value, estadoOrc: e.fProjEstadoOrc.value
+    };
+    this.renderTabelaProjetos();
+  },
+  // Painel "⚙ Colunas" — quais ficam escondidas fica guardado em localStorage (gp_ui_prefs), como
+  // as larguras/ordenação de outras tabelas; lido de fresco de cada vez, sem estado à parte.
+  colunasEscondidasProjetosSet() {
+    return new Set(this.lerPrefsUI().colunasEscondidasProjetos || []);
+  },
+  alternarColunaProjeto(key) {
+    const escondidas = this.colunasEscondidasProjetosSet();
+    if (escondidas.has(key)) escondidas.delete(key); else escondidas.add(key);
+    this.gravarPrefUI('colunasEscondidasProjetos', [...escondidas]);
+    this.aplicarVisibilidadeColunasProjetos();
+  },
+  renderPainelColunasProjetos() {
+    const escondidas = this.colunasEscondidasProjetosSet();
+    this.els.painelColunasProjetos.innerHTML = this.COLUNAS_PROJETOS.map(c => `
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" data-col="${c.key}" ${escondidas.has(c.key) ? '' : 'checked'}> ${escapeHtml(c.label)}
+      </label>`).join('');
+    this.els.painelColunasProjetos.querySelectorAll('input[data-col]').forEach(chk => {
+      chk.addEventListener('change', () => this.alternarColunaProjeto(chk.dataset.col));
+    });
+  },
+  alternarPainelColunasProjetos() {
+    const aberto = this.els.painelColunasProjetos.classList.toggle('aberto');
+    if (aberto) this.renderPainelColunasProjetos();
+  },
+  // Colunas escondidas identificam-se pela posição (nth-child), tal como o cabeçalho — esta
+  // tabela não tem reordenação de colunas (ao contrário da tabela de tarefas do Gantt), por isso
+  // a posição de cada <th data-col> corresponde sempre à mesma posição em cada <td> da linha.
+  aplicarVisibilidadeColunasProjetos() {
+    const escondidas = this.colunasEscondidasProjetosSet();
+    const ths = document.querySelectorAll('#tabelaProjetos thead th[data-col]');
+    ths.forEach((th, idx) => {
+      const esconder = escondidas.has(th.dataset.col);
+      th.style.display = esconder ? 'none' : '';
+      document.querySelectorAll(`#tabelaProjetos tbody tr td:nth-child(${idx + 1})`).forEach(td => {
+        td.style.display = esconder ? 'none' : '';
+      });
     });
   },
 
@@ -3342,6 +3446,7 @@ const App = {
     });
 
     e.selProjeto.addEventListener('change', () => this.selecionarProjeto(e.selProjeto.value));
+    if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.addEventListener('change', () => this.renderProjetoSelect());
     document.getElementById('btnNovoProjeto').addEventListener('click', () => this.criarProjeto());
     document.getElementById('btnNovoProjeto2').addEventListener('click', () => this.criarProjeto());
     document.getElementById('btnDuplicarProjeto').addEventListener('click', () => this.duplicarProjeto());
@@ -3407,6 +3512,14 @@ const App = {
       e.fFatProjeto.value = ''; e.fFatDe.value = ''; e.fFatAte.value = ''; e.fFatNumRegisto.value = '';
       this.aplicarFiltrosFaturacao();
     });
+    [e.fProjGestor, e.fProjCliente, e.fProjEstado, e.fProjEstadoOrc].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosProjetos()));
+    document.getElementById('btnLimparFiltrosProjetos').addEventListener('click', () => {
+      e.fProjGestor.value = ''; e.fProjCliente.value = ''; e.fProjEstado.value = ''; e.fProjEstadoOrc.value = '';
+      this.aplicarFiltrosProjetos();
+    });
+    e.btnColunasProjetos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelColunasProjetos(); });
+    e.painelColunasProjetos.addEventListener('click', (ev) => ev.stopPropagation()); // não fecha ao marcar várias colunas seguidas
+    document.addEventListener('click', () => this.els.painelColunasProjetos.classList.remove('aberto'));
     [e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
     document.getElementById('btnLimparFiltrosPassos').addEventListener('click', () => {
       e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
