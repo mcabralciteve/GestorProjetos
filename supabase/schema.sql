@@ -150,7 +150,7 @@ create table if not exists public.registos (
 );
 create index if not exists registos_projeto_id_idx on public.registos(projeto_id);
 -- Cliente do projeto associado, copiado tal como projeto_nome/projeto_id_interno (denormalizado,
--- não é uma referência viva) — o Administrador pode corrigi-lo à mão sem ter de mudar o projeto.
+-- não é uma referência viva) — segue sempre o Projeto escolhido, nunca se edita à parte.
 alter table public.registos add column if not exists cliente text not null default '';
 
 -- ---------- Acompanhamento: pontos de situação e next steps por projeto ----------

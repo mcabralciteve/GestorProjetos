@@ -2207,8 +2207,6 @@ const App = {
       campos.projeto_id = r.projetoId;
       campos.cliente = r.cliente;
       campos.tarefa_nome = '';
-    } else if (campo === 'cliente') {
-      r.cliente = valor.trim(); campos.cliente = r.cliente;
     } else if (campo === 'tarefaNome') {
       r.tarefaNome = valor; campos.tarefa_nome = valor;
     } else if (campo === 'horas') {
@@ -2352,13 +2350,13 @@ const App = {
       // Administrador: todos os campos editáveis, com Projeto/Tarefa em cascata sobre a Pessoa —
       // as mesmas regras de "a que projetos/tarefas esta pessoa está ligada" do formulário de
       // criar registo (renderProjetosRegisto/renderTarefasRegisto), só que por linha já existente.
-      // Cliente acompanha o projeto por omissão mas pode ser corrigido à mão sem mudar o projeto.
+      // Cliente nunca se edita à parte — segue sempre o Projeto escolhido (ver atualizarCampoRegisto).
       const opcoesPessoa = this.state.recursos.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
       tr.innerHTML = `
         <td><input type="date" value="${r.data}" data-campo="data" style="min-width:120px"></td>
         <td><select data-campo="pessoa">${opcoesPessoa}</select></td>
         <td><select data-campo="projetoIdInterno" style="min-width:200px"></select></td>
-        <td><input type="text" value="${escapeAttr(r.cliente)}" data-campo="cliente" style="min-width:130px"></td>
+        <td class="cel-cliente">${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
         <td><select data-campo="tarefaNome" style="min-width:160px"></select></td>
         <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
@@ -2385,7 +2383,6 @@ const App = {
       tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => { preencherProjetos(false); this.atualizarCampoRegisto(r.id, 'pessoa', ev.target.value); });
       tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => { preencherTarefas(); this.atualizarCampoRegisto(r.id, 'projetoIdInterno', ev.target.value); });
       tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'tarefaNome', ev.target.value));
-      tr.querySelector('[data-campo="cliente"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'cliente', ev.target.value));
       tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
       tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
       tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
