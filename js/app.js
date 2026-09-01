@@ -892,6 +892,13 @@ const App = {
     const t = this.tarefaPorId(p, id);
     if (!t) return;
     if (campo === 'inicio' || campo === 'fim') {
+      // Um <input type="date"> dispara "change" assim que o valor fica "completo" — ao escrever
+      // o ano dígito a dígito (ex.: "2026"), isso acontece logo no primeiro "2" (ano 0002), muito
+      // antes de a pessoa acabar de escrever. Se aceitássemos e re-desenhássemos a linha nesse
+      // instante, o campo perdia o foco/estado a meio da escrita. Ignora anos claramente
+      // incompletos — a app só reage quando o ano já é plausível.
+      const ano = parseInt(String(valor).slice(0, 4), 10);
+      if (!ano || ano < 1000) return;
       t[campo] = valor;
       if (DateUtil.parseISO(t.fim) < DateUtil.parseISO(t.inicio)) {
         if (campo === 'inicio') t.fim = t.inicio; else t.inicio = t.fim;
