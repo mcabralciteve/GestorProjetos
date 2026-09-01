@@ -1259,6 +1259,7 @@ const App = {
       projetoIdInterno: dados.projetoIdInterno,
       projetoNome: dados.projetoNome,
       projetoId: dados.projetoId || null,
+      cliente: dados.cliente || '',
       tarefaNome: dados.tarefaNome || '',
       horas: dados.horas,
       notas: dados.notas || '',
