@@ -2147,6 +2147,64 @@ const App = {
     e.regTarefa.innerHTML = `<option value="">${p ? 'Seleciona…' : 'Seleciona primeiro o projeto…'}</option>` + opcoes;
     e.regTarefa.disabled = !p;
   },
+  // Mesma lógica de "a que projetos/tarefas esta pessoa está ligada" do formulário de criar
+  // registo, reutilizada para editar linhas já existentes na tabela de Registos (só Administrador).
+  projetosDaPessoaRegisto(nomePessoa) {
+    const recurso = this.state.recursos.find(r => r.nome === nomePessoa);
+    if (!recurso) return [];
+    return Object.values(this.state.projetos).filter(p => p.idInterno && p.tarefas.some(t => t.recursoIds.includes(recurso.id)));
+  },
+  tarefasDoProjetoParaPessoaRegisto(idInternoProjeto, nomePessoa) {
+    const p = Object.values(this.state.projetos).find(pr => pr.idInterno === idInternoProjeto);
+    const recurso = this.state.recursos.find(r => r.nome === nomePessoa);
+    if (!p || !recurso) return [];
+    return this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa);
+  },
+  // Edição direta de um registo já existente (só Administrador) — ao contrário da criação, isto
+  // não passa pelo undo/redo nem pelo diff de sincronização normal (registos, por design, só são
+  // sincronizados como "novo" ou "apagado" — ver Sync.sincronizarListaSimples/sincronizarRegistos);
+  // por isso escreve logo na Supabase, como já acontece com atualizarUtilizador/atualizarConta.
+  async atualizarCampoRegisto(id, campo, valor) {
+    if (!this.souAdmin()) return;
+    const r = this.state.registos.find(x => x.id === id);
+    if (!r) return;
+    const campos = {};
+    if (campo === 'data') {
+      // Mesmo problema do <input type="date"> nas tarefas do Gantt: dispara "change" logo ao
+      // primeiro dígito do ano (ex.: "2" vira 0002) — ignora enquanto o ano não for plausível.
+      const ano = parseInt(String(valor).slice(0, 4), 10);
+      if (!ano || ano < 1000) return;
+      r.data = valor; campos.data = valor;
+    } else if (campo === 'pessoa') {
+      r.pessoa = valor; campos.pessoa = valor;
+    } else if (campo === 'projetoIdInterno') {
+      const proj = Object.values(this.state.projetos).find(p => p.idInterno === valor);
+      r.projetoIdInterno = valor;
+      r.projetoNome = proj ? proj.nome : valor;
+      r.projetoId = proj ? proj.id : null;
+      r.tarefaNome = ''; // o projeto mudou — a tarefa antiga já não pertence a este projeto
+      campos.projeto_id_interno = r.projetoIdInterno;
+      campos.projeto_nome = r.projetoNome;
+      campos.projeto_id = r.projetoId;
+      campos.tarefa_nome = '';
+    } else if (campo === 'tarefaNome') {
+      r.tarefaNome = valor; campos.tarefa_nome = valor;
+    } else if (campo === 'horas') {
+      const h = parseFloat(valor);
+      if (!h || h <= 0) { this.toast('Horas inválidas.'); this.renderTabelaRegistos(); return; }
+      r.horas = h; campos.horas = h;
+    } else if (campo === 'notas') {
+      r.notas = valor.trim(); campos.notas = r.notas;
+    } else {
+      return;
+    }
+    try {
+      await Sync.atualizarRegisto(id, campos);
+    } catch (err) {
+      this.toast('Erro ao atualizar registo: ' + err.message);
+    }
+    this.renderTabelaRegistos();
+  },
   submeterFormRegisto() {
     const e = this.els;
     const pessoa = e.regPessoa.value;
@@ -2246,19 +2304,66 @@ const App = {
     const inicio = (this.paginaRegistos - 1) * tamanho;
     const pagina = filtrados.slice(inicio, inicio + tamanho);
 
-    e.corpoTabelaRegistos.innerHTML = pagina.length ? pagina.map(r => `
-      <tr>
-        <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
-        <td>${escapeHtml(r.pessoa)}</td>
-        <td>${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}</td>
-        <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
-        <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
-        <td>${escapeHtml(r.notas)}</td>
+    e.corpoTabelaRegistos.innerHTML = '';
+    const admin = this.souAdmin();
+    if (!pagina.length) {
+      e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
+    }
+    pagina.forEach(r => {
+      const tr = document.createElement('tr');
+      if (!admin) {
+        tr.innerHTML = `
+          <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
+          <td>${escapeHtml(r.pessoa)}</td>
+          <td>${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}</td>
+          <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
+          <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
+          <td>${escapeHtml(r.notas)}</td>
+          <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
+          <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
+        tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+        e.corpoTabelaRegistos.appendChild(tr);
+        return;
+      }
+      // Administrador: todos os campos editáveis, com Projeto/Tarefa em cascata sobre a Pessoa —
+      // as mesmas regras de "a que projetos/tarefas esta pessoa está ligada" do formulário de
+      // criar registo (renderProjetosRegisto/renderTarefasRegisto), só que por linha já existente.
+      const opcoesPessoa = this.state.recursos.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
+      tr.innerHTML = `
+        <td><input type="date" value="${r.data}" data-campo="data" style="min-width:120px"></td>
+        <td><select data-campo="pessoa">${opcoesPessoa}</select></td>
+        <td><select data-campo="projetoIdInterno" style="min-width:200px"></select></td>
+        <td><select data-campo="tarefaNome" style="min-width:160px"></select></td>
+        <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
+        <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
-        <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>
-      </tr>`).join('') : '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
-    e.corpoTabelaRegistos.querySelectorAll('[data-eliminar]').forEach(btn => {
-      btn.addEventListener('click', () => this.eliminarRegisto(btn.dataset.eliminar));
+        <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="pessoa"]').value = r.pessoa;
+      const preencherProjetos = (manterSelecao) => {
+        const selProjeto = tr.querySelector('[data-campo="projetoIdInterno"]');
+        const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
+        const projetos = this.projetosDaPessoaRegisto(nomePessoa);
+        selProjeto.innerHTML = '<option value="">—</option>' + projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+        selProjeto.value = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno) ? r.projetoIdInterno : '';
+        preencherTarefas();
+      };
+      const preencherTarefas = () => {
+        const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
+        const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
+        const idInternoProjeto = tr.querySelector('[data-campo="projetoIdInterno"]').value;
+        const tarefas = this.tarefasDoProjetoParaPessoaRegisto(idInternoProjeto, nomePessoa);
+        selTarefa.innerHTML = '<option value="">—</option>' + tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
+        selTarefa.value = tarefas.some(t => t.nome === r.tarefaNome) && idInternoProjeto === r.projetoIdInterno ? r.tarefaNome : '';
+      };
+      preencherProjetos(true);
+      tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => { preencherProjetos(false); this.atualizarCampoRegisto(r.id, 'pessoa', ev.target.value); });
+      tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => { preencherTarefas(); this.atualizarCampoRegisto(r.id, 'projetoIdInterno', ev.target.value); });
+      tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'tarefaNome', ev.target.value));
+      tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
+      tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
+      tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
+      tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+      e.corpoTabelaRegistos.appendChild(tr);
     });
 
     if (e.paginacaoRegistos) {

@@ -301,5 +301,14 @@ const Sync = {
       const { error } = await supabaseClient.from('recursos').update({ nome }).eq('id', recursoId);
       if (error) throw error;
     }
+  },
+
+  // ---------- Edição direta de um registo já existente (só Administrador) ----------
+  // Registos, por design, só entram/saem da sincronização normal como "novo" ou "apagado"
+  // (ver sincronizarListaSimples/sincronizarRegistos) — editar um campo de um já existente nunca
+  // passou por aí, por isso escreve logo na Supabase, como atualizarUtilizador/atualizarConta.
+  async atualizarRegisto(id, campos) {
+    const { error } = await supabaseClient.from('registos').update(campos).eq('id', id);
+    if (error) throw error;
   }
 };
