@@ -231,7 +231,13 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .tabela-crud tbody td{padding:5px 10px;border-bottom:1px solid var(--cinza-100);vertical-align:middle;}
 .tabela-crud tbody tr:hover{background:#f4f8fb;}
 .tabela-crud tbody tr.fechado{opacity:.55;}
-.tabela-crud input,.tabela-crud select{width:100%;border:1px solid transparent;background:transparent;font-size:12.5px;padding:4px 5px;border-radius:4px;}
+.tabela-crud input,.tabela-crud select{width:100%;max-width:100%;box-sizing:border-box;border:1px solid transparent;background:transparent;font-size:12.5px;padding:4px 5px;border-radius:4px;overflow:hidden;text-overflow:ellipsis;}
+/* Só depois de as colunas serem ajustadas manualmente (table-layout:fixed, ver mais acima) é que
+   a largura de cada célula deixa de acompanhar o conteúdo — só aí é preciso forçar o texto a
+   cortar com reticências em vez de se sobrepor à coluna seguinte. Em table-layout:auto (o normal)
+   isto nunca se aplica, para não voltar a espremer colunas por omissão. */
+.tabela-crud.colunas-ajustadas td{max-width:0;overflow:hidden;}
+.tabela-crud.colunas-ajustadas td:not(.col-acoes){text-overflow:ellipsis;white-space:nowrap;}
 .tabela-crud input:hover,.tabela-crud select:hover{border-color:var(--cinza-200);}
 .tabela-crud input:focus,.tabela-crud select:focus{background:var(--cinza-100);border-color:var(--cinza-300);outline:none;}
 .tabela-crud input:disabled{color:var(--cinza-500);}

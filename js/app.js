@@ -1793,9 +1793,9 @@ const App = {
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" style="width:100px" autocomplete="new-password" spellcheck="false" readonly ${dis}></td>
-        <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" style="min-width:160px" ${dis}></td>
-        <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" style="width:120px" ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
         <td>${admin
           ? `<select data-campo="gestorId" style="min-width:120px">${opcoesGestor}</select>`
           : escapeHtml(this.nomeUtilizador(p.gestorId))}</td>
