@@ -451,14 +451,16 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .auth-card form{display:flex;flex-direction:column;gap:10px;margin-top:14px;}
 
 .modal-backdrop{
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:50;align-items:center;justify-content:center;
+  /* Fundo quase transparente de propósito — só para capturar o clique "fora" e fechar o modal;
+     o modal em si pode ser arrastado (pega no cabeçalho) para se ver o que está por trás. */
+  display:none;position:fixed;inset:0;background:rgba(23,58,92,0.06);z-index:50;align-items:center;justify-content:center;
 }
 .modal-backdrop.aberto{display:flex;}
 .modal{background:var(--branco);border-radius:var(--radius-lg);min-width:340px;max-width:640px;box-shadow:var(--shadow-lg);}
 .modal.modal-largo{max-width:min(960px, 94vw);width:min(960px, 94vw);}
 .linha-sobreposta td{background:#fdecec;}
 .linha-conflito td{background:#fff2e8;}
-.modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--cinza-200);font-family:var(--display);font-weight:700;font-size:15px;}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--cinza-200);font-family:var(--display);font-weight:700;font-size:15px;cursor:move;user-select:none;}
 .modal-body{padding:14px 16px;max-height:70vh;overflow-y:auto;}
 .pred-linha{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
 .pred-linha select,.pred-linha input{padding:4px 6px;}

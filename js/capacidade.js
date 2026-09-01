@@ -143,11 +143,13 @@ const Capacidade = {
     return out;
   },
 
-  horizonteMeses(nMeses) {
+  // "mesInicio" ({ano, mes}, mes 0-indexado) deixa começar o horizonte num mês qualquer — inclui
+  // meses passados — em vez de partir sempre de hoje; por omissão continua a ser o mês atual.
+  horizonteMeses(nMeses, mesInicio) {
     const out = [];
-    const hoje = new Date();
+    const base = mesInicio ? new Date(mesInicio.ano, mesInicio.mes, 1) : new Date();
     for (let i = 0; i < nMeses; i++) {
-      const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+      const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
       out.push({ ano: d.getFullYear(), mes: d.getMonth(), label: d.toLocaleDateString('pt-PT', { month: 'short', year: 'numeric' }) });
     }
     return out;

@@ -63,7 +63,7 @@ const Sync = {
     if (novos.length) {
       const linhas = novos.map(r => ({
         id: r.id, data: r.data, pessoa: r.pessoa, projeto_id: r.projetoId || null,
-        projeto_id_interno: r.projetoIdInterno, projeto_nome: r.projetoNome, tarefa_nome: r.tarefaNome,
+        projeto_id_interno: r.projetoIdInterno, projeto_nome: r.projetoNome, cliente: r.cliente || '', tarefa_nome: r.tarefaNome,
         horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm
       }));
       const { error } = await supabaseClient.from('registos').insert(linhas);
@@ -217,7 +217,7 @@ const Sync = {
     }));
     const registos = reg.data.map(r => ({
       id: r.id, data: r.data, pessoa: r.pessoa, projetoIdInterno: r.projeto_id_interno, projetoId: r.projeto_id,
-      projetoNome: r.projeto_nome, tarefaNome: r.tarefa_nome, horas: Number(r.horas) || 0,
+      projetoNome: r.projeto_nome, cliente: r.cliente || '', tarefaNome: r.tarefa_nome, horas: Number(r.horas) || 0,
       notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em
     }));
 

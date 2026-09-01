@@ -403,6 +403,12 @@
             <option value="12">12 meses</option>
           </select>
         </label>
+        <label class="zoom-label">A partir de:
+          <button id="btnCapMesAnt" class="btn btn-sm" title="Mês anterior">◀</button>
+          <input type="month" id="selMesInicioCap">
+          <button id="btnCapMesSeg" class="btn btn-sm" title="Mês seguinte">▶</button>
+          <button id="btnCapHoje" class="btn btn-sm" title="Voltar ao mês atual">Hoje</button>
+        </label>
       </div>
     </div>
     <p class="pagina-sub">Alocação = horas nominais das tarefas atribuídas a cada consultor, em todos os projetos carregados. Capacidade = dias úteis × 8h (100% alocáveis a projetos), já a descontar fins de semana, feriados e ausências. Sobre-alocação = mais tarefas atribuídas do que capacidade disponível no mesmo período.</p>
@@ -520,6 +526,7 @@
             <th data-sort="data">Data</th>
             <th data-sort="pessoa">Pessoa</th>
             <th data-sort="projeto">Projeto</th>
+            <th data-sort="cliente">Cliente</th>
             <th data-sort="tarefaNome">Tarefa</th>
             <th data-sort="horas">Horas</th>
             <th data-sort="notas">Notas</th>

@@ -129,6 +129,7 @@ const App = {
       corpoTabelaAusencias: document.getElementById('corpoTabelaAusencias'),
       selEquipaCap: document.getElementById('selEquipaCap'),
       selHorizonteCap: document.getElementById('selHorizonteCap'),
+      selMesInicioCap: document.getElementById('selMesInicioCap'),
       heatmapCapHead: document.getElementById('heatmapCapHead'),
       heatmapCapBody: document.getElementById('heatmapCapBody'),
       gridCapacidade: document.getElementById('gridCapacidade'),
@@ -1994,11 +1995,28 @@ const App = {
   },
 
   // ---------- Tab: Capacidade ----------
+  // Avança/recua um mês o "A partir de" da Capacidade — mantém o mesmo horizonte, só desloca o
+  // início da janela (incluindo para trás, para ver meses já passados).
+  navegarMesCap(delta) {
+    const e = this.els;
+    const atual = e.selMesInicioCap.value || DateUtil.todayISO().slice(0, 7);
+    const [ano, mes] = atual.split('-').map(Number);
+    const d = new Date(ano, mes - 1 + delta, 1);
+    e.selMesInicioCap.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    this.renderCapacidade();
+  },
   renderCapacidade() {
     const e = this.els;
     if (!e.gridCapacidade) return;
     const nMeses = parseInt(e.selHorizonteCap.value, 10) || 6;
-    const meses = Capacidade.horizonteMeses(nMeses);
+    // "A partir de" (input type=month) — por omissão o mês atual (mantém o comportamento de
+    // sempre mostrar os 6 meses seguintes), mas dá para recuar e ver meses passados.
+    if (!e.selMesInicioCap.value) {
+      const hoje = new Date();
+      e.selMesInicioCap.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const [anoIni, mesIni] = e.selMesInicioCap.value.split('-').map(Number);
+    const meses = Capacidade.horizonteMeses(nMeses, { ano: anoIni, mes: mesIni - 1 });
 
     e.heatmapCapHead.innerHTML = '<th>Consultor</th>' + meses.map(m => `<th>${escapeHtml(m.label)}</th>`).join('');
     e.heatmapCapBody.innerHTML = '';
@@ -2050,7 +2068,7 @@ const App = {
           <div class="cap-pct cap-${clsMesAtual}">${(mesAtual.capacidade > 0 || mesAtual.alocado > 0) ? (isFinite(mesAtual.pct) ? Math.round(mesAtual.pct * 100) + '%' : '⚠') : '—'}</div>
         </div>
         <div class="cap-bar"><div class="cap-bar-fill cap-${clsMesAtual}" style="width:${Math.min(isFinite(mesAtual.pct) ? mesAtual.pct * 100 : 100, 100)}%"></div></div>
-        <div class="cap-meta">Mês atual: ${mesAtual.alocado.toFixed(0)}h alocadas / ${mesAtual.capacidade.toFixed(0)}h disponíveis</div>
+        <div class="cap-meta">${escapeHtml(mesAtual.label)}: ${mesAtual.alocado.toFixed(0)}h alocadas / ${mesAtual.capacidade.toFixed(0)}h disponíveis</div>
         <div class="cap-meses">
           ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
@@ -2182,11 +2200,15 @@ const App = {
       r.projetoIdInterno = valor;
       r.projetoNome = proj ? proj.nome : valor;
       r.projetoId = proj ? proj.id : null;
+      r.cliente = proj ? (proj.cliente || '') : ''; // acompanha o projeto por omissão; editável à parte a seguir
       r.tarefaNome = ''; // o projeto mudou — a tarefa antiga já não pertence a este projeto
       campos.projeto_id_interno = r.projetoIdInterno;
       campos.projeto_nome = r.projetoNome;
       campos.projeto_id = r.projetoId;
+      campos.cliente = r.cliente;
       campos.tarefa_nome = '';
+    } else if (campo === 'cliente') {
+      r.cliente = valor.trim(); campos.cliente = r.cliente;
     } else if (campo === 'tarefaNome') {
       r.tarefaNome = valor; campos.tarefa_nome = valor;
     } else if (campo === 'horas') {
@@ -2229,7 +2251,7 @@ const App = {
     const proj = Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno);
     const projetoNome = proj ? proj.nome : projetoIdInterno;
     const payload = {
-      data, pessoa, projetoIdInterno, projetoNome, projetoId: proj ? proj.id : null, tarefaNome, horas, notas,
+      data, pessoa, projetoIdInterno, projetoNome, projetoId: proj ? proj.id : null, cliente: proj ? (proj.cliente || '') : '', tarefaNome, horas, notas,
       origem: 'app-gestor-projetos', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
     };
 
@@ -2258,6 +2280,7 @@ const App = {
       case 'tarefaNome': return (r.tarefaNome || '').toLowerCase();
       case 'horas': return parseFloat(r.horas) || 0;
       case 'notas': return (r.notas || '').toLowerCase();
+      case 'cliente': return (r.cliente || '').toLowerCase();
       case 'origem': return (r.origem || '').toLowerCase();
       case 'pessoa': return (r.pessoa || '').toLowerCase();
       default: return r.data || '';
@@ -2307,7 +2330,7 @@ const App = {
     e.corpoTabelaRegistos.innerHTML = '';
     const admin = this.souAdmin();
     if (!pagina.length) {
-      e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
+      e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="9" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
     }
     pagina.forEach(r => {
       const tr = document.createElement('tr');
@@ -2316,6 +2339,7 @@ const App = {
           <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
           <td>${escapeHtml(r.pessoa)}</td>
           <td>${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}</td>
+          <td>${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
           <td>${escapeHtml(r.notas)}</td>
@@ -2328,11 +2352,13 @@ const App = {
       // Administrador: todos os campos editáveis, com Projeto/Tarefa em cascata sobre a Pessoa —
       // as mesmas regras de "a que projetos/tarefas esta pessoa está ligada" do formulário de
       // criar registo (renderProjetosRegisto/renderTarefasRegisto), só que por linha já existente.
+      // Cliente acompanha o projeto por omissão mas pode ser corrigido à mão sem mudar o projeto.
       const opcoesPessoa = this.state.recursos.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
       tr.innerHTML = `
         <td><input type="date" value="${r.data}" data-campo="data" style="min-width:120px"></td>
         <td><select data-campo="pessoa">${opcoesPessoa}</select></td>
         <td><select data-campo="projetoIdInterno" style="min-width:200px"></select></td>
+        <td><input type="text" value="${escapeAttr(r.cliente)}" data-campo="cliente" style="min-width:130px"></td>
         <td><select data-campo="tarefaNome" style="min-width:160px"></select></td>
         <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
@@ -2359,6 +2385,7 @@ const App = {
       tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => { preencherProjetos(false); this.atualizarCampoRegisto(r.id, 'pessoa', ev.target.value); });
       tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => { preencherTarefas(); this.atualizarCampoRegisto(r.id, 'projetoIdInterno', ev.target.value); });
       tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'tarefaNome', ev.target.value));
+      tr.querySelector('[data-campo="cliente"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'cliente', ev.target.value));
       tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
       tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
       tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
@@ -3026,10 +3053,35 @@ const App = {
     this.els.modalTitulo.textContent = titulo;
     this.els.modalCorpo.innerHTML = corpoHtml;
     this.els.modal.classList.toggle('modal-largo', !!(opts && opts.largo));
+    this.els.modal.style.transform = ''; // recomeça centrado, mesmo que o anterior tenha sido arrastado
     this.els.modalBackdrop.classList.add('aberto');
   },
   fecharModal() {
     this.els.modalBackdrop.classList.remove('aberto');
+  },
+  // Deixa arrastar o modal pelo cabeçalho, para se poder ver o que está por trás (o fundo já é
+  // quase transparente de propósito, ver style.css) — desloca-se por transform, a posição
+  // "centrado" original é sempre o ponto de partida de cada vez que abrirModal() é chamado.
+  ligarArrastarModal() {
+    const header = document.querySelector('.modal-header');
+    const modal = this.els.modal;
+    if (!header || !modal) return;
+    let arrastando = false, startX = 0, startY = 0, origX = 0, origY = 0;
+    header.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return; // não interfere com o "✕" de fechar
+      arrastando = true;
+      startX = e.clientX; startY = e.clientY;
+      const atual = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(modal.style.transform || '');
+      origX = atual ? parseFloat(atual[1]) : 0;
+      origY = atual ? parseFloat(atual[2]) : 0;
+      header.setPointerCapture(e.pointerId);
+    });
+    header.addEventListener('pointermove', (e) => {
+      if (!arrastando) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      modal.style.transform = `translate(${origX + dx}px, ${origY + dy}px)`;
+    });
+    header.addEventListener('pointerup', () => { arrastando = false; });
   },
   abrirModalMinhaConta() {
     const perfil = this.perfilAtual();
@@ -3335,6 +3387,10 @@ const App = {
     document.getElementById('btnAddAusencia').addEventListener('click', () => this.adicionarAusencia());
     e.selHorizonteCap.addEventListener('change', () => this.renderCapacidade());
     e.selEquipaCap.addEventListener('change', () => this.renderCapacidade());
+    e.selMesInicioCap.addEventListener('change', () => this.renderCapacidade());
+    document.getElementById('btnCapMesAnt').addEventListener('click', () => this.navegarMesCap(-1));
+    document.getElementById('btnCapMesSeg').addEventListener('click', () => this.navegarMesCap(1));
+    document.getElementById('btnCapHoje').addEventListener('click', () => { e.selMesInicioCap.value = ''; this.renderCapacidade(); });
 
     document.querySelectorAll('.link-tab').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); this.verFaturacaoDoProjeto(); }));
     e.regPessoa.addEventListener('change', () => this.renderProjetosRegisto());
@@ -3385,6 +3441,7 @@ const App = {
     });
 
     document.getElementById('modalFechar').addEventListener('click', () => this.fecharModal());
+    this.ligarArrastarModal();
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
