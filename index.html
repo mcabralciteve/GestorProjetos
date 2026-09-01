@@ -63,7 +63,8 @@
 <nav class="grupos-nav" id="gruposNav">
   <button class="grupo-btn active" data-grupo="planeamento">📅 Planeamento</button>
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
-  <button class="grupo-btn" data-grupo="registos">🧾 Registos</button>
+  <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
+  <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Faturação</button>
 </nav>
 <nav class="tabs" id="tabsNav">
   <div class="tabs-grupo active" data-grupo="planeamento">
@@ -78,9 +79,12 @@
     <button class="tab-btn" data-tab="capacidade">Capacidade</button>
     <button class="tab-btn" data-tab="feriados">Feriados &amp; Ausências</button>
   </div>
-  <div class="tabs-grupo" data-grupo="registos">
-    <button class="tab-btn" data-tab="registo">Registo de Horas</button>
-    <button class="tab-btn" data-tab="faturacao" id="tabBtnFaturacao">Faturação</button>
+  <div class="tabs-grupo" data-grupo="horas">
+    <button class="tab-btn" data-tab="registo">Registo</button>
+    <button class="tab-btn" data-tab="calendario">Calendário</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="faturacao">
+    <button class="tab-btn" data-tab="faturacao">Registo</button>
   </div>
 </nav>
 
@@ -567,25 +571,27 @@
       </table>
     </div>
     <div class="paginacao" id="paginacaoRegistos"></div>
+  </div>
+</section>
 
-    <div class="pagina-head" style="margin-top:28px;">
+<!-- ===================== TAB: CALENDÁRIO DE HORAS ===================== -->
+<section class="tab-panel" id="tab-calendario">
+  <div class="pagina">
+    <div class="pagina-head">
       <h2>📅 Calendário</h2>
-      <button type="button" class="btn btn-sm" id="btnAlternarCalendarioRegisto">Mostrar calendário</button>
     </div>
-    <div id="zonaCalendarioRegisto" style="display:none;">
-      <p class="pagina-sub">Vista mensal das horas lançadas — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
-      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
-        <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
-        <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
-      </div>
-      <div class="cal-topbar">
-        <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
-        <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
-        <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
-        <strong id="calMesLabel"></strong>
-      </div>
-      <div id="calendarioRegistos" class="calendario-registos"></div>
+    <p class="pagina-sub">Vista mensal das horas lançadas — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
     </div>
+    <div class="cal-topbar">
+      <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
+      <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
+      <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
+      <strong id="calMesLabel"></strong>
+    </div>
+    <div id="calendarioRegistos" class="calendario-registos"></div>
   </div>
 </section>
 

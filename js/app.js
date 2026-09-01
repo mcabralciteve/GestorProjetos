@@ -125,7 +125,7 @@ const App = {
       projGestorId: document.getElementById('projGestorId'),
       listaConsultoresProjeto: document.getElementById('listaConsultoresProjeto'),
       grupoBtnEquipa: document.getElementById('grupoBtnEquipa'),
-      tabBtnFaturacao: document.getElementById('tabBtnFaturacao'),
+      grupoBtnFaturacao: document.getElementById('grupoBtnFaturacao'),
       tabBtnAcompanhamento: document.getElementById('tabBtnAcompanhamento'),
       acompanhamentoProjetoNome: document.getElementById('acompanhamentoProjetoNome'),
       acompanhamentoSemProjeto: document.getElementById('acompanhamentoSemProjeto'),
@@ -207,8 +207,6 @@ const App = {
       statsRegisto: document.getElementById('statsRegisto'),
       corpoTabelaRegistos: document.getElementById('corpoTabelaRegistos'),
       paginacaoRegistos: document.getElementById('paginacaoRegistos'),
-      btnAlternarCalendarioRegisto: document.getElementById('btnAlternarCalendarioRegisto'),
-      zonaCalendarioRegisto: document.getElementById('zonaCalendarioRegisto'),
       fCalPessoa: document.getElementById('fCalPessoa'),
       fCalProjeto: document.getElementById('fCalProjeto'),
       btnCalMesAnt: document.getElementById('btnCalMesAnt'),
@@ -1718,7 +1716,7 @@ const App = {
     const admin = this.souAdmin();
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = admin ? '' : 'none';
-    if (e.tabBtnFaturacao) e.tabBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
+    if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
@@ -1727,6 +1725,7 @@ const App = {
       if (btn) btn.style.display = admin ? '' : 'none';
     });
     if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!gestorDeAlgo && this.abaAtiva === 'faturacao') this.irParaAba('registo');
     if (!gestorDeAlgo && ['faturacao', 'acompanhamento'].includes(this.abaAtiva)) this.irParaAba('gantt');
   },
 
@@ -2582,14 +2581,6 @@ const App = {
     const projetosPermitidosIds = new Set(this.projetosRegistoPermitidos().map(p => p.idInterno));
     return this.state.registos.filter(r => pessoasPermitidas.has(r.pessoa) && projetosPermitidosIds.has(r.projetoIdInterno));
   },
-  alternarCalendarioRegisto() {
-    const e = this.els;
-    if (!e.zonaCalendarioRegisto || !e.btnAlternarCalendarioRegisto) return;
-    const aberto = e.zonaCalendarioRegisto.style.display !== 'none';
-    e.zonaCalendarioRegisto.style.display = aberto ? 'none' : '';
-    e.btnAlternarCalendarioRegisto.textContent = aberto ? 'Mostrar calendário' : 'Esconder calendário';
-    if (!aberto) this.renderCalendarioRegisto();
-  },
   navegarMesCalendario(delta) {
     if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
     let { ano, mes } = this.calMesAtual;
@@ -2612,8 +2603,7 @@ const App = {
   // (altura proporcional às horas desse registo). Só leitura — não há aqui edição/arrastar.
   renderCalendarioRegisto() {
     const e = this.els;
-    if (!e.calendarioRegistos || !e.zonaCalendarioRegisto) return;
-    if (e.zonaCalendarioRegisto.style.display === 'none') return;
+    if (!e.calendarioRegistos) return;
     if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
 
     const registosPermitidos = this.registosCalendarioPermitidos();
@@ -3308,8 +3298,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'registos', faturacao: 'registos' },
-  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', registos: 'registo' },
+  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao' },
+  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', horas: 'registo', faturacao: 'faturacao' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -3318,6 +3308,7 @@ const App = {
     document.querySelectorAll('.grupo-btn').forEach(b => b.classList.toggle('active', b.dataset.grupo === grupo));
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'gantt') this.renderGanttAtual();
+    if (nome === 'calendario') this.renderCalendarioRegisto();
   },
   irParaGrupo(grupo) {
     if (this.gruposAbas[this.abaAtiva] === grupo) return;
@@ -3687,7 +3678,6 @@ const App = {
       this.aplicarFiltrosRegisto();
     });
 
-    if (e.btnAlternarCalendarioRegisto) e.btnAlternarCalendarioRegisto.addEventListener('click', () => this.alternarCalendarioRegisto());
     if (e.fCalPessoa) e.fCalPessoa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.fCalProjeto) e.fCalProjeto.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
