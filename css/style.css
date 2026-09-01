@@ -594,3 +594,23 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
   }
   #ganttContainer{position:static !important;}
 }
+
+/* ---------- Registo de Horas — Calendário mensal ---------- */
+.cal-topbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.calendario-registos{border:1px solid var(--cinza-200);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);background:var(--branco);}
+.cal-cabecalho{display:grid;grid-template-columns:repeat(7,1fr);background:var(--cinza-100);}
+.cal-cabecalho div{padding:6px 8px;font-size:11px;font-weight:600;color:var(--cinza-500);text-transform:uppercase;letter-spacing:.02em;text-align:center;}
+.cal-grelha{display:grid;grid-template-columns:repeat(7,1fr);}
+.cal-dia{min-height:96px;border-top:1px solid var(--cinza-200);border-left:1px solid var(--cinza-200);padding:4px 5px;display:flex;flex-direction:column;gap:3px;}
+.cal-dia:nth-child(7n+1){border-left:none;}
+.cal-dia.fora-mes{background:var(--cinza-100);}
+.cal-dia.fora-mes .cal-dia-numero{color:var(--cinza-300);}
+.cal-dia.hoje{background:#eaf4fb;}
+:root[data-tema="escuro"] .cal-dia.hoje{background:#16324a;}
+.cal-dia-cabecalho{display:flex;justify-content:space-between;align-items:center;}
+.cal-dia-numero{font-size:12px;font-weight:600;color:var(--cinza-700);}
+.cal-dia-total{font-size:10.5px;font-weight:600;color:var(--cinza-500);}
+.cal-dia-blocos{display:flex;flex-direction:column;gap:2px;overflow:hidden;}
+.cal-bloco{border-radius:4px;padding:2px 6px;color:#fff;font-size:10.5px;line-height:1.25;overflow:hidden;display:flex;flex-direction:column;justify-content:center;cursor:default;}
+.cal-bloco-linha1{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cal-bloco-linha2{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

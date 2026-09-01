@@ -55,6 +55,9 @@ const App = {
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
+  filtrosCalendarioRegisto: { pessoa: '', projeto: '' },
+  calMesAtual: null,
+  CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
   filtrosTodosPassos: { projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
   filtrosProjetos: { gestorId: '', cliente: '', estado: '', estadoOrc: '' },
@@ -204,6 +207,15 @@ const App = {
       statsRegisto: document.getElementById('statsRegisto'),
       corpoTabelaRegistos: document.getElementById('corpoTabelaRegistos'),
       paginacaoRegistos: document.getElementById('paginacaoRegistos'),
+      btnAlternarCalendarioRegisto: document.getElementById('btnAlternarCalendarioRegisto'),
+      zonaCalendarioRegisto: document.getElementById('zonaCalendarioRegisto'),
+      fCalPessoa: document.getElementById('fCalPessoa'),
+      fCalProjeto: document.getElementById('fCalProjeto'),
+      btnCalMesAnt: document.getElementById('btnCalMesAnt'),
+      btnCalMesSeg: document.getElementById('btnCalMesSeg'),
+      btnCalHoje: document.getElementById('btnCalHoje'),
+      calMesLabel: document.getElementById('calMesLabel'),
+      calendarioRegistos: document.getElementById('calendarioRegistos'),
       statsFaturacao: document.getElementById('statsFaturacao'),
       fFatProjeto: document.getElementById('fFatProjeto'),
       fFatDe: document.getElementById('fFatDe'),
@@ -2551,6 +2563,129 @@ const App = {
       if (btnAnt) btnAnt.addEventListener('click', () => { this.paginaRegistos--; this.renderTabelaRegistos(); });
       if (btnSeg) btnSeg.addEventListener('click', () => { this.paginaRegistos++; this.renderTabelaRegistos(); });
     }
+    this.renderCalendarioRegisto();
+  },
+
+  // ---------- Tab: Registo de Horas — Calendário ----------
+  // Cor estável por pessoa (mesmo hash sempre dá a mesma cor), só para diferenciar visualmente
+  // várias pessoas no mesmo mês — não tem nenhum significado além disso.
+  corPessoaCalendario(nome) {
+    const cores = this.CORES_CALENDARIO;
+    let hash = 0;
+    for (let i = 0; i < nome.length; i++) hash = (hash * 31 + nome.charCodeAt(i)) >>> 0;
+    return cores[hash % cores.length];
+  },
+  // Mesma regra de permissão do Registo de Horas (Admin vê tudo; Gestor só os projetos que gere;
+  // Consultor só os seus próprios registos), aplicada aos registos já existentes.
+  registosCalendarioPermitidos() {
+    const pessoasPermitidas = new Set(this.recursosPermitidosRegisto().map(r => r.nome));
+    const projetosPermitidosIds = new Set(this.projetosRegistoPermitidos().map(p => p.idInterno));
+    return this.state.registos.filter(r => pessoasPermitidas.has(r.pessoa) && projetosPermitidosIds.has(r.projetoIdInterno));
+  },
+  alternarCalendarioRegisto() {
+    const e = this.els;
+    if (!e.zonaCalendarioRegisto || !e.btnAlternarCalendarioRegisto) return;
+    const aberto = e.zonaCalendarioRegisto.style.display !== 'none';
+    e.zonaCalendarioRegisto.style.display = aberto ? 'none' : '';
+    e.btnAlternarCalendarioRegisto.textContent = aberto ? 'Mostrar calendário' : 'Esconder calendário';
+    if (!aberto) this.renderCalendarioRegisto();
+  },
+  navegarMesCalendario(delta) {
+    if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+    let { ano, mes } = this.calMesAtual;
+    mes += delta;
+    if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
+    this.calMesAtual = { ano, mes };
+    this.renderCalendarioRegisto();
+  },
+  irParaHojeCalendario() {
+    const hoje = new Date();
+    this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
+    this.renderCalendarioRegisto();
+  },
+  aplicarFiltrosCalendarioRegisto() {
+    const e = this.els;
+    this.filtrosCalendarioRegisto = { pessoa: e.fCalPessoa.value, projeto: e.fCalProjeto.value };
+    this.renderCalendarioRegisto();
+  },
+  // Vista mensal tipo Outlook: uma grelha de semanas/dias, com uma barra por registo em cada dia
+  // (altura proporcional às horas desse registo). Só leitura — não há aqui edição/arrastar.
+  renderCalendarioRegisto() {
+    const e = this.els;
+    if (!e.calendarioRegistos || !e.zonaCalendarioRegisto) return;
+    if (e.zonaCalendarioRegisto.style.display === 'none') return;
+    if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+
+    const registosPermitidos = this.registosCalendarioPermitidos();
+    const pessoasDisponiveis = [...new Set(registosPermitidos.map(r => r.pessoa))].sort((a, b) => a.localeCompare(b, 'pt'));
+    const projetosDisponiveis = [];
+    const idsProjetoVistos = new Set();
+    registosPermitidos.forEach(r => {
+      if (idsProjetoVistos.has(r.projetoIdInterno)) return;
+      idsProjetoVistos.add(r.projetoIdInterno);
+      projetosDisponiveis.push({ idInterno: r.projetoIdInterno, nome: r.projetoNome });
+    });
+    projetosDisponiveis.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
+
+    if (e.fCalPessoa) {
+      const valorPessoa = this.filtrosCalendarioRegisto.pessoa;
+      e.fCalPessoa.innerHTML = '<option value="">Todas</option>' + pessoasDisponiveis.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
+      e.fCalPessoa.value = pessoasDisponiveis.includes(valorPessoa) ? valorPessoa : '';
+    }
+    if (e.fCalProjeto) {
+      const valorProjeto = this.filtrosCalendarioRegisto.projeto;
+      e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+      e.fCalProjeto.value = projetosDisponiveis.some(p => p.idInterno === valorProjeto) ? valorProjeto : '';
+    }
+    this.filtrosCalendarioRegisto = { pessoa: e.fCalPessoa ? e.fCalPessoa.value : '', projeto: e.fCalProjeto ? e.fCalProjeto.value : '' };
+
+    const f = this.filtrosCalendarioRegisto;
+    const registosFiltrados = registosPermitidos.filter(r => (!f.pessoa || r.pessoa === f.pessoa) && (!f.projeto || r.projetoIdInterno === f.projeto));
+
+    const { ano, mes } = this.calMesAtual;
+    const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    if (e.calMesLabel) e.calMesLabel.textContent = `${NOMES_MES[mes]} ${ano}`;
+
+    const primeiroDiaMes = new Date(ano, mes, 1);
+    const ultimoDiaMes = new Date(ano, mes + 1, 0);
+    const inicioGrelha = new Date(primeiroDiaMes);
+    inicioGrelha.setDate(inicioGrelha.getDate() - inicioGrelha.getDay());
+    const fimGrelha = new Date(ultimoDiaMes);
+    fimGrelha.setDate(fimGrelha.getDate() + (6 - fimGrelha.getDay()));
+
+    const porDia = {};
+    registosFiltrados.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
+    Object.values(porDia).forEach(lista => lista.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt')));
+
+    const hojeISO = DateUtil.todayISO();
+    const mostrarPessoaNaBarra = !f.pessoa && pessoasDisponiveis.length > 1;
+    const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
+    let cursor = new Date(inicioGrelha);
+    while (cursor <= fimGrelha) {
+      const iso = DateUtil.toISO(cursor);
+      const foraDoMes = cursor.getMonth() !== mes;
+      const registosDoDia = porDia[iso] || [];
+      const totalHoras = registosDoDia.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+      const blocos = registosDoDia.map(r => {
+        const horas = parseFloat(r.horas) || 0;
+        const altura = Math.max(20, Math.min(horas * 12, 96));
+        const cor = this.corPessoaCalendario(r.pessoa);
+        const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(r.projetoNome)}` : escapeHtml(r.projetoNome);
+        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(r.projetoNome)}${r.tarefaNome ? ' · ' + escapeAttr(r.tarefaNome) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
+        return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
+          <span class="cal-bloco-linha1">${linha1}</span>
+          <span class="cal-bloco-linha2">${escapeHtml(r.tarefaNome || '')} · ${horas}h</span>
+        </div>`;
+      }).join('');
+      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
+        <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras}h</span>` : ''}</div>
+        <div class="cal-dia-blocos">${blocos}</div>
+      </div>`;
+      cursor = DateUtil.addDays(cursor, 1);
+    }
+    html += '</div>';
+    e.calendarioRegistos.innerHTML = html;
   },
 
   // ---------- Tab: Faturação ----------
@@ -3551,6 +3686,13 @@ const App = {
       e.fRegPessoa.value = ''; e.fRegProjeto.value = ''; e.fRegDe.value = ''; e.fRegAte.value = ''; e.fRegTexto.value = '';
       this.aplicarFiltrosRegisto();
     });
+
+    if (e.btnAlternarCalendarioRegisto) e.btnAlternarCalendarioRegisto.addEventListener('click', () => this.alternarCalendarioRegisto());
+    if (e.fCalPessoa) e.fCalPessoa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
+    if (e.fCalProjeto) e.fCalProjeto.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
+    if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
+    if (e.btnCalMesSeg) e.btnCalMesSeg.addEventListener('click', () => this.navegarMesCalendario(1));
+    if (e.btnCalHoje) e.btnCalHoje.addEventListener('click', () => this.irParaHojeCalendario());
 
     document.getElementById('btnAddFatura').addEventListener('click', () => this.adicionarFatura());
     [e.fFatProjeto, e.fFatDe, e.fFatAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosFaturacao()));

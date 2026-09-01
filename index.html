@@ -567,6 +567,25 @@
       </table>
     </div>
     <div class="paginacao" id="paginacaoRegistos"></div>
+
+    <div class="pagina-head" style="margin-top:28px;">
+      <h2>📅 Calendário</h2>
+      <button type="button" class="btn btn-sm" id="btnAlternarCalendarioRegisto">Mostrar calendário</button>
+    </div>
+    <div id="zonaCalendarioRegisto" style="display:none;">
+      <p class="pagina-sub">Vista mensal das horas lançadas — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
+      </div>
+      <div class="cal-topbar">
+        <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
+        <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
+        <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
+        <strong id="calMesLabel"></strong>
+      </div>
+      <div id="calendarioRegistos" class="calendario-registos"></div>
+    </div>
   </div>
 </section>
 
