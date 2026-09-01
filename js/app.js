@@ -2298,31 +2298,46 @@ const App = {
       const ano = parseInt(String(valor).slice(0, 4), 10);
       if (!ano || ano < 1000) return;
       r.data = valor; campos.data = valor;
-    } else if (campo === 'pessoa') {
-      r.pessoa = valor; campos.pessoa = valor;
-    } else if (campo === 'projetoIdInterno') {
-      const proj = Object.values(this.state.projetos).find(p => p.idInterno === valor);
-      r.projetoIdInterno = valor;
-      r.projetoNome = proj ? proj.nome : valor;
-      r.projetoId = proj ? proj.id : null;
-      r.cliente = proj ? (proj.cliente || '') : ''; // acompanha o projeto por omissão; editável à parte a seguir
-      r.tarefaNome = ''; // o projeto mudou — a tarefa antiga já não pertence a este projeto
-      campos.projeto_id_interno = r.projetoIdInterno;
-      campos.projeto_nome = r.projetoNome;
-      campos.projeto_id = r.projetoId;
-      campos.cliente = r.cliente;
-      campos.tarefa_nome = '';
-    } else if (campo === 'tarefaNome') {
-      r.tarefaNome = valor; campos.tarefa_nome = valor;
     } else if (campo === 'horas') {
+      // Horas é obrigatório e tem de ser maior que zero — nunca se aceita vazio/zero/negativo,
+      // nem na criação nem aqui.
       const h = parseFloat(valor);
-      if (!h || h <= 0) { this.toast('Horas inválidas.'); this.renderTabelaRegistos(); return; }
+      if (!h || h <= 0) { this.toast('Horas é obrigatório e tem de ser maior que zero.'); this.renderTabelaRegistos(); return; }
       r.horas = h; campos.horas = h;
     } else if (campo === 'notas') {
       r.notas = valor.trim(); campos.notas = r.notas;
     } else {
       return;
     }
+    try {
+      await Sync.atualizarRegisto(id, campos);
+    } catch (err) {
+      this.toast('Erro ao atualizar registo: ' + err.message);
+    }
+    this.renderTabelaRegistos();
+  },
+  // Pessoa/Projeto/Tarefa mudam sempre em conjunto (ver as chamadas em renderTabelaRegistos) —
+  // um registo nunca pode ficar sem tarefa associada, por isso as três só se gravam juntas, já
+  // com a combinação final validada (a tarefa escolhida tem mesmo de pertencer ao projeto e a
+  // pessoa indicados).
+  async gravarLinhaRegisto(id, alteracoes) {
+    if (!this.souAdmin()) return;
+    const r = this.state.registos.find(x => x.id === id);
+    if (!r) return;
+    const campos = {};
+    if ('pessoa' in alteracoes) { r.pessoa = alteracoes.pessoa; campos.pessoa = r.pessoa; }
+    if ('projetoIdInterno' in alteracoes) {
+      const proj = Object.values(this.state.projetos).find(p => p.idInterno === alteracoes.projetoIdInterno);
+      r.projetoIdInterno = alteracoes.projetoIdInterno;
+      r.projetoNome = proj ? proj.nome : alteracoes.projetoIdInterno;
+      r.projetoId = proj ? proj.id : null;
+      r.cliente = proj ? (proj.cliente || '') : '';
+      campos.projeto_id_interno = r.projetoIdInterno;
+      campos.projeto_nome = r.projetoNome;
+      campos.projeto_id = r.projetoId;
+      campos.cliente = r.cliente;
+    }
+    if ('tarefaNome' in alteracoes) { r.tarefaNome = alteracoes.tarefaNome; campos.tarefa_nome = r.tarefaNome; }
     try {
       await Sync.atualizarRegisto(id, campos);
     } catch (err) {
@@ -2468,12 +2483,23 @@ const App = {
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
         <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="pessoa"]').value = r.pessoa;
+      // Projeto e Tarefa nunca podem ficar por preencher — um registo sem tarefa associada não é
+      // permitido (nem na criação, nem aqui). Sempre que a Pessoa ou o Projeto mudam de forma a
+      // invalidar a escolha atual, escolhe-se automaticamente a primeira opção válida em vez de
+      // deixar a célula vazia.
       const preencherProjetos = (manterSelecao) => {
         const selProjeto = tr.querySelector('[data-campo="projetoIdInterno"]');
         const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
         const projetos = this.projetosDaPessoaRegisto(nomePessoa);
-        selProjeto.innerHTML = '<option value="">—</option>' + projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
-        selProjeto.value = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno) ? r.projetoIdInterno : '';
+        if (!projetos.length) {
+          selProjeto.innerHTML = '<option value="">Sem projetos atribuídos</option>';
+          selProjeto.disabled = true;
+          preencherTarefas();
+          return;
+        }
+        selProjeto.disabled = false;
+        selProjeto.innerHTML = projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+        selProjeto.value = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno) ? r.projetoIdInterno : projetos[0].idInterno;
         preencherTarefas();
       };
       const preencherTarefas = () => {
@@ -2481,13 +2507,33 @@ const App = {
         const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
         const idInternoProjeto = tr.querySelector('[data-campo="projetoIdInterno"]').value;
         const tarefas = this.tarefasDoProjetoParaPessoaRegisto(idInternoProjeto, nomePessoa);
-        selTarefa.innerHTML = '<option value="">—</option>' + tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
-        selTarefa.value = tarefas.some(t => t.nome === r.tarefaNome) && idInternoProjeto === r.projetoIdInterno ? r.tarefaNome : '';
+        if (!tarefas.length) {
+          selTarefa.innerHTML = '<option value="">Sem tarefas neste projeto</option>';
+          selTarefa.disabled = true;
+          return;
+        }
+        selTarefa.disabled = false;
+        selTarefa.innerHTML = tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
+        selTarefa.value = tarefas.some(t => t.nome === r.tarefaNome) ? r.tarefaNome : tarefas[0].nome;
       };
       preencherProjetos(true);
-      tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => { preencherProjetos(false); this.atualizarCampoRegisto(r.id, 'pessoa', ev.target.value); });
-      tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => { preencherTarefas(); this.atualizarCampoRegisto(r.id, 'projetoIdInterno', ev.target.value); });
-      tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'tarefaNome', ev.target.value));
+      tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => {
+        preencherProjetos(false);
+        const selProjeto = tr.querySelector('[data-campo="projetoIdInterno"]');
+        const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
+        if (!selProjeto.value || !selTarefa.value) { this.toast('Esta pessoa não tem tarefas atribuídas em nenhum projeto — o registo não pode ficar sem tarefa.'); this.renderTabelaRegistos(); return; }
+        this.gravarLinhaRegisto(r.id, { pessoa: ev.target.value, projetoIdInterno: selProjeto.value, tarefaNome: selTarefa.value });
+      });
+      tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => {
+        preencherTarefas();
+        const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
+        if (!selTarefa.value) { this.toast('Este projeto não tem tarefas atribuídas a esta pessoa — o registo não pode ficar sem tarefa.'); this.renderTabelaRegistos(); return; }
+        this.gravarLinhaRegisto(r.id, { projetoIdInterno: ev.target.value, tarefaNome: selTarefa.value });
+      });
+      tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => {
+        if (!ev.target.value) { this.toast('Tem de escolher uma tarefa.'); this.renderTabelaRegistos(); return; }
+        this.gravarLinhaRegisto(r.id, { tarefaNome: ev.target.value });
+      });
       tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
       tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
       tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));

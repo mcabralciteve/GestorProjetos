@@ -511,22 +511,22 @@
     <div class="card" style="max-width:640px;">
       <form id="formRegisto">
         <div class="row-2">
-          <label>Pessoa
+          <label>Pessoa <span style="color:var(--vermelho);">*</span>
             <select id="regPessoa" required><option value="">Seleciona…</option></select>
           </label>
-          <label>Data
+          <label>Data <span style="color:var(--vermelho);">*</span>
             <input type="date" id="regData" required>
           </label>
         </div>
         <div class="row-2">
-          <label>Projeto
+          <label>Projeto <span style="color:var(--vermelho);">*</span>
             <select id="regProjeto" required><option value="">Seleciona…</option></select>
           </label>
-          <label>Tarefa
+          <label>Tarefa <span style="color:var(--vermelho);">*</span>
             <select id="regTarefa" required><option value="">Seleciona…</option></select>
           </label>
         </div>
-        <label>Horas
+        <label>Horas <span style="color:var(--vermelho);">*</span>
           <input type="number" id="regHoras" min="0.25" step="0.25" placeholder="ex.: 2.5" required>
         </label>
         <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
@@ -534,6 +534,7 @@
         </label>
         <button type="submit" class="btn btn-primary">Registar Horas</button>
         <span id="regMsg" class="calc-line" style="border:none;padding:0;margin-left:10px;display:inline-block;"></span>
+        <p class="hint" style="margin-top:10px;"><span style="color:var(--vermelho);">*</span> campo obrigatório</p>
       </form>
     </div>
 
