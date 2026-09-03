@@ -57,6 +57,8 @@ const App = {
   TAMANHO_PAGINA_REGISTOS: 20,
   filtrosCalendarioRegisto: { pessoa: '', projeto: '' },
   calMesAtual: null,
+  filtrosAlocacoes: { pessoa: '', projeto: '' },
+  alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
   filtrosTodosPassos: { projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
@@ -222,7 +224,19 @@ const App = {
       reservaMsg: document.getElementById('reservaMsg'),
       btnReservaViatura: document.getElementById('btnReservaViatura'),
       corpoTabelaReservasViatura: document.getElementById('corpoTabelaReservasViatura'),
-      btnDefinicoes: document.getElementById('btnDefinicoes'),
+      grupoBtnConfiguracoes: document.getElementById('grupoBtnConfiguracoes'),
+      tabBtnCapacidade: document.getElementById('tabBtnCapacidade'),
+      defEmail1: document.getElementById('defEmail1'),
+      defEmail2: document.getElementById('defEmail2'),
+      btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
+      defMsg: document.getElementById('defMsg'),
+      fAlocPessoa: document.getElementById('fAlocPessoa'),
+      fAlocProjeto: document.getElementById('fAlocProjeto'),
+      btnAlocMesAnt: document.getElementById('btnAlocMesAnt'),
+      btnAlocMesSeg: document.getElementById('btnAlocMesSeg'),
+      btnAlocHoje: document.getElementById('btnAlocHoje'),
+      alocMesLabel: document.getElementById('alocMesLabel'),
+      calendarioAlocacoes: document.getElementById('calendarioAlocacoes'),
       fCalPessoa: document.getElementById('fCalPessoa'),
       fCalProjeto: document.getElementById('fCalProjeto'),
       btnCalMesAnt: document.getElementById('btnCalMesAnt'),
@@ -453,6 +467,11 @@ const App = {
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
     if (!this.state.equipas) this.state.equipas = [];
+    this.state.equipas.forEach(eq => {
+      if (eq.unidade === undefined) eq.unidade = '';
+      if (eq.teamLeader === undefined) eq.teamLeader = '';
+      if (eq.diretor === undefined) eq.diretor = '';
+    });
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
     if (!this.state.utilizadores) this.state.utilizadores = [];
@@ -672,7 +691,11 @@ const App = {
     return { id: crypto.randomUUID(), data: data || DateUtil.todayISO(), descricao: descricao || '' };
   },
   novoEquipaObj(nome) {
-    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa' };
+    // "unidade" já vem com o valor atual por omissão (hoje só há um departamento — DCS) só para
+    // poupar trabalho ao Administrador; continua editável por equipa, para o dia em que deixar de
+    // ser verdade. "diretor" segue a mesma lógica; "teamLeader" fica vazio de propósito — é mesmo
+    // por equipa, sem valor por omissão razoável.
+    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', unidade: 'DCS', teamLeader: '', diretor: 'João Oliveira' };
   },
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
     return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
@@ -1161,10 +1184,10 @@ const App = {
     this.renderFiltroEquipaCap();
     this.renderCapacidade();
   },
-  atualizarEquipa(id, valor) {
+  atualizarEquipa(id, campo, valor) {
     const eq = this.state.equipas.find(x => x.id === id);
     if (!eq) return;
-    eq.nome = valor;
+    eq[campo] = valor;
     this.persist();
     this.renderTabelaRecursosCentral();
     this.renderFiltroEquipaCap();
@@ -1719,11 +1742,13 @@ const App = {
     this.renderTabelaAusencias();
     this.renderFiltroEquipaCap();
     this.renderCapacidade();
+    this.renderCalendarioAlocacoes();
     this.renderFormRegisto();
     this.renderTabelaRegistos();
     this.renderFaturacao();
     this.renderFormReservaViatura();
     this.renderTabelaReservasViatura();
+    this.renderDefinicoes();
     this.renderAcompanhamento();
     this.renderTodosPassos();
   },
@@ -1735,9 +1760,13 @@ const App = {
     const e = this.els;
     const admin = this.souAdmin();
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
-    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = admin ? '' : 'none';
+    // "Equipa" passa a ser visível para Gestor de Projeto também (precisa de ver Alocações dos
+    // seus projetos), não só Administrador — "Capacidade" continua só para Administrador, por
+    // isso tem o próprio esconde/mostra ao nível do separador (tabBtnCapacidade), não do grupo.
+    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = gestorDeAlgo ? '' : 'none';
+    if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = admin ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
-    if (e.btnDefinicoes) e.btnDefinicoes.style.display = admin ? '' : 'none';
+    if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
@@ -1745,9 +1774,8 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos'].includes(this.abaAtiva)) this.irParaAba('gantt');
-    if (!gestorDeAlgo && this.abaAtiva === 'faturacao') this.irParaAba('registo');
-    if (!gestorDeAlgo && ['faturacao', 'acompanhamento'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('gantt');
   },
 
   renderInfoProjeto() {
@@ -2061,8 +2089,13 @@ const App = {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
+        <td><input type="text" value="${escapeAttr(eq.unidade || '')}" data-campo="unidade"></td>
+        <td><input type="text" value="${escapeAttr(eq.teamLeader || '')}" data-campo="teamLeader"></td>
+        <td><input type="text" value="${escapeAttr(eq.diretor || '')}" data-campo="diretor"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
-      tr.querySelector('input').addEventListener('change', (e) => this.atualizarEquipa(eq.id, e.target.value));
+      tr.querySelectorAll('[data-campo]').forEach(inp => {
+        inp.addEventListener('change', (e) => this.atualizarEquipa(eq.id, inp.dataset.campo, e.target.value));
+      });
       tr.querySelector('button').addEventListener('click', () => this.eliminarEquipa(eq.id));
       tbody.appendChild(tr);
     });
@@ -2129,6 +2162,112 @@ const App = {
       tr.querySelector('button').addEventListener('click', () => this.eliminarAusencia(a.id));
       tbody.appendChild(tr);
     });
+  },
+
+  // ---------- Tab: Equipa — Alocações ----------
+  // Mesma vista mensal tipo Outlook do Calendário de Registo de Horas, mas com dados PLANEADOS
+  // (tarefas do Gantt com recurso atribuído), não horas efetivamente lançadas — reaproveita as
+  // funções de repartição diária já existentes em Capacidade (horasTarefaNoDia), em vez de
+  // reimplementar o cálculo. Permissão igual à do Registo de Horas: Admin vê toda a gente; Gestor
+  // só vê pessoas que já têm alguma tarefa nos projetos que gere (recursosPermitidosRegisto()).
+  // Mostra sempre o quadro completo da pessoa (todos os projetos em que trabalha, não só os do
+  // Gestor que está a ver) — é a mesma vista que a Capacidade já mostra ao Administrador, agora
+  // também acessível ao Gestor para as pessoas dos seus próprios projetos.
+  projetosAlocacaoPermitidos() {
+    const todos = Object.values(this.state.projetos);
+    return this.souAdmin() ? todos : todos.filter(p => this.souGestorDe(p.id));
+  },
+  navegarMesAlocacoes(delta) {
+    if (!this.alocMesAtual) { const hoje = new Date(); this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+    let { ano, mes } = this.alocMesAtual;
+    mes += delta;
+    if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
+    this.alocMesAtual = { ano, mes };
+    this.renderCalendarioAlocacoes();
+  },
+  irParaHojeAlocacoes() {
+    const hoje = new Date();
+    this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
+    this.renderCalendarioAlocacoes();
+  },
+  aplicarFiltrosAlocacoes() {
+    const e = this.els;
+    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa.value, projeto: e.fAlocProjeto.value };
+    this.renderCalendarioAlocacoes();
+  },
+  renderCalendarioAlocacoes() {
+    const e = this.els;
+    if (!e.calendarioAlocacoes) return;
+    if (!this.souGestorDeAlgumProjeto()) return; // sem acesso (separador nem devia estar visível)
+    if (!this.alocMesAtual) { const hoje = new Date(); this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+
+    const recursosPermitidos = this.recursosPermitidosRegisto();
+    const projetosPermitidos = this.projetosAlocacaoPermitidos();
+
+    if (e.fAlocPessoa) {
+      const valorPessoa = this.filtrosAlocacoes.pessoa;
+      e.fAlocPessoa.innerHTML = '<option value="">Todas</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
+      e.fAlocPessoa.value = recursosPermitidos.some(r => r.id === valorPessoa) ? valorPessoa : '';
+    }
+    if (e.fAlocProjeto) {
+      const valorProjeto = this.filtrosAlocacoes.projeto;
+      e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+      e.fAlocProjeto.value = projetosPermitidos.some(p => p.id === valorProjeto) ? valorProjeto : '';
+    }
+    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa ? e.fAlocPessoa.value : '', projeto: e.fAlocProjeto ? e.fAlocProjeto.value : '' };
+    const f = this.filtrosAlocacoes;
+    const recursosAtivos = f.pessoa ? recursosPermitidos.filter(r => r.id === f.pessoa) : recursosPermitidos;
+
+    const { ano, mes } = this.alocMesAtual;
+    const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    if (e.alocMesLabel) e.alocMesLabel.textContent = `${NOMES_MES[mes]} ${ano}`;
+
+    const primeiroDiaMes = new Date(ano, mes, 1);
+    const ultimoDiaMes = new Date(ano, mes + 1, 0);
+    const inicioGrelha = new Date(primeiroDiaMes);
+    inicioGrelha.setDate(inicioGrelha.getDate() - inicioGrelha.getDay());
+    const fimGrelha = new Date(ultimoDiaMes);
+    fimGrelha.setDate(fimGrelha.getDate() + (6 - fimGrelha.getDay()));
+
+    const hojeISO = DateUtil.todayISO();
+    const mostrarPessoaNaBarra = !f.pessoa && recursosAtivos.length > 1;
+    const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
+    let cursor = new Date(inicioGrelha);
+    while (cursor <= fimGrelha) {
+      const iso = DateUtil.toISO(cursor);
+      const foraDoMes = cursor.getMonth() !== mes;
+      const itens = [];
+      recursosAtivos.forEach(r => {
+        Capacidade.tarefasAtivasNoDia(cursor, r.id).forEach(({ projeto, tarefa }) => {
+          if (f.projeto && projeto.id !== f.projeto) return;
+          const horas = Capacidade.horasTarefaNoDia(tarefa, r.id, cursor);
+          if (horas <= 0) return;
+          itens.push({ pessoa: r.nome, projetoNome: projeto.nome, tarefaNome: tarefa.nome, horas });
+        });
+      });
+      itens.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt'));
+      const totalHoras = itens.reduce((s, x) => s + x.horas, 0);
+      // Cor sempre por PROJETO (não por pessoa): mantém-se útil mesmo com uma só pessoa
+      // selecionada no filtro, caso em que uma cor por pessoa seria sempre a mesma para tudo.
+      const blocos = itens.map(it => {
+        const altura = Math.max(20, Math.min(it.horas * 12, 96));
+        const cor = this.corPessoaCalendario(it.projetoNome);
+        const linha1 = mostrarPessoaNaBarra ? `${it.pessoa} — ${it.projetoNome}` : it.projetoNome;
+        const titulo = `${escapeAttr(it.pessoa)} · ${escapeAttr(it.projetoNome)} · ${escapeAttr(it.tarefaNome)} · ${it.horas.toFixed(1)}h/dia útil`;
+        return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
+          <span class="cal-bloco-linha1">${escapeHtml(linha1)}</span>
+          <span class="cal-bloco-linha2">${escapeHtml(it.tarefaNome)} · ${it.horas.toFixed(1)}h</span>
+        </div>`;
+      }).join('');
+      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
+        <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras.toFixed(1)}h</span>` : ''}</div>
+        <div class="cal-dia-blocos">${blocos}</div>
+      </div>`;
+      cursor = DateUtil.addDays(cursor, 1);
+    }
+    html += '</div>';
+    e.calendarioAlocacoes.innerHTML = html;
   },
 
   // ---------- Tab: Capacidade ----------
@@ -2837,18 +2976,21 @@ const App = {
     if (!e.formReservaViatura) return;
     const perfil = this.perfilAtual();
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
     const projetos = this.meusProjetosEnvolvidos();
     if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
+    e.reservaArea.value = equipa ? (equipa.unidade || '') : '';
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
       projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
     e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
     this.atualizarGestorReservaViatura();
 
-    const semAcesso = !recurso || !projetos.length;
+    const semAcesso = !recurso || !projetos.length || !e.reservaArea.value;
     if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
       if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
       else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
+      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem uma Unidade definida — contacta o administrador.'; }
       else { e.reservaMsg.textContent = ''; }
     }
     e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
@@ -3480,8 +3622,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas' },
-  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', horas: 'registo', faturacao: 'faturacao', viaturas: 'viaturas' },
+  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'alocacoes', horas: 'registo', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -3491,6 +3633,7 @@ const App = {
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'gantt') this.renderGanttAtual();
     if (nome === 'calendario') this.renderCalendarioRegisto();
+    if (nome === 'alocacoes') this.renderCalendarioAlocacoes();
   },
   irParaGrupo(grupo) {
     if (this.gruposAbas[this.abaAtiva] === grupo) return;
@@ -3583,35 +3726,33 @@ const App = {
       }
     });
   },
-  // Definições gerais da app — só Administrador. Para já só os emails da equipa de viaturas,
-  // usados para pré-preencher o destinatário do email aberto a cada pedido de reserva.
-  abrirModalDefinicoes() {
-    if (!this.souAdmin()) return;
+  // Definições gerais da app (separador "Configurações → Definições", só Administrador). Para já
+  // só os emails da equipa de viaturas, usados para pré-preencher o destinatário do email aberto a
+  // cada pedido de reserva.
+  renderDefinicoes() {
+    const e = this.els;
+    if (!e.defEmail1) return;
     const c = this.state.configuracoes || {};
-    const html = `
-      <p class="pagina-sub" style="margin-top:0;">Emails da equipa que trata dos pedidos de reserva de viatura — usados para pré-preencher o destinatário do email aberto a cada pedido.</p>
-      <label>Email 1 <input type="email" id="defEmail1" value="${escapeAttr(c.emailViaturas1 || '')}"></label>
-      <label>Email 2 <input type="email" id="defEmail2" value="${escapeAttr(c.emailViaturas2 || '')}"></label>
-      <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
-      <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
-    this.abrirModal('⚙ Definições', html);
-    const m = this.els.modalCorpo;
-    const msg = m.querySelector('#defMsg');
-    m.querySelector('#btnGuardarDefinicoes').addEventListener('click', async () => {
-      const email1 = m.querySelector('#defEmail1').value.trim();
-      const email2 = m.querySelector('#defEmail2').value.trim();
-      msg.style.color = 'var(--cinza-500)';
-      msg.textContent = 'A guardar...';
-      try {
-        await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2 });
-        this.state.configuracoes = { emailViaturas1: email1, emailViaturas2: email2 };
-        this.fecharModal();
-        this.toast('Definições guardadas.');
-      } catch (err) {
-        msg.style.color = 'var(--vermelho)';
-        msg.textContent = 'Erro: ' + err.message;
-      }
-    });
+    // Não pisa o que a pessoa esteja a escrever se isto for re-renderizado por outra razão
+    // enquanto o separador está aberto (renderTudo corre a cada alteração, em qualquer separador).
+    if (document.activeElement !== e.defEmail1) e.defEmail1.value = c.emailViaturas1 || '';
+    if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
+  },
+  async guardarDefinicoes() {
+    const e = this.els;
+    const email1 = e.defEmail1.value.trim();
+    const email2 = e.defEmail2.value.trim();
+    e.defMsg.style.color = 'var(--cinza-500)';
+    e.defMsg.textContent = 'A guardar...';
+    try {
+      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2 });
+      this.state.configuracoes = { emailViaturas1: email1, emailViaturas2: email2 };
+      e.defMsg.style.color = 'var(--verde)';
+      e.defMsg.textContent = 'Definições guardadas.';
+    } catch (err) {
+      e.defMsg.style.color = 'var(--vermelho)';
+      e.defMsg.textContent = 'Erro: ' + err.message;
+    }
   },
   abrirModalAlocacoesRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
@@ -3905,7 +4046,12 @@ const App = {
     });
     if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
-    if (e.btnDefinicoes) e.btnDefinicoes.addEventListener('click', () => this.abrirModalDefinicoes());
+    if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
+    if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
+    if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
+    if (e.btnAlocMesAnt) e.btnAlocMesAnt.addEventListener('click', () => this.navegarMesAlocacoes(-1));
+    if (e.btnAlocMesSeg) e.btnAlocMesSeg.addEventListener('click', () => this.navegarMesAlocacoes(1));
+    if (e.btnAlocHoje) e.btnAlocHoje.addEventListener('click', () => this.irParaHojeAlocacoes());
     [e.fProjGestor, e.fProjCliente, e.fProjEstado, e.fProjEstadoOrc].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosProjetos()));
     document.getElementById('btnLimparFiltrosProjetos').addEventListener('click', () => {
       e.fProjGestor.value = ''; e.fProjCliente.value = ''; e.fProjEstado.value = ''; e.fProjEstadoOrc.value = '';

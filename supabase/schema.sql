@@ -13,10 +13,23 @@
 -- ============================================================================
 
 -- ---------- Equipas ----------
+-- "unidade" e "diretor" já vêm com o valor de hoje por omissão (só há um departamento — DCS, com
+-- João Oliveira como Diretor) para poupar trabalho ao Administrador ao criar novas equipas; ambos
+-- continuam editáveis por equipa, para o dia em que isso deixar de ser verdade para todas. "team_
+-- leader" fica sem omissão — é mesmo por equipa, sem valor razoável para adivinhar à partida.
 create table if not exists public.equipas (
   id uuid primary key default gen_random_uuid(),
-  nome text not null
+  nome text not null,
+  unidade text not null default 'DCS',
+  team_leader text not null default '',
+  diretor text not null default 'João Oliveira'
 );
+alter table public.equipas add column if not exists unidade text not null default 'DCS';
+alter table public.equipas add column if not exists team_leader text not null default '';
+alter table public.equipas add column if not exists diretor text not null default 'João Oliveira';
+-- A equipa DCS já existia antes destas colunas — a omissão da coluna já lhe deu unidade/diretor
+-- corretos ao adicionar a coluna, só falta o Team Leader (sem omissão nenhuma a dar).
+update public.equipas set team_leader = 'Milton Cabral' where nome = 'DCS' and team_leader = '';
 
 -- ---------- Recursos (pessoas) ----------
 -- Tabela única para todas as pessoas: consultores/gestores puramente de custo/capacidade (sem

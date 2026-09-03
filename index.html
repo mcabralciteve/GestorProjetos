@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260903">
+<link rel="stylesheet" href="css/style.css?v=20260903b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -54,7 +54,6 @@
       <button id="authUserInfo" class="conta-menu-trigger"></button>
       <div class="conta-menu" id="contaMenuDropdown">
         <button id="btnMinhaConta">⚙ Conta</button>
-        <button id="btnDefinicoes" style="display:none;">🛠 Definições</button>
         <button id="btnSair">⏻ Sair</button>
       </div>
     </div>
@@ -67,6 +66,7 @@
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
   <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Faturação</button>
   <button class="grupo-btn" data-grupo="viaturas">🚗 Viaturas</button>
+  <button class="grupo-btn" data-grupo="configuracoes" id="grupoBtnConfiguracoes">⚙ Configurações</button>
 </nav>
 <nav class="tabs" id="tabsNav">
   <div class="tabs-grupo active" data-grupo="planeamento">
@@ -77,9 +77,8 @@
     <button class="tab-btn" data-tab="todosPassos" id="tabBtnTodosPassos">Todos os Next Steps</button>
   </div>
   <div class="tabs-grupo" data-grupo="equipa">
-    <button class="tab-btn" data-tab="recursos">Pessoas</button>
-    <button class="tab-btn" data-tab="capacidade">Capacidade</button>
-    <button class="tab-btn" data-tab="feriados">Feriados &amp; Ausências</button>
+    <button class="tab-btn" data-tab="alocacoes">Alocações</button>
+    <button class="tab-btn" data-tab="capacidade" id="tabBtnCapacidade">Capacidade</button>
   </div>
   <div class="tabs-grupo" data-grupo="horas">
     <button class="tab-btn" data-tab="registo">Registo</button>
@@ -90,6 +89,11 @@
   </div>
   <div class="tabs-grupo" data-grupo="viaturas">
     <button class="tab-btn" data-tab="viaturas">Pedido</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="configuracoes">
+    <button class="tab-btn" data-tab="recursos">Pessoas</button>
+    <button class="tab-btn" data-tab="feriados">Feriados &amp; Ausências</button>
+    <button class="tab-btn" data-tab="definicoes">Definições</button>
   </div>
 </nav>
 
@@ -413,12 +417,39 @@
       <button id="btnAddEquipa" class="btn btn-primary btn-sm">+ Equipa</button>
     </div>
     <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central.</p>
-    <div class="table-scroll" style="max-width:420px;">
+    <div class="table-scroll" style="max-width:760px;">
       <table class="tabela-crud" id="tabelaEquipas">
-        <thead><tr><th data-col="nome" data-sort="nome">Nome<span class="col-resizer"></span></th><th></th></tr></thead>
+        <thead><tr>
+          <th data-col="nome" data-sort="nome">Nome<span class="col-resizer"></span></th>
+          <th data-col="unidade" data-sort="unidade">Unidade<span class="col-resizer"></span></th>
+          <th data-col="teamLeader" data-sort="teamLeader">Team Leader<span class="col-resizer"></span></th>
+          <th data-col="diretor" data-sort="diretor">Diretor<span class="col-resizer"></span></th>
+          <th></th>
+        </tr></thead>
         <tbody id="corpoTabelaEquipas"></tbody>
       </table>
     </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: ALOCAÇÕES ===================== -->
+<section class="tab-panel" id="tab-alocacoes">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Alocações</h2>
+    </div>
+    <p class="pagina-sub">Vista mensal da alocação planeada de cada pessoa aos projetos — cada barra representa uma tarefa ativa nesse dia, com altura proporcional à média de horas por dia útil (horas atribuídas à tarefa a dividir pelos dias úteis do seu prazo). Administrador vê toda a equipa; Gestor de Projeto só vê quem está nos seus projetos.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Pessoa <select id="fAlocPessoa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Projeto <select id="fAlocProjeto"><option value="">Todos</option></select></label>
+    </div>
+    <div class="cal-topbar">
+      <button type="button" class="btn btn-sm" id="btnAlocMesAnt">‹</button>
+      <button type="button" class="btn btn-sm" id="btnAlocHoje">Hoje</button>
+      <button type="button" class="btn btn-sm" id="btnAlocMesSeg">›</button>
+      <strong id="alocMesLabel"></strong>
+    </div>
+    <div id="calendarioAlocacoes" class="calendario-registos"></div>
   </div>
 </section>
 
@@ -505,6 +536,24 @@
         </tr></thead>
         <tbody id="corpoTabelaAusencias"></tbody>
       </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: DEFINIÇÕES ===================== -->
+<section class="tab-panel" id="tab-definicoes">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>⚙ Definições</h2>
+    </div>
+    <p class="pagina-sub">Definições gerais da aplicação.</p>
+    <div class="card" style="max-width:480px;">
+      <h3 style="margin-top:0;">Reserva de Viatura</h3>
+      <p class="pagina-sub" style="margin-top:0;">Emails da equipa que trata dos pedidos de reserva de viatura — usados para pré-preencher o destinatário do email aberto a cada pedido.</p>
+      <label>Email 1 <input type="email" id="defEmail1"></label>
+      <label>Email 2 <input type="email" id="defEmail2"></label>
+      <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
+      <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
   </div>
 </section>
@@ -661,8 +710,8 @@
           </label>
         </div>
         <div class="row-2">
-          <label>Área / Unidade <span style="color:var(--vermelho);">*</span>
-            <input type="text" id="reservaArea" placeholder="ex.: DTD" required>
+          <label>Área / Unidade <span class="hint">(automático)</span>
+            <input type="text" id="reservaArea" readonly>
           </label>
           <label>Chefia direta / Diretor <span class="hint">(opcional)</span>
             <input type="text" id="reservaChefia">
@@ -780,13 +829,13 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260903"></script>
-<script src="js/auth.js?v=20260903"></script>
-<script src="js/sync.js?v=20260903"></script>
-<script src="js/gantt.js?v=20260903"></script>
-<script src="js/capacidade.js?v=20260903"></script>
-<script src="js/portfolio-gantt.js?v=20260903"></script>
-<script src="js/reserva-viatura.js?v=20260903"></script>
-<script src="js/app.js?v=20260903"></script>
+<script src="js/supabase-config.js?v=20260903b"></script>
+<script src="js/auth.js?v=20260903b"></script>
+<script src="js/sync.js?v=20260903b"></script>
+<script src="js/gantt.js?v=20260903b"></script>
+<script src="js/capacidade.js?v=20260903b"></script>
+<script src="js/portfolio-gantt.js?v=20260903b"></script>
+<script src="js/reserva-viatura.js?v=20260903b"></script>
+<script src="js/app.js?v=20260903b"></script>
 </body>
 </html>
