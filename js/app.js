@@ -57,7 +57,7 @@ const App = {
   TAMANHO_PAGINA_REGISTOS: 20,
   filtrosCalendarioRegisto: { pessoa: '', projeto: '' },
   calMesAtual: null,
-  filtrosAlocacoes: { pessoa: '', projeto: '' },
+  filtrosAlocacoes: { pessoa: '', projeto: '', cliente: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
@@ -237,6 +237,7 @@ const App = {
       ocupMsg: document.getElementById('ocupMsg'),
       fAlocPessoa: document.getElementById('fAlocPessoa'),
       fAlocProjeto: document.getElementById('fAlocProjeto'),
+      fAlocCliente: document.getElementById('fAlocCliente'),
       btnAlocMesAnt: document.getElementById('btnAlocMesAnt'),
       btnAlocMesSeg: document.getElementById('btnAlocMesSeg'),
       btnAlocHoje: document.getElementById('btnAlocHoje'),
@@ -2207,7 +2208,7 @@ const App = {
   },
   aplicarFiltrosAlocacoes() {
     const e = this.els;
-    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa.value, projeto: e.fAlocProjeto.value };
+    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa.value, projeto: e.fAlocProjeto.value, cliente: e.fAlocCliente.value };
     this.renderCalendarioAlocacoes();
   },
   renderCalendarioAlocacoes() {
@@ -2230,7 +2231,17 @@ const App = {
       e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
       e.fAlocProjeto.value = projetosPermitidos.some(p => p.id === valorProjeto) ? valorProjeto : '';
     }
-    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa ? e.fAlocPessoa.value : '', projeto: e.fAlocProjeto ? e.fAlocProjeto.value : '' };
+    if (e.fAlocCliente) {
+      const clientes = [...new Set(projetosPermitidos.map(p => p.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+      const valorCliente = this.filtrosAlocacoes.cliente;
+      e.fAlocCliente.innerHTML = '<option value="">Todos</option>' + clientes.map(c => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+      e.fAlocCliente.value = clientes.includes(valorCliente) ? valorCliente : '';
+    }
+    this.filtrosAlocacoes = {
+      pessoa: e.fAlocPessoa ? e.fAlocPessoa.value : '',
+      projeto: e.fAlocProjeto ? e.fAlocProjeto.value : '',
+      cliente: e.fAlocCliente ? e.fAlocCliente.value : ''
+    };
     const f = this.filtrosAlocacoes;
     const recursosAtivos = f.pessoa ? recursosPermitidos.filter(r => r.id === f.pessoa) : recursosPermitidos;
 
@@ -2257,21 +2268,30 @@ const App = {
       recursosAtivos.forEach(r => {
         Capacidade.tarefasAtivasNoDia(cursor, r.id).forEach(({ projeto, tarefa }) => {
           if (f.projeto && projeto.id !== f.projeto) return;
+          if (f.cliente && projeto.cliente !== f.cliente) return;
           const horas = Capacidade.horasTarefaNoDia(tarefa, r.id, cursor);
           if (horas <= 0) return;
-          itens.push({ pessoa: r.nome, projetoNome: projeto.nome, tarefaNome: tarefa.nome, horas });
+          itens.push({ pessoa: r.nome, projetoId: projeto.id, projetoNome: projeto.nome, cliente: projeto.cliente || '', tarefaNome: tarefa.nome, horas });
         });
       });
       itens.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt'));
       const totalHoras = itens.reduce((s, x) => s + x.horas, 0);
       // Cor sempre por PROJETO (não por pessoa): mantém-se útil mesmo com uma só pessoa
       // selecionada no filtro, caso em que uma cor por pessoa seria sempre a mesma para tudo.
+      // Cada bloco é um link para o Gantt desse projeto (data-projeto-id, ligado depois de montar
+      // o HTML — ver o forEach de ".cal-bloco-link" mais abaixo).
       const blocos = itens.map(it => {
         const altura = Math.max(20, Math.min(it.horas * 12, 96));
         const cor = this.corPessoaCalendario(it.projetoNome);
-        const linha1 = mostrarPessoaNaBarra ? `${it.pessoa} — ${it.projetoNome}` : it.projetoNome;
-        const titulo = `${escapeAttr(it.pessoa)} · ${escapeAttr(it.projetoNome)} · ${escapeAttr(it.tarefaNome)} · ${it.horas.toFixed(1)}h/dia útil`;
-        return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
+        const nomeComCliente = `${it.projetoNome}${it.cliente ? ' (' + it.cliente + ')' : ''}`;
+        const linha1 = mostrarPessoaNaBarra ? `${it.pessoa} — ${nomeComCliente}` : nomeComCliente;
+        // Só é link se eu próprio tiver acesso ao Gantt desse projeto — um Gestor pode ver aqui um
+        // projeto de outra pessoa partilhada que ele não gere nem consulta (vê o quadro completo
+        // da pessoa, ver nota acima); clicar nesse caso levaria a um Gantt sem esse projeto na
+        // lista, um beco sem saída confuso, por isso fica só informativo (sem link).
+        const podeAbrir = this.estouEnvolvidoEm(it.projetoId);
+        const titulo = `${escapeAttr(it.pessoa)} · ${escapeAttr(nomeComCliente)} · ${escapeAttr(it.tarefaNome)} · ${it.horas.toFixed(1)}h/dia útil${podeAbrir ? ' — clica para abrir no Gantt' : ''}`;
+        return `<div class="cal-bloco${podeAbrir ? ' cal-bloco-link' : ''}" ${podeAbrir ? `data-projeto-id="${escapeAttr(it.projetoId)}"` : ''} style="height:${altura}px;background:${cor};" title="${titulo}">
           <span class="cal-bloco-linha1">${escapeHtml(linha1)}</span>
           <span class="cal-bloco-linha2">${escapeHtml(it.tarefaNome)} · ${it.horas.toFixed(1)}h</span>
         </div>`;
@@ -2287,6 +2307,9 @@ const App = {
     }
     html += '</div>';
     e.calendarioAlocacoes.innerHTML = html;
+    e.calendarioAlocacoes.querySelectorAll('.cal-bloco-link').forEach(el => {
+      el.addEventListener('click', () => this.abrirProjetoNoGantt(el.dataset.projetoId));
+    });
   },
 
   // ---------- Tab: Capacidade ----------
@@ -4117,6 +4140,7 @@ const App = {
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
+    if (e.fAlocCliente) e.fAlocCliente.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.btnAlocMesAnt) e.btnAlocMesAnt.addEventListener('click', () => this.navegarMesAlocacoes(-1));
     if (e.btnAlocMesSeg) e.btnAlocMesSeg.addEventListener('click', () => this.navegarMesAlocacoes(1));
     if (e.btnAlocHoje) e.btnAlocHoje.addEventListener('click', () => this.irParaHojeAlocacoes());

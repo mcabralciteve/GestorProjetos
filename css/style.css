@@ -615,6 +615,9 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .cal-dia-total{font-size:10.5px;font-weight:600;color:var(--cinza-500);}
 .cal-dia-blocos{display:flex;flex-direction:column;gap:2px;overflow:hidden;}
 .cal-bloco{border-radius:4px;padding:2px 6px;color:#fff;font-size:10.5px;line-height:1.25;overflow:hidden;display:flex;flex-direction:column;justify-content:center;cursor:default;}
+.cal-bloco-link{cursor:pointer;}
+.cal-bloco-link:hover{filter:brightness(1.1);}
+.cal-bloco-link:hover .cal-bloco-linha1{text-decoration:underline;}
 .cal-bloco-linha1{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cal-bloco-linha2{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
