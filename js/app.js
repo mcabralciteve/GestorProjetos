@@ -474,6 +474,7 @@ const App = {
     if (!this.state.equipas) this.state.equipas = [];
     this.state.equipas.forEach(eq => {
       delete eq.unidade; // sinónimo de "nome" — deixou de ser um campo à parte
+      if (eq.departamento === undefined) eq.departamento = '';
       if (eq.teamLeader === undefined) eq.teamLeader = '';
       if (eq.diretor === undefined) eq.diretor = '';
     });
@@ -703,11 +704,13 @@ const App = {
   },
   novoEquipaObj(nome) {
     // Não há campo "Unidade" à parte — Área/Unidade e nome da equipa são sinónimos (DCS, ROB,
-    // DPC... já SÃO as unidades). "diretor" já vem com o valor de hoje por omissão (só há um
+    // DPC... já SÃO as unidades/áreas). "departamento" é um nível acima da Área (várias
+    // áreas/equipas podem pertencer ao mesmo departamento) — fica vazio de propósito, sem valor
+    // razoável para adivinhar. "diretor" já vem com o valor de hoje por omissão (só há um
     // departamento — DCS, com João Oliveira como Diretor) para poupar trabalho ao Administrador;
     // continua editável, para o dia em que deixar de ser verdade. "teamLeader" fica vazio de
     // propósito — é mesmo por equipa, sem valor por omissão razoável.
-    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', teamLeader: '', diretor: 'João Oliveira' };
+    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', departamento: '', teamLeader: '', diretor: 'João Oliveira' };
   },
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
     return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
@@ -2101,6 +2104,7 @@ const App = {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
+        <td><input type="text" value="${escapeAttr(eq.departamento || '')}" data-campo="departamento"></td>
         <td><input type="text" value="${escapeAttr(eq.teamLeader || '')}" data-campo="teamLeader"></td>
         <td><input type="text" value="${escapeAttr(eq.diretor || '')}" data-campo="diretor"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
@@ -2983,8 +2987,10 @@ const App = {
   // Requisitante é sempre quem está autenticado (pedido pessoal, sem "pedir em nome de outro").
   // Só é possível escolher projetos onde a pessoa está envolvida (meusProjetosEnvolvidos() — admin
   // vê todos), tal como no resto da app. Gestor vem sempre do projeto escolhido (só leitura, como
-  // o "Cliente" no Registo de Horas); Área/Chefia/Justificação são texto livre, sem correspondência
-  // no resto do modelo de dados.
+  // o "Cliente" no Registo de Horas). Área/Unidade e Chefia vêm sempre da equipa da pessoa (também
+  // só leitura): "Área/Unidade" impressa no Mapa de Despesas é, na prática, o Departamento da
+  // equipa (não o nome da equipa/área em si — são níveis diferentes); "Chefia" é sempre o Diretor
+  // dessa equipa. Só Justificação continua a ser texto livre.
   novaReservaViaturaObj(dados) {
     return {
       id: crypto.randomUUID(),
@@ -3010,18 +3016,22 @@ const App = {
     const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
     const projetos = this.meusProjetosEnvolvidos();
     if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
-    e.reservaArea.value = equipa ? equipa.nome : ''; // Área/Unidade = nome da equipa (sinónimos)
+    // "Área/Unidade" impressa = Departamento da equipa (não o nome da equipa/área em si); "Chefia"
+    // = Diretor dessa mesma equipa. Ambos só leitura, tal como o Gestor de Projeto abaixo.
+    e.reservaArea.value = equipa ? equipa.departamento : '';
+    e.reservaChefia.value = equipa ? equipa.diretor : '';
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
       projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
     e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
     this.atualizarGestorReservaViatura();
 
-    const semAcesso = !recurso || !projetos.length || !e.reservaArea.value;
+    const semAcesso = !recurso || !projetos.length || !e.reservaArea.value || !e.reservaChefia.value;
     if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
       if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
       else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
-      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta não está associada a nenhuma equipa — contacta o administrador.'; }
+      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem Departamento definido — contacta o administrador.'; }
+      else if (!e.reservaChefia.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem Diretor definido — contacta o administrador.'; }
       else { e.reservaMsg.textContent = ''; }
     }
     e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
@@ -3052,7 +3062,7 @@ const App = {
       hora_fim: e.reservaHoraFim.value
     };
     if (!recurso) { this.toast('A tua conta ainda não está associada a um consultor.'); return; }
-    if (!projeto || !dados.area || !dados.justificacao || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
+    if (!projeto || !dados.area || !dados.chefia || !dados.justificacao || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
       this.toast('Preenche todos os campos obrigatórios (*).'); return;
     }
     if (dados.data_fim < dados.data_inicio || (dados.data_fim === dados.data_inicio && dados.hora_fim <= dados.hora_inicio)) {

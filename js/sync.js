@@ -13,7 +13,7 @@ const Sync = {
     // Equipas antes de recursos, recursos antes do resto — "recursos.equipa_id" e
     // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, nome: eq.nome, team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
+      eq => ({ id: eq.id, nome: eq.nome, departamento: eq.departamento || '', team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
     await this.sincronizarListaSimples('recursos', antes.recursos, depois.recursos,
       r => ({ id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipa_id: r.equipaId || null, preco_custo: r.precoCusto, preco_venda: r.precoVenda }));
 
@@ -227,7 +227,7 @@ const Sync = {
     ]);
     [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg].forEach(r => { if (r.error) throw r.error; });
 
-    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
+    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, departamento: r.departamento || '', teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260903c">
+<link rel="stylesheet" href="css/style.css?v=20260903d">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -416,11 +416,12 @@
       <h2>Equipas</h2>
       <button id="btnAddEquipa" class="btn btn-primary btn-sm">+ Equipa</button>
     </div>
-    <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central. O nome da equipa é também a Área/Unidade (usada, por exemplo, a preencher automaticamente o pedido de Reserva de Viatura).</p>
-    <div class="table-scroll" style="max-width:640px;">
+    <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central. O nome da equipa é também a Área/Unidade; o Departamento e o Diretor dessa área são usados a preencher automaticamente o pedido de Reserva de Viatura (Área/Unidade impressa = Departamento; Chefia = Diretor).</p>
+    <div class="table-scroll" style="max-width:820px;">
       <table class="tabela-crud" id="tabelaEquipas">
         <thead><tr>
           <th data-col="nome" data-sort="nome">Nome / Unidade<span class="col-resizer"></span></th>
+          <th data-col="departamento" data-sort="departamento">Departamento<span class="col-resizer"></span></th>
           <th data-col="teamLeader" data-sort="teamLeader">Team Leader<span class="col-resizer"></span></th>
           <th data-col="diretor" data-sort="diretor">Diretor<span class="col-resizer"></span></th>
           <th></th>
@@ -720,8 +721,8 @@
           <label>Área / Unidade <span class="hint">(automático)</span>
             <input type="text" id="reservaArea" readonly>
           </label>
-          <label>Chefia direta / Diretor <span class="hint">(opcional)</span>
-            <input type="text" id="reservaChefia">
+          <label>Chefia direta / Diretor <span class="hint">(automático)</span>
+            <input type="text" id="reservaChefia" readonly>
           </label>
         </div>
         <label>Justificação <span style="color:var(--vermelho);">*</span>
@@ -836,13 +837,13 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260903c"></script>
-<script src="js/auth.js?v=20260903c"></script>
-<script src="js/sync.js?v=20260903c"></script>
-<script src="js/gantt.js?v=20260903c"></script>
-<script src="js/capacidade.js?v=20260903c"></script>
-<script src="js/portfolio-gantt.js?v=20260903c"></script>
-<script src="js/reserva-viatura.js?v=20260903c"></script>
-<script src="js/app.js?v=20260903c"></script>
+<script src="js/supabase-config.js?v=20260903d"></script>
+<script src="js/auth.js?v=20260903d"></script>
+<script src="js/sync.js?v=20260903d"></script>
+<script src="js/gantt.js?v=20260903d"></script>
+<script src="js/capacidade.js?v=20260903d"></script>
+<script src="js/portfolio-gantt.js?v=20260903d"></script>
+<script src="js/reserva-viatura.js?v=20260903d"></script>
+<script src="js/app.js?v=20260903d"></script>
 </body>
 </html>

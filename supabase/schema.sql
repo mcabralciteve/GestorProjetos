@@ -14,19 +14,24 @@
 
 -- ---------- Equipas ----------
 -- "unidade" (Área/Unidade) é sinónimo do nome da equipa — não é uma coluna à parte, usa-se
--- sempre equipas.nome (decisão explícita: DCS, ROB, DPC, etc. já SÃO as unidades). Só ficam
--- "team_leader" e "diretor" como colunas novas. "diretor" já vem com o valor de hoje por omissão
--- (só há um departamento — DCS, com João Oliveira como Diretor) para poupar trabalho ao
--- Administrador ao criar novas equipas; continua editável, para o dia em que isso deixar de ser
--- verdade para todas. "team_leader" fica sem omissão — é mesmo por equipa, sem valor razoável
--- para adivinhar à partida.
+-- sempre equipas.nome (DCS, ROB, DPC, etc. já SÃO as unidades/áreas). "departamento" é um nível
+-- acima da Área — várias equipas/áreas podem pertencer ao mesmo departamento — e é esse o valor
+-- que sai impresso no Mapa de Despesas da Reserva de Viatura (campo "Área/Unidade" do formulário
+-- em papel refere-se, na prática, ao Departamento, não à Área/equipa). "diretor" é sempre o
+-- diretor DESSA área — usado como "Chefia" (obrigatória) no mesmo formulário. "diretor" e
+-- "departamento" já vêm com o valor de hoje por omissão só para poupar trabalho ao Administrador
+-- ao criar equipas novas (continuam editáveis); "team_leader" fica sem omissão — é mesmo por
+-- equipa, sem valor razoável para adivinhar à partida. Sem valor conhecido para "departamento" da
+-- equipa DCS já existente — fica em branco, o Administrador preenche em Configurações → Pessoas.
 create table if not exists public.equipas (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
+  departamento text not null default '',
   team_leader text not null default '',
   diretor text not null default 'João Oliveira'
 );
 alter table public.equipas drop column if exists unidade;
+alter table public.equipas add column if not exists departamento text not null default '';
 alter table public.equipas add column if not exists team_leader text not null default '';
 alter table public.equipas add column if not exists diretor text not null default 'João Oliveira';
 -- A equipa DCS já existia antes destas colunas — a omissão da coluna já lhe deu o Diretor certo ao
