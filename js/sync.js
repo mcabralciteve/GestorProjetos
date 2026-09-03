@@ -13,7 +13,7 @@ const Sync = {
     // Equipas antes de recursos, recursos antes do resto — "recursos.equipa_id" e
     // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, nome: eq.nome, unidade: eq.unidade || '', team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
+      eq => ({ id: eq.id, nome: eq.nome, team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
     await this.sincronizarListaSimples('recursos', antes.recursos, depois.recursos,
       r => ({ id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipa_id: r.equipaId || null, preco_custo: r.precoCusto, preco_venda: r.precoVenda }));
 
@@ -227,7 +227,7 @@ const Sync = {
     ]);
     [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg].forEach(r => { if (r.error) throw r.error; });
 
-    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, unidade: r.unidade || '', teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
+    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
@@ -308,7 +308,10 @@ const Sync = {
     }));
     const configuracoes = {
       emailViaturas1: cfg.data ? (cfg.data.email_viaturas_1 || '') : '',
-      emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : ''
+      emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : '',
+      ocupacaoLimiteBaixo: cfg.data && cfg.data.ocupacao_limite_baixo != null ? Number(cfg.data.ocupacao_limite_baixo) : 60,
+      ocupacaoLimiteAlto: cfg.data && cfg.data.ocupacao_limite_alto != null ? Number(cfg.data.ocupacao_limite_alto) : 80,
+      ocupacaoLimiteCritico: cfg.data && cfg.data.ocupacao_limite_critico != null ? Number(cfg.data.ocupacao_limite_critico) : 100
     };
 
     App.state = {

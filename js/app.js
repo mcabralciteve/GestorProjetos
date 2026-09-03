@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '' }, projetoAtivoId: null },
+  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -230,6 +230,11 @@ const App = {
       defEmail2: document.getElementById('defEmail2'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
+      ocupLimiteBaixo: document.getElementById('ocupLimiteBaixo'),
+      ocupLimiteAlto: document.getElementById('ocupLimiteAlto'),
+      ocupLimiteCritico: document.getElementById('ocupLimiteCritico'),
+      btnGuardarOcupacao: document.getElementById('btnGuardarOcupacao'),
+      ocupMsg: document.getElementById('ocupMsg'),
       fAlocPessoa: document.getElementById('fAlocPessoa'),
       fAlocProjeto: document.getElementById('fAlocProjeto'),
       btnAlocMesAnt: document.getElementById('btnAlocMesAnt'),
@@ -462,13 +467,13 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '' }, projetoAtivoId: null };
+    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
     if (!this.state.equipas) this.state.equipas = [];
     this.state.equipas.forEach(eq => {
-      if (eq.unidade === undefined) eq.unidade = '';
+      delete eq.unidade; // sinónimo de "nome" — deixou de ser um campo à parte
       if (eq.teamLeader === undefined) eq.teamLeader = '';
       if (eq.diretor === undefined) eq.diretor = '';
     });
@@ -476,7 +481,13 @@ const App = {
     if (!this.state.registos) this.state.registos = [];
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
-    if (!this.state.configuracoes) this.state.configuracoes = { emailViaturas1: '', emailViaturas2: '' };
+    if (!this.state.configuracoes) this.state.configuracoes = {};
+    const cfg = this.state.configuracoes;
+    if (cfg.emailViaturas1 === undefined) cfg.emailViaturas1 = '';
+    if (cfg.emailViaturas2 === undefined) cfg.emailViaturas2 = '';
+    if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
+    if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
+    if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
     this.migrarIdsParaUuid();
     // Compatibilidade com projetos guardados antes da introdução do Gestor de Projeto.
     Object.values(this.state.projetos).forEach(p => {
@@ -691,11 +702,12 @@ const App = {
     return { id: crypto.randomUUID(), data: data || DateUtil.todayISO(), descricao: descricao || '' };
   },
   novoEquipaObj(nome) {
-    // "unidade" já vem com o valor atual por omissão (hoje só há um departamento — DCS) só para
-    // poupar trabalho ao Administrador; continua editável por equipa, para o dia em que deixar de
-    // ser verdade. "diretor" segue a mesma lógica; "teamLeader" fica vazio de propósito — é mesmo
-    // por equipa, sem valor por omissão razoável.
-    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', unidade: 'DCS', teamLeader: '', diretor: 'João Oliveira' };
+    // Não há campo "Unidade" à parte — Área/Unidade e nome da equipa são sinónimos (DCS, ROB,
+    // DPC... já SÃO as unidades). "diretor" já vem com o valor de hoje por omissão (só há um
+    // departamento — DCS, com João Oliveira como Diretor) para poupar trabalho ao Administrador;
+    // continua editável, para o dia em que deixar de ser verdade. "teamLeader" fica vazio de
+    // propósito — é mesmo por equipa, sem valor por omissão razoável.
+    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', teamLeader: '', diretor: 'João Oliveira' };
   },
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
     return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
@@ -2089,7 +2101,6 @@ const App = {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
-        <td><input type="text" value="${escapeAttr(eq.unidade || '')}" data-campo="unidade"></td>
         <td><input type="text" value="${escapeAttr(eq.teamLeader || '')}" data-campo="teamLeader"></td>
         <td><input type="text" value="${escapeAttr(eq.diretor || '')}" data-campo="diretor"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
@@ -2198,6 +2209,7 @@ const App = {
   renderCalendarioAlocacoes() {
     const e = this.els;
     if (!e.calendarioAlocacoes) return;
+    this.renderLegendaOcupacao('legendaOcupacao');
     if (!this.souGestorDeAlgumProjeto()) return; // sem acesso (separador nem devia estar visível)
     if (!this.alocMesAtual) { const hoje = new Date(); this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
 
@@ -2260,7 +2272,10 @@ const App = {
           <span class="cal-bloco-linha2">${escapeHtml(it.tarefaNome)} · ${it.horas.toFixed(1)}h</span>
         </div>`;
       }).join('');
-      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
+      // Semáforo de ocupação no fundo da célula — só faz sentido com uma pessoa escolhida no
+      // filtro (com "Todas" a célula mistura gente diferente, uma única cor de fundo enganava).
+      const classeOcupacao = f.pessoa ? ` ocupacao-${Capacidade.classeDia(cursor, f.pessoa)}` : '';
+      html += `<div class="cal-dia${classeOcupacao}${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
         <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras.toFixed(1)}h</span>` : ''}</div>
         <div class="cal-dia-blocos">${blocos}</div>
       </div>`;
@@ -2281,9 +2296,25 @@ const App = {
     e.selMesInicioCap.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     this.renderCapacidade();
   },
+  // Legenda dinâmica de ocupação/alocação — usada tanto na Capacidade como nas Alocações, sempre
+  // com os mesmos limiares configuráveis (Configurações → Definições) e as mesmas cores; nunca
+  // hardcoded, para nunca poder ficar dessincronizada dos valores reais (ver Capacidade.classeResumo).
+  renderLegendaOcupacao(elId) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const lim = Capacidade.limiaresOcupacao();
+    const baixo = Math.round(lim.baixo * 100), alto = Math.round(lim.alto * 100), critico = Math.round(lim.critico * 100);
+    el.innerHTML = `
+      <span><span class="legend-swatch" style="background:#f3e3b6;"></span> Subutilizado (&lt;${baixo}%)</span>
+      <span><span class="legend-swatch" style="background:#cde4d8;"></span> Confortável (${baixo}–${alto}%)</span>
+      <span><span class="legend-swatch" style="background:#f6ddc4;"></span> Perto do limite (${alto}–${critico}%)</span>
+      <span><span class="legend-swatch" style="background:#f1cfc9;"></span> Sobre-alocado (&gt;${critico}%)</span>
+      <span><span class="legend-swatch" style="background:#f4f5f7;"></span> Sem capacidade/alocação</span>`;
+  },
   renderCapacidade() {
     const e = this.els;
     if (!e.gridCapacidade) return;
+    this.renderLegendaOcupacao('legendaCapacidade');
     const nMeses = parseInt(e.selHorizonteCap.value, 10) || 6;
     // "A partir de" (input type=month) — por omissão o mês atual (mantém o comportamento de
     // sempre mostrar os 6 meses seguintes), mas dá para recuar e ver meses passados.
@@ -2979,7 +3010,7 @@ const App = {
     const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
     const projetos = this.meusProjetosEnvolvidos();
     if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
-    e.reservaArea.value = equipa ? (equipa.unidade || '') : '';
+    e.reservaArea.value = equipa ? equipa.nome : ''; // Área/Unidade = nome da equipa (sinónimos)
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
       projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
@@ -2990,7 +3021,7 @@ const App = {
     if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
       if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
       else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
-      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem uma Unidade definida — contacta o administrador.'; }
+      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta não está associada a nenhuma equipa — contacta o administrador.'; }
       else { e.reservaMsg.textContent = ''; }
     }
     e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
@@ -3726,9 +3757,8 @@ const App = {
       }
     });
   },
-  // Definições gerais da app (separador "Configurações → Definições", só Administrador). Para já
-  // só os emails da equipa de viaturas, usados para pré-preencher o destinatário do email aberto a
-  // cada pedido de reserva.
+  // Definições gerais da app (separador "Configurações → Definições", só Administrador): emails
+  // da equipa de viaturas, e os limiares (%) de ocupação/alocação usados em toda a app.
   renderDefinicoes() {
     const e = this.els;
     if (!e.defEmail1) return;
@@ -3737,6 +3767,9 @@ const App = {
     // enquanto o separador está aberto (renderTudo corre a cada alteração, em qualquer separador).
     if (document.activeElement !== e.defEmail1) e.defEmail1.value = c.emailViaturas1 || '';
     if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
+    if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
+    if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
+    if (document.activeElement !== e.ocupLimiteCritico) e.ocupLimiteCritico.value = c.ocupacaoLimiteCritico ?? 100;
   },
   async guardarDefinicoes() {
     const e = this.els;
@@ -3746,12 +3779,36 @@ const App = {
     e.defMsg.textContent = 'A guardar...';
     try {
       await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2 });
-      this.state.configuracoes = { emailViaturas1: email1, emailViaturas2: email2 };
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2 });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {
       e.defMsg.style.color = 'var(--vermelho)';
       e.defMsg.textContent = 'Erro: ' + err.message;
+    }
+  },
+  async guardarLimiaresOcupacao() {
+    const e = this.els;
+    const baixo = parseFloat(e.ocupLimiteBaixo.value);
+    const alto = parseFloat(e.ocupLimiteAlto.value);
+    const critico = parseFloat(e.ocupLimiteCritico.value);
+    if (!(baixo > 0) || !(alto > baixo) || !(critico > alto)) {
+      e.ocupMsg.style.color = 'var(--vermelho)';
+      e.ocupMsg.textContent = 'Os limiares têm de ser crescentes (subutilizado < perto do limite < sobre-alocado) e maiores que zero.';
+      return;
+    }
+    e.ocupMsg.style.color = 'var(--cinza-500)';
+    e.ocupMsg.textContent = 'A guardar...';
+    try {
+      await Sync.atualizarConfiguracoes({ ocupacao_limite_baixo: baixo, ocupacao_limite_alto: alto, ocupacao_limite_critico: critico });
+      Object.assign(this.state.configuracoes, { ocupacaoLimiteBaixo: baixo, ocupacaoLimiteAlto: alto, ocupacaoLimiteCritico: critico });
+      e.ocupMsg.style.color = 'var(--verde)';
+      e.ocupMsg.textContent = 'Limiares guardados.';
+      this.renderCapacidade();
+      this.renderCalendarioAlocacoes();
+    } catch (err) {
+      e.ocupMsg.style.color = 'var(--vermelho)';
+      e.ocupMsg.textContent = 'Erro: ' + err.message;
     }
   },
   abrirModalAlocacoesRecurso(recursoId) {
@@ -4047,6 +4104,7 @@ const App = {
     if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
+    if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.btnAlocMesAnt) e.btnAlocMesAnt.addEventListener('click', () => this.navegarMesAlocacoes(-1));

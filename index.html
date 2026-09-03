@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260903b">
+<link rel="stylesheet" href="css/style.css?v=20260903c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -416,12 +416,11 @@
       <h2>Equipas</h2>
       <button id="btnAddEquipa" class="btn btn-primary btn-sm">+ Equipa</button>
     </div>
-    <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central.</p>
-    <div class="table-scroll" style="max-width:760px;">
+    <p class="pagina-sub">Equipas disponíveis para classificar os consultores (ex.: DCS, ROB, DPC, DEV, DAT, Cliente, Parceiro) — ficheiro central. O nome da equipa é também a Área/Unidade (usada, por exemplo, a preencher automaticamente o pedido de Reserva de Viatura).</p>
+    <div class="table-scroll" style="max-width:640px;">
       <table class="tabela-crud" id="tabelaEquipas">
         <thead><tr>
-          <th data-col="nome" data-sort="nome">Nome<span class="col-resizer"></span></th>
-          <th data-col="unidade" data-sort="unidade">Unidade<span class="col-resizer"></span></th>
+          <th data-col="nome" data-sort="nome">Nome / Unidade<span class="col-resizer"></span></th>
           <th data-col="teamLeader" data-sort="teamLeader">Team Leader<span class="col-resizer"></span></th>
           <th data-col="diretor" data-sort="diretor">Diretor<span class="col-resizer"></span></th>
           <th></th>
@@ -438,7 +437,8 @@
     <div class="pagina-head">
       <h2>Alocações</h2>
     </div>
-    <p class="pagina-sub">Vista mensal da alocação planeada de cada pessoa aos projetos — cada barra representa uma tarefa ativa nesse dia, com altura proporcional à média de horas por dia útil (horas atribuídas à tarefa a dividir pelos dias úteis do seu prazo). Administrador vê toda a equipa; Gestor de Projeto só vê quem está nos seus projetos.</p>
+    <p class="pagina-sub">Vista mensal da alocação planeada de cada pessoa aos projetos — cada barra representa uma tarefa ativa nesse dia, com altura proporcional à média de horas por dia útil (horas atribuídas à tarefa a dividir pelos dias úteis do seu prazo). Administrador vê toda a equipa; Gestor de Projeto só vê quem está nos seus projetos. Com uma Pessoa escolhida no filtro, o fundo de cada dia mostra também o semáforo de ocupação desse dia (ver legenda).</p>
+    <div class="legend-row" id="legendaOcupacao"></div>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
       <label class="zoom-label">Pessoa <select id="fAlocPessoa"><option value="">Todas</option></select></label>
       <label class="zoom-label">Projeto <select id="fAlocProjeto"><option value="">Todos</option></select></label>
@@ -481,12 +481,7 @@
     </div>
     <p class="pagina-sub">Alocação = horas nominais das tarefas atribuídas a cada consultor, em todos os projetos carregados. Capacidade = dias úteis × 8h (100% alocáveis a projetos), já a descontar fins de semana, feriados e ausências. Sobre-alocação = mais tarefas atribuídas do que capacidade disponível no mesmo período.</p>
 
-    <div class="legend-row">
-      <span><span class="legend-swatch" style="background:#cde4d8;"></span> Confortável (&lt;80%)</span>
-      <span><span class="legend-swatch" style="background:#f3e3b6;"></span> Perto do limite (80–100%)</span>
-      <span><span class="legend-swatch" style="background:#f1cfc9;"></span> Sobre-alocado (&gt;100%)</span>
-      <span><span class="legend-swatch" style="background:#f4f5f7;"></span> Sem capacidade/alocação</span>
-    </div>
+    <div class="legend-row" id="legendaCapacidade"></div>
 
     <div class="table-scroll">
       <table class="heatmap-cap" id="tabelaHeatmapCap">
@@ -554,6 +549,18 @@
       <label>Email 2 <input type="email" id="defEmail2"></label>
       <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
       <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
+    </div>
+
+    <div class="card" style="max-width:480px;margin-top:16px;">
+      <h3 style="margin-top:0;">Cores de Ocupação/Alocação</h3>
+      <p class="pagina-sub" style="margin-top:0;">Limiares (% da capacidade diária de 8h) que definem as cores usadas em Capacidade, Alocações e nos avisos de sobreposição no Gantt. Abaixo do 1º limiar = subutilizado (amarelo); entre o 1º e o 2º = confortável (verde); entre o 2º e o 3º = perto do limite (laranja); a partir do 3º = sobre-alocado (vermelho).</p>
+      <div class="row-2">
+        <label>Subutilizado abaixo de (%) <input type="number" id="ocupLimiteBaixo" min="1" max="99" step="1"></label>
+        <label>Perto do limite a partir de (%) <input type="number" id="ocupLimiteAlto" min="1" max="199" step="1"></label>
+      </div>
+      <label>Sobre-alocado a partir de (%) <input type="number" id="ocupLimiteCritico" min="1" max="300" step="1"></label>
+      <button class="btn btn-primary" id="btnGuardarOcupacao" style="margin-top:10px;">Guardar</button>
+      <span id="ocupMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
   </div>
 </section>
@@ -829,13 +836,13 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260903b"></script>
-<script src="js/auth.js?v=20260903b"></script>
-<script src="js/sync.js?v=20260903b"></script>
-<script src="js/gantt.js?v=20260903b"></script>
-<script src="js/capacidade.js?v=20260903b"></script>
-<script src="js/portfolio-gantt.js?v=20260903b"></script>
-<script src="js/reserva-viatura.js?v=20260903b"></script>
-<script src="js/app.js?v=20260903b"></script>
+<script src="js/supabase-config.js?v=20260903c"></script>
+<script src="js/auth.js?v=20260903c"></script>
+<script src="js/sync.js?v=20260903c"></script>
+<script src="js/gantt.js?v=20260903c"></script>
+<script src="js/capacidade.js?v=20260903c"></script>
+<script src="js/portfolio-gantt.js?v=20260903c"></script>
+<script src="js/reserva-viatura.js?v=20260903c"></script>
+<script src="js/app.js?v=20260903c"></script>
 </body>
 </html>

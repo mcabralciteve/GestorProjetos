@@ -167,17 +167,46 @@ const Capacidade = {
     return out;
   },
 
-  // Classificação visual (heatmap/cartões/badges) a partir de um resumo, por ordem de gravidade:
-  // "crítico" (vermelho) só para duplo agendamento real; "conflito" (laranja) quando há trabalho
-  // agendado num dia sem disponibilidade (feriado/ausência) — não é sobre-alocação, é a agenda a
-  // ignorar uma indisponibilidade conhecida; "aviso" (amarelo) perto do limite de carga; "ok" (verde)
-  // tudo bem.
+  // Os 3 limiares (%) que separam as bandas de ocupação — parametrizáveis pelo Administrador em
+  // Configurações → Definições (state.configuracoes); com valores por omissão sensatos caso ainda
+  // não estejam definidos. Devolvidos já como frações (0..1) para comparar direto com "pct".
+  limiaresOcupacao() {
+    const c = (App.state && App.state.configuracoes) || {};
+    return {
+      baixo: (Number(c.ocupacaoLimiteBaixo) || 60) / 100,
+      alto: (Number(c.ocupacaoLimiteAlto) || 80) / 100,
+      critico: (Number(c.ocupacaoLimiteCritico) || 100) / 100
+    };
+  },
+  // Classificação visual (heatmap/cartões/badges/calendário de Alocações) a partir de um resumo,
+  // por ordem de gravidade — os mesmos 3 limiares e as mesmas cores em toda a app:
+  // "crítico" (vermelho) — duplo agendamento real, OU a % total atinge/ultrapassa o limiar crítico;
+  // "conflito" (laranja) — trabalho agendado num dia sem disponibilidade (feriado/ausência), não é
+  // sobre-alocação, é a agenda a ignorar uma indisponibilidade conhecida;
+  // "aviso" (laranja) — entre o limiar alto e o crítico, perto do limite;
+  // "ok" (verde) — entre o limiar baixo e o alto, ocupação confortável;
+  // "subutilizado" (amarelo) — acima de 0% mas abaixo do limiar baixo;
+  // "vazio" (cinza) — 0%, sem alocação nenhuma.
   classeResumo(resumo) {
-    if (resumo.diasSobreAlocado > 0) return 'critico';
+    const lim = this.limiaresOcupacao();
+    if (resumo.diasSobreAlocado > 0 || resumo.pct >= lim.critico) return 'critico';
     if (resumo.diasConflitoDisponibilidade > 0) return 'conflito';
-    if (resumo.pct >= 0.9) return 'aviso';
-    if (resumo.pct > 0) return 'ok';
+    if (resumo.pct >= lim.alto) return 'aviso';
+    if (resumo.pct >= lim.baixo) return 'ok';
+    if (resumo.pct > 0) return 'subutilizado';
     return 'vazio';
+  },
+  // Mesma classificação, mas para um único dia (usado no calendário de Alocações) — monta um
+  // "resumo" de um dia só e reaproveita classeResumo, para nunca poder divergir da Capacidade.
+  classeDia(date, recursoId) {
+    const cap = this.capacidadeDiaria(date, { id: recursoId });
+    const aloc = this.alocacaoDiaria(date, recursoId);
+    const pct = cap > 0 ? aloc / cap : (aloc > 0 ? Infinity : 0);
+    return this.classeResumo({
+      pct,
+      diasSobreAlocado: (cap > 0 && aloc > this.HORAS_DIA) ? 1 : 0,
+      diasConflitoDisponibilidade: (cap === 0 && aloc > 0) ? 1 : 0
+    });
   },
 
   // Avalia a atribuição de um recurso a uma tarefa (intervalo [inicioISO, fimISO]).

@@ -68,9 +68,11 @@
 :root[data-tema="escuro"] .badge-rec.critico,
 :root[data-tema="escuro"] td.occ-critico{background:#4a2020;color:#f3b4b0;}
 :root[data-tema="escuro"] .badge-rec.conflito,
-:root[data-tema="escuro"] td.occ-conflito{background:#4a3018;color:#f0c48a;}
 :root[data-tema="escuro"] .badge-rec.aviso,
-:root[data-tema="escuro"] td.occ-aviso{background:#4a3a15;color:#f0cf8a;}
+:root[data-tema="escuro"] td.occ-conflito,
+:root[data-tema="escuro"] td.occ-aviso{background:#4a3018;color:#f0c48a;}
+:root[data-tema="escuro"] .badge-rec.subutilizado,
+:root[data-tema="escuro"] td.occ-subutilizado{background:#4a3a15;color:#f0cf8a;}
 :root[data-tema="escuro"] td.occ-ok{background:#1c3a2c;color:#a8e0c0;}
 :root[data-tema="escuro"] .pred-tag{background:#232a44;}
 :root[data-tema="escuro"] .gantt-weekend{fill:#1c212a;}
@@ -409,8 +411,8 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
   display:inline-block;background:var(--cinza-200);border-radius:var(--radius-pill);padding:1px 8px;font-size:10px;font-weight:600;margin:1px 2px 1px 0;color:var(--cinza-700);
 }
 .badge-rec.critico{background:#f1cfc9;color:#6e241c;font-weight:600;cursor:help;}
-.badge-rec.conflito{background:#f6ddc4;color:#7a3a10;font-weight:600;cursor:help;}
-.badge-rec.aviso{background:#f3e3b6;color:#6b4f0f;font-weight:600;cursor:help;}
+.badge-rec.conflito,.badge-rec.aviso{background:#f6ddc4;color:#7a3a10;font-weight:600;cursor:help;}
+.badge-rec.subutilizado{background:#f3e3b6;color:#6b4f0f;font-weight:600;cursor:help;}
 .pred-cell{cursor:pointer;color:var(--azul);font-size:11px;}
 .pred-tag{background:#eef2ff;border-radius:4px;padding:1px 5px;margin-right:3px;font-size:10px;color:var(--roxo);}
 .rec-cell,.pred-cell-wrap{cursor:pointer;min-height:20px;vertical-align:middle;line-height:1.6;}
@@ -505,8 +507,8 @@ table.heatmap-cap th,table.heatmap-cap td{padding:7px 10px;text-align:center;bor
 table.heatmap-cap thead th{background:var(--cinza-100);color:var(--cinza-700);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.02em;}
 table.heatmap-cap tbody th{background:var(--cinza-100);text-align:left;font-weight:600;color:var(--cinza-900);white-space:nowrap;}
 td.occ-ok{background:#cde4d8;color:#1f4b34;font-family:var(--font-mono,monospace);}
-td.occ-aviso{background:#f3e3b6;color:#6b4f0f;font-family:var(--font-mono,monospace);}
-td.occ-conflito{background:#f6ddc4;color:#7a3a10;font-family:var(--font-mono,monospace);font-weight:700;}
+td.occ-subutilizado{background:#f3e3b6;color:#6b4f0f;font-family:var(--font-mono,monospace);}
+td.occ-aviso,td.occ-conflito{background:#f6ddc4;color:#7a3a10;font-family:var(--font-mono,monospace);font-weight:700;}
 td.occ-critico{background:#f1cfc9;color:#6e241c;font-family:var(--font-mono,monospace);font-weight:700;}
 td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(--font-mono,monospace);}
 
@@ -516,15 +518,15 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .cap-papel{font-size:11.5px;color:var(--cinza-500);}
 .cap-pct{font-family:var(--display);font-weight:800;font-size:21px;letter-spacing:-.01em;}
 .cap-pct.cap-ok{color:var(--verde);}
-.cap-pct.cap-aviso{color:var(--amarelo);}
-.cap-pct.cap-conflito{color:var(--laranja);}
+.cap-pct.cap-subutilizado{color:var(--amarelo);}
+.cap-pct.cap-aviso,.cap-pct.cap-conflito{color:var(--laranja);}
 .cap-pct.cap-critico{color:var(--vermelho);}
 .cap-pct.cap-vazio{color:var(--cinza-500);}
 .cap-bar{height:7px;border-radius:4px;background:var(--cinza-100);overflow:hidden;margin-bottom:6px;}
 .cap-bar-fill{height:100%;border-radius:4px;}
 .cap-bar-fill.cap-ok{background:var(--verde);}
-.cap-bar-fill.cap-aviso{background:var(--amarelo);}
-.cap-bar-fill.cap-conflito{background:var(--laranja);}
+.cap-bar-fill.cap-subutilizado{background:var(--amarelo);}
+.cap-bar-fill.cap-aviso,.cap-bar-fill.cap-conflito{background:var(--laranja);}
 .cap-bar-fill.cap-critico{background:var(--vermelho);}
 .cap-bar-fill.cap-vazio{background:var(--cinza-300);}
 .cap-meta{font-size:11px;color:var(--cinza-500);margin-bottom:10px;}
@@ -532,8 +534,8 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .cap-mes-barra{flex:1;height:100%;background:var(--cinza-100);border-radius:2px;display:flex;align-items:flex-end;overflow:hidden;}
 .cap-mes-fill{width:100%;border-radius:2px;min-height:2px;}
 .cap-mes-fill.cap-ok{background:var(--verde);}
-.cap-mes-fill.cap-aviso{background:var(--amarelo);}
-.cap-mes-fill.cap-conflito{background:var(--laranja);}
+.cap-mes-fill.cap-subutilizado{background:var(--amarelo);}
+.cap-mes-fill.cap-aviso,.cap-mes-fill.cap-conflito{background:var(--laranja);}
 .cap-mes-fill.cap-critico{background:var(--vermelho);}
 .cap-mes-fill.cap-vazio{background:var(--cinza-300);}
 .cap-revenue{font-size:12.5px;color:var(--cinza-700);margin-bottom:6px;padding-top:8px;border-top:1px dashed var(--cinza-200);}
@@ -605,8 +607,9 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .cal-dia:nth-child(7n+1){border-left:none;}
 .cal-dia.fora-mes{background:var(--cinza-100);}
 .cal-dia.fora-mes .cal-dia-numero{color:var(--cinza-300);}
-.cal-dia.hoje{background:#eaf4fb;}
-:root[data-tema="escuro"] .cal-dia.hoje{background:#16324a;}
+/* "hoje" é um contorno (não um fundo) para poder combinar-se com as cores de ocupação abaixo,
+   que já usam o fundo da célula. */
+.cal-dia.hoje{box-shadow:inset 0 0 0 2px var(--azul);}
 .cal-dia-cabecalho{display:flex;justify-content:space-between;align-items:center;}
 .cal-dia-numero{font-size:12px;font-weight:600;color:var(--cinza-700);}
 .cal-dia-total{font-size:10.5px;font-weight:600;color:var(--cinza-500);}
@@ -614,3 +617,15 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .cal-bloco{border-radius:4px;padding:2px 6px;color:#fff;font-size:10.5px;line-height:1.25;overflow:hidden;display:flex;flex-direction:column;justify-content:center;cursor:default;}
 .cal-bloco-linha1{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cal-bloco-linha2{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* Semáforo de ocupação no calendário de Alocações (só quando há uma pessoa selecionada no
+   filtro — ver Capacidade.classeDia/classeResumo, mesmas cores e limiares de toda a app). */
+.cal-dia.ocupacao-subutilizado{background:#fdf3d6;}
+.cal-dia.ocupacao-ok{background:#d9ede3;}
+.cal-dia.ocupacao-aviso,.cal-dia.ocupacao-conflito{background:#fbe3c8;}
+.cal-dia.ocupacao-critico{background:#f7d2cb;}
+:root[data-tema="escuro"] .cal-dia.ocupacao-subutilizado{background:#4a3a15;}
+:root[data-tema="escuro"] .cal-dia.ocupacao-ok{background:#1c3a2c;}
+:root[data-tema="escuro"] .cal-dia.ocupacao-aviso,
+:root[data-tema="escuro"] .cal-dia.ocupacao-conflito{background:#4a3018;}
+:root[data-tema="escuro"] .cal-dia.ocupacao-critico{background:#4a2020;}
