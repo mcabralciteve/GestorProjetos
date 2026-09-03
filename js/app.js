@@ -2258,6 +2258,10 @@ const App = {
 
     const hojeISO = DateUtil.todayISO();
     const mostrarPessoaNaBarra = !f.pessoa && recursosAtivos.length > 1;
+    // Calculado uma vez para o mês inteiro (não uma vez por dia) — ver nota grande em
+    // Capacidade.intervalosCriticos; só interessa quando há uma Pessoa escolhida (é o que ativa o
+    // semáforo de ocupação por dia, mais abaixo).
+    const intervalosCriticosPessoa = f.pessoa ? Capacidade.intervalosCriticos({ id: f.pessoa }) : [];
     const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
     let cursor = new Date(inicioGrelha);
@@ -2298,7 +2302,7 @@ const App = {
       }).join('');
       // Semáforo de ocupação no fundo da célula — só faz sentido com uma pessoa escolhida no
       // filtro (com "Todas" a célula mistura gente diferente, uma única cor de fundo enganava).
-      const classeOcupacao = f.pessoa ? ` ocupacao-${Capacidade.classeDia(cursor, f.pessoa)}` : '';
+      const classeOcupacao = f.pessoa ? ` ocupacao-${Capacidade.classeDia(cursor, f.pessoa, intervalosCriticosPessoa)}` : '';
       html += `<div class="cal-dia${classeOcupacao}${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
         <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras.toFixed(1)}h</span>` : ''}</div>
         <div class="cal-dia-blocos">${blocos}</div>
@@ -2371,7 +2375,10 @@ const App = {
     }
 
     recursosFiltrados.forEach(r => {
-      const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes)));
+      // Calculado uma vez por recurso (não uma vez por mês) — é o mesmo conjunto de conflitos
+      // reais em todo o horizonte, ver nota grande em Capacidade.intervalosCriticos.
+      const intervalosCriticos = Capacidade.intervalosCriticos(r);
+      const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes, intervalosCriticos)));
 
       const tr = document.createElement('tr');
       const celulas = resumos.map(res => {
@@ -2379,7 +2386,7 @@ const App = {
         const temContexto = res.capacidade > 0 || res.alocado > 0;
         const texto = !temContexto ? '—' : (isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠');
         let dica = '';
-        if (res.diasSobreAlocado > 0) dica += ` — ⚠ sobre-alocado(a) em ${this.formatarDatasConflito(res.datasSobreAlocado)} (duplo agendamento)`;
+        if (res.diasSobreAlocado > 0) dica += ` — ⚠ sobre-alocado(a) em ${this.formatarIntervalosConflito(res.intervalosSobreAlocados)}`;
         if (res.diasConflitoDisponibilidade > 0) dica += ` — ⚠ conflito com ausência/feriado em ${this.formatarDatasConflito(res.datasConflitoDisponibilidade)}`;
         return `<td class="occ-${cls}" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade${dica}">${texto}</td>`;
       }).join('');
@@ -2389,7 +2396,6 @@ const App = {
       const mesAtual = resumos[0];
       const revenueTotal = resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0);
       const projetos = Capacidade.projetosDoRecurso(r.id);
-      const datasSobreAlocado = resumos.reduce((acc, res) => acc.concat(res.datasSobreAlocado), []);
       const datasConflito = resumos.reduce((acc, res) => acc.concat(res.datasConflitoDisponibilidade), []);
       const clsMesAtual = Capacidade.classeResumo(mesAtual);
 
@@ -2407,7 +2413,7 @@ const App = {
           ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
         <div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>
-        ${datasSobreAlocado.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarDatasConflito(datasSobreAlocado, 10)}</div>` : ''}
+        ${intervalosCriticos.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarIntervalosConflito(intervalosCriticos, 10)}</div>` : ''}
         ${datasConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${this.formatarDatasConflito(datasConflito, 10)}</div>` : ''}
         <div class="cap-projetos">
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
@@ -4447,6 +4453,19 @@ const App = {
     const visiveis = datasISO.slice(0, limite).map(iso => DateUtil.formatShort(DateUtil.parseISO(iso)));
     const resto = datasISO.length - visiveis.length;
     return escapeHtml(visiveis.join(', ') + (resto > 0 ? ` +${resto} dia(s)` : ''));
+  },
+  // Mesma ideia, mas para os intervalos de sobre-alocação real (ver Capacidade.intervalosCriticos)
+  // — cada um vira "5/09–20/09 (excesso de 12h)" em vez de uma data isolada, porque o problema é
+  // sempre de um período inteiro, nunca de um único dia.
+  formatarIntervalosConflito(intervalos, limite) {
+    limite = limite || 6;
+    const visiveis = intervalos.slice(0, limite).map(v => {
+      const ini = DateUtil.formatShort(v.inicio), fim = DateUtil.formatShort(v.fim);
+      const periodo = +v.inicio === +v.fim ? ini : `${ini}–${fim}`;
+      return `${periodo} (excesso de ${v.excesso.toFixed(1)}h)`;
+    });
+    const resto = intervalos.length - visiveis.length;
+    return escapeHtml(visiveis.join(', ') + (resto > 0 ? ` +${resto}` : ''));
   },
   bloquearPreenchimentoAutomatico(input) {
     let valorAntesDoFoco = input.value;
