@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260901">
+<link rel="stylesheet" href="css/style.css?v=20260903">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -54,6 +54,7 @@
       <button id="authUserInfo" class="conta-menu-trigger"></button>
       <div class="conta-menu" id="contaMenuDropdown">
         <button id="btnMinhaConta">⚙ Conta</button>
+        <button id="btnDefinicoes" style="display:none;">🛠 Definições</button>
         <button id="btnSair">⏻ Sair</button>
       </div>
     </div>
@@ -65,6 +66,7 @@
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
   <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Faturação</button>
+  <button class="grupo-btn" data-grupo="viaturas">🚗 Viaturas</button>
 </nav>
 <nav class="tabs" id="tabsNav">
   <div class="tabs-grupo active" data-grupo="planeamento">
@@ -85,6 +87,9 @@
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Registo</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="viaturas">
+    <button class="tab-btn" data-tab="viaturas">Pedido</button>
   </div>
 </nav>
 
@@ -636,6 +641,81 @@
   </div>
 </section>
 
+<!-- ===================== TAB: VIATURAS ===================== -->
+<section class="tab-panel" id="tab-viaturas">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>🚗 Pedido de Reserva de Viatura</h2>
+    </div>
+    <p class="pagina-sub">Associado a um projeto em que estejas envolvido — ao submeter, o Mapa de Despesas (DFRH-008/12) é gerado automaticamente e é aberto o teu cliente de email com os destinatários e o assunto já preenchidos.</p>
+
+    <div class="card" style="max-width:640px;">
+      <form id="formReservaViatura">
+        <div class="calc-line" style="border:none;padding:0 0 8px;">Requisitante: <b id="reservaRequisitanteInfo">—</b></div>
+        <div class="row-2">
+          <label>Projeto <span style="color:var(--vermelho);">*</span>
+            <select id="reservaProjeto" required><option value="">Seleciona…</option></select>
+          </label>
+          <label>Gestor de Projeto <span class="hint">(automático)</span>
+            <input type="text" id="reservaGestor" readonly>
+          </label>
+        </div>
+        <div class="row-2">
+          <label>Área / Unidade <span style="color:var(--vermelho);">*</span>
+            <input type="text" id="reservaArea" placeholder="ex.: DTD" required>
+          </label>
+          <label>Chefia direta / Diretor <span class="hint">(opcional)</span>
+            <input type="text" id="reservaChefia">
+          </label>
+        </div>
+        <label>Justificação <span style="color:var(--vermelho);">*</span>
+          <textarea id="reservaJustificacao" rows="2" required></textarea>
+        </label>
+        <label>Data do pedido <span style="color:var(--vermelho);">*</span>
+          <input type="date" id="reservaDataPedido" required>
+        </label>
+        <div class="row-2">
+          <label>Data de início <span style="color:var(--vermelho);">*</span>
+            <input type="date" id="reservaDataInicio" required>
+          </label>
+          <label>Hora de início ("Das") <span style="color:var(--vermelho);">*</span>
+            <input type="time" id="reservaHoraInicio" required>
+          </label>
+        </div>
+        <div class="row-2">
+          <label>Data de fim <span style="color:var(--vermelho);">*</span>
+            <input type="date" id="reservaDataFim" required>
+          </label>
+          <label>Hora de fim ("às") <span style="color:var(--vermelho);">*</span>
+            <input type="time" id="reservaHoraFim" required>
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btnReservaViatura">Gerar Excel e Enviar por Email</button>
+        <p class="hint" style="margin-top:10px;"><span style="color:var(--vermelho);">*</span> campo obrigatório</p>
+        <span id="reservaMsg" class="calc-line" style="border:none;padding:0;display:block;margin-top:6px;"></span>
+      </form>
+    </div>
+
+    <h2 style="margin-top:24px;">Histórico de Pedidos</h2>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaReservasViatura">
+        <thead>
+          <tr>
+            <th>Data do pedido</th>
+            <th>Requisitante</th>
+            <th>Projeto</th>
+            <th>Início</th>
+            <th>Fim</th>
+            <th>Justificação</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaReservasViatura"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <!-- ===================== TAB: TODOS OS NEXT STEPS (ADMIN) ===================== -->
 <section class="tab-panel" id="tab-todosPassos">
   <div class="pagina">
@@ -699,12 +779,14 @@
      causou bugs difíceis de diagnosticar). Ao editar qualquer .js/.css local, atualiza esta data
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
-<script src="js/supabase-config.js?v=20260901"></script>
-<script src="js/auth.js?v=20260901"></script>
-<script src="js/sync.js?v=20260901"></script>
-<script src="js/gantt.js?v=20260901"></script>
-<script src="js/capacidade.js?v=20260901"></script>
-<script src="js/portfolio-gantt.js?v=20260901"></script>
-<script src="js/app.js?v=20260901"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="js/supabase-config.js?v=20260903"></script>
+<script src="js/auth.js?v=20260903"></script>
+<script src="js/sync.js?v=20260903"></script>
+<script src="js/gantt.js?v=20260903"></script>
+<script src="js/capacidade.js?v=20260903"></script>
+<script src="js/portfolio-gantt.js?v=20260903"></script>
+<script src="js/reserva-viatura.js?v=20260903"></script>
+<script src="js/app.js?v=20260903"></script>
 </body>
 </html>

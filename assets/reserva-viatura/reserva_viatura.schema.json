@@ -1,0 +1,115 @@
+{
+  "$id": "https://citeve/reserva-viatura/schema/1.0.0",
+  "title": "Reserva de Viatura — Mapa de Despesas (DFRH-008/12)",
+  "version": "1.0.0",
+  "descricao": "Schema de integração para preencher o modelo Excel oficial DFRH-008/12 a partir de dados de um formulário. Inclui o mapeamento campo->célula, a codificação de datas/horas e as convenções de nome de ficheiro. Serve para reimplementar a mesma exportação noutra solução (qualquer linguagem/stack).",
+
+  "documento": {
+    "nome": "Mapa de Despesas",
+    "codigo": "DFRH-008/12",
+    "templateOriginal": "Reserva_Viatura_TEMPLATE.xls",
+    "formatoTemplate": "Excel 97-2003 (.xls, BIFF8 / OLE2)",
+    "folha": "Mapa de Despesas",
+    "folhaXmlNoXlsx": "xl/worksheets/sheet1.xml",
+    "nomeFicheiroSaida": {
+      "padrao": "DFRH008_rev12_Mapa_despesas_{DDMMAAAA}.xls",
+      "exemplo": "DFRH008_rev12_Mapa_despesas_15092026.xls",
+      "regraData": "{DDMMAAAA} = valor do campo 'data_inicio' formatado como diamêsano sem separadores"
+    },
+    "formatosSaidaPossiveis": [
+      {"extensao": ".xls", "nota": "Igual ao original. Só via Excel/automação (ver notasImplementacao.metodoA)."},
+      {"extensao": ".xlsx", "nota": "Alternativa sem Excel, no browser/servidor (ver notasImplementacao.metodoB)."}
+    ]
+  },
+
+  "campos": [
+    {"id": "area",         "rotulo": "Área / Unidade",            "tipo": "texto",     "obrigatorio": true,  "celula": "H12", "estiloIndice": 170, "exemplo": "DTD"},
+    {"id": "requisitante", "rotulo": "Requisitante",              "tipo": "texto",     "obrigatorio": true,  "celula": "P12", "estiloIndice": 102, "exemplo": "Tiago Costa", "nota": "Caixa AUTORIZAÇÃO; o rótulo 'Nome do Requisitante' está impresso por baixo (N13)."},
+    {"id": "chefia",       "rotulo": "Chefia direta / Diretor",   "tipo": "texto",     "obrigatorio": false, "celula": "P15", "estiloIndice": 102, "exemplo": "João Nuno Oliveira"},
+    {"id": "gestor",       "rotulo": "Gestor de Projeto",         "tipo": "texto",     "obrigatorio": false, "celula": "G17", "estiloIndice": 162, "exemplo": "Hugo Costa"},
+    {"id": "projeto",      "rotulo": "Projeto",                   "tipo": "texto",     "obrigatorio": true,  "celula": "F15", "estiloIndice": 171, "exemplo": "Barcelcom - Acompanhento Projeto 2026/2027"},
+    {"id": "justificacao", "rotulo": "Justificação",              "tipo": "textoLongo","obrigatorio": true,  "celula": "D24", "estiloIndice": 116, "exemplo": "Deslocação técnica às instalações da Barcelcom para 4/5 pessoas", "nota": "Célula mesclada D24:K35, com quebra de linha ativa."},
+    {"id": "data_pedido",  "rotulo": "Data do pedido",            "tipo": "data",      "obrigatorio": true,  "celula": "I19", "estiloIndice": 115, "codificacao": "serialExcel", "formatoVisivel": "dd/mm/aaaa"},
+    {"id": "data_inicio",  "rotulo": "Data de início",            "tipo": "data",      "obrigatorio": true,  "celula": "Q28", "estiloIndice": 101, "codificacao": "serialExcel", "formatoVisivel": "dd/mm/aaaa", "nota": "Determina o nome do ficheiro."},
+    {"id": "hora_inicio",  "rotulo": "Hora de início ('Das')",    "tipo": "hora",      "obrigatorio": true,  "celula": "T28", "estiloIndice": 145, "codificacao": "fracaoDia", "formatoVisivel": "h:mm", "exemplo": "13:00"},
+    {"id": "data_fim",     "rotulo": "Data de fim",               "tipo": "data",      "obrigatorio": true,  "celula": "Q30", "estiloIndice": 101, "codificacao": "serialExcel", "formatoVisivel": "dd/mm/aaaa"},
+    {"id": "hora_fim",     "rotulo": "Hora de fim ('às')",        "tipo": "hora",      "obrigatorio": true,  "celula": "T30", "estiloIndice": 145, "codificacao": "fracaoDia", "formatoVisivel": "h:mm", "exemplo": "18:00"}
+  ],
+
+  "camposForaDeAmbito": {
+    "nota": "Estes existem no formulário mas são controlos (botões de opção/caixas) ou preenchidos por outra equipa; não fazem parte deste mapeamento de valores.",
+    "exemplos": ["Famalicão / Covilhã (opção)", "Nacional / Internacional (opção)", "Marca", "Matrícula", "Quilometragem", "Despacho do setor de veículos"]
+  },
+
+  "codificacoes": {
+    "serialExcel": {
+      "descricao": "Número de série de data do Excel (sistema 1900): nº de dias desde 1899-12-30.",
+      "formula": "serial = floor((UTC(ano,mes,dia) - UTC(1899,12,30)) / 86400000)",
+      "exemplo": "2026-09-15 -> 46280",
+      "importante": "Escrever o NÚMERO puro (não um objeto data), para evitar deslocações de fuso horário/verão que ocorrem ao passar datetimes nativos por algumas bibliotecas/COM."
+    },
+    "fracaoDia": {
+      "descricao": "Hora como fração de um dia (0..1).",
+      "formula": "fracao = (horas*3600 + minutos*60) / 86400",
+      "exemplo": "13:00 -> 0.5416666667 ; 17:45 -> 0.7395833333"
+    },
+    "texto": {"descricao": "String simples. Escapar &, <, > se escrito diretamente em XML."}
+  },
+
+  "regrasValidacao": {
+    "data": "Formato de entrada recomendado: aaaa-mm-dd (ISO) ou dd/mm/aaaa.",
+    "hora": "Formato HH:MM, 00<=HH<24, 00<=MM<60.",
+    "obrigatorios": ["area", "requisitante", "projeto", "justificacao", "data_pedido", "data_inicio", "hora_inicio", "data_fim", "hora_fim"]
+  },
+
+  "notasImplementacao": {
+    "principio": "Preservar 100% do modelo (logótipo, molduras, validações, controlos): NUNCA reconstruir o ficheiro; alterar apenas o VALOR das células-alvo, mantendo o estilo (estiloIndice / atributo s).",
+    "metodoA_xls_via_excel": {
+      "quando": "Manter a extensão .xls original, com fidelidade total.",
+      "como": "Abrir o template no Excel (ex.: automação COM / Interop), definir cada Range(celula).Value, e Guardar-Como com FileFormat=56 (xlExcel8).",
+      "dicas": ["Usar instância isolada do Excel (ex.: DispatchEx) para não interferir com ficheiros abertos.", "Datas: escrever o serialExcel (número). Horas: escrever a fracaoDia (número). O formato visível vem do estilo já existente na célula."]
+    },
+    "metodoB_xlsx_edicao_cirurgica": {
+      "quando": "Sem Excel instalado (browser/servidor). Gera .xlsx.",
+      "como": "Um .xlsx é um ZIP de XML. 1) Descompactar; 2) em 'xl/worksheets/sheet1.xml' substituir SÓ a célula-alvo mantendo o s=; 3) recompactar sem tocar no resto (imagens, estilos, validações preservam-se).",
+      "substituicaoTexto": "<c r=\"ADDR\" s=\"N\" t=\"inlineStr\"><is><t xml:space=\"preserve\">TEXTO</t></is></c>",
+      "substituicaoNumero": "<c r=\"ADDR\" s=\"N\"><v>NUMERO</v></c>",
+      "bibliotecasSugeridas": ["fflate ou JSZip (JS)", "openpyxl (Python, apenas .xlsx e pode perder alguns objetos — preferir edição direta do XML para fidelidade máxima)"]
+    }
+  },
+
+  "exemploPayload": {
+    "area": "DTD",
+    "requisitante": "Tiago Costa",
+    "chefia": "João Nuno Oliveira",
+    "gestor": "Hugo Costa",
+    "projeto": "Barcelcom - Acompanhento Projeto 2026/2027",
+    "justificacao": "Deslocação técnica às instalações da Barcelcom para 4/5 pessoas",
+    "data_pedido": "2026-09-10",
+    "data_inicio": "2026-09-15",
+    "hora_inicio": "09:30",
+    "data_fim": "2026-09-15",
+    "hora_fim": "17:45"
+  },
+
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Payload de entrada — Reserva de Viatura",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["area", "requisitante", "projeto", "justificacao", "data_pedido", "data_inicio", "hora_inicio", "data_fim", "hora_fim"],
+    "properties": {
+      "area":         {"type": "string", "minLength": 1},
+      "requisitante": {"type": "string", "minLength": 1},
+      "chefia":       {"type": "string"},
+      "gestor":       {"type": "string"},
+      "projeto":      {"type": "string", "minLength": 1},
+      "justificacao": {"type": "string", "minLength": 1},
+      "data_pedido":  {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+      "data_inicio":  {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+      "data_fim":     {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+      "hora_inicio":  {"type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"},
+      "hora_fim":     {"type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"}
+    }
+  }
+}

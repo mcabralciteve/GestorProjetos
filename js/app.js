@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], projetoAtivoId: null },
+  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '' }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -207,6 +207,22 @@ const App = {
       statsRegisto: document.getElementById('statsRegisto'),
       corpoTabelaRegistos: document.getElementById('corpoTabelaRegistos'),
       paginacaoRegistos: document.getElementById('paginacaoRegistos'),
+      formReservaViatura: document.getElementById('formReservaViatura'),
+      reservaProjeto: document.getElementById('reservaProjeto'),
+      reservaRequisitanteInfo: document.getElementById('reservaRequisitanteInfo'),
+      reservaGestor: document.getElementById('reservaGestor'),
+      reservaArea: document.getElementById('reservaArea'),
+      reservaChefia: document.getElementById('reservaChefia'),
+      reservaJustificacao: document.getElementById('reservaJustificacao'),
+      reservaDataPedido: document.getElementById('reservaDataPedido'),
+      reservaDataInicio: document.getElementById('reservaDataInicio'),
+      reservaHoraInicio: document.getElementById('reservaHoraInicio'),
+      reservaDataFim: document.getElementById('reservaDataFim'),
+      reservaHoraFim: document.getElementById('reservaHoraFim'),
+      reservaMsg: document.getElementById('reservaMsg'),
+      btnReservaViatura: document.getElementById('btnReservaViatura'),
+      corpoTabelaReservasViatura: document.getElementById('corpoTabelaReservasViatura'),
+      btnDefinicoes: document.getElementById('btnDefinicoes'),
       fCalPessoa: document.getElementById('fCalPessoa'),
       fCalProjeto: document.getElementById('fCalProjeto'),
       btnCalMesAnt: document.getElementById('btnCalMesAnt'),
@@ -432,7 +448,7 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], projetoAtivoId: null };
+    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '' }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
@@ -440,6 +456,8 @@ const App = {
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
     if (!this.state.utilizadores) this.state.utilizadores = [];
+    if (!this.state.reservasViatura) this.state.reservasViatura = [];
+    if (!this.state.configuracoes) this.state.configuracoes = { emailViaturas1: '', emailViaturas2: '' };
     this.migrarIdsParaUuid();
     // Compatibilidade com projetos guardados antes da introdução do Gestor de Projeto.
     Object.values(this.state.projetos).forEach(p => {
@@ -1704,6 +1722,8 @@ const App = {
     this.renderFormRegisto();
     this.renderTabelaRegistos();
     this.renderFaturacao();
+    this.renderFormReservaViatura();
+    this.renderTabelaReservasViatura();
     this.renderAcompanhamento();
     this.renderTodosPassos();
   },
@@ -1717,6 +1737,7 @@ const App = {
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = admin ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
+    if (e.btnDefinicoes) e.btnDefinicoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
     if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
@@ -2788,6 +2809,167 @@ const App = {
     });
   },
 
+  // ---------- Tab: Viaturas ----------
+  // Requisitante é sempre quem está autenticado (pedido pessoal, sem "pedir em nome de outro").
+  // Só é possível escolher projetos onde a pessoa está envolvida (meusProjetosEnvolvidos() — admin
+  // vê todos), tal como no resto da app. Gestor vem sempre do projeto escolhido (só leitura, como
+  // o "Cliente" no Registo de Horas); Área/Chefia/Justificação são texto livre, sem correspondência
+  // no resto do modelo de dados.
+  novaReservaViaturaObj(dados) {
+    return {
+      id: crypto.randomUUID(),
+      projetoId: dados.projetoId || null, projetoNome: dados.projetoNome || '',
+      requisitanteId: dados.requisitanteId || null, requisitanteNome: dados.requisitanteNome || '',
+      area: dados.area || '', chefia: dados.chefia || '', gestor: dados.gestor || '',
+      justificacao: dados.justificacao || '',
+      dataPedido: dados.dataPedido, dataInicio: dados.dataInicio, horaInicio: dados.horaInicio,
+      dataFim: dados.dataFim, horaFim: dados.horaFim,
+      nomeFicheiro: dados.nomeFicheiro || '',
+      criadoEm: new Date().toISOString()
+    };
+  },
+  emailsViaturasConfigurados() {
+    const c = this.state.configuracoes || {};
+    return [c.emailViaturas1, c.emailViaturas2].map(x => (x || '').trim()).filter(Boolean);
+  },
+  renderFormReservaViatura() {
+    const e = this.els;
+    if (!e.formReservaViatura) return;
+    const perfil = this.perfilAtual();
+    const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    const projetos = this.meusProjetosEnvolvidos();
+    if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
+    const valorAtual = e.reservaProjeto.value;
+    e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
+      projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
+    this.atualizarGestorReservaViatura();
+
+    const semAcesso = !recurso || !projetos.length;
+    if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
+      if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
+      else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
+      else { e.reservaMsg.textContent = ''; }
+    }
+    e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
+    if (!e.reservaDataPedido.value) e.reservaDataPedido.value = DateUtil.todayISO();
+  },
+  atualizarGestorReservaViatura() {
+    const e = this.els;
+    const p = this.state.projetos[e.reservaProjeto.value];
+    const gestor = p && p.gestorId ? this.state.recursos.find(r => r.id === p.gestorId) : null;
+    e.reservaGestor.value = gestor ? gestor.nome : '';
+  },
+  async submeterFormReservaViatura() {
+    const e = this.els;
+    const perfil = this.perfilAtual();
+    const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    const projeto = this.state.projetos[e.reservaProjeto.value];
+    const dados = {
+      area: e.reservaArea.value.trim(),
+      requisitante: recurso ? recurso.nome : '',
+      chefia: e.reservaChefia.value.trim(),
+      gestor: e.reservaGestor.value.trim(),
+      projeto: projeto ? `${projeto.idInterno ? projeto.idInterno + ' - ' : ''}${projeto.nome}` : '',
+      justificacao: e.reservaJustificacao.value.trim(),
+      data_pedido: e.reservaDataPedido.value,
+      data_inicio: e.reservaDataInicio.value,
+      hora_inicio: e.reservaHoraInicio.value,
+      data_fim: e.reservaDataFim.value,
+      hora_fim: e.reservaHoraFim.value
+    };
+    if (!recurso) { this.toast('A tua conta ainda não está associada a um consultor.'); return; }
+    if (!projeto || !dados.area || !dados.justificacao || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
+      this.toast('Preenche todos os campos obrigatórios (*).'); return;
+    }
+    if (dados.data_fim < dados.data_inicio || (dados.data_fim === dados.data_inicio && dados.hora_fim <= dados.hora_inicio)) {
+      this.toast('A data/hora de fim tem de ser depois da data/hora de início.'); return;
+    }
+    e.btnReservaViatura.disabled = true;
+    e.reservaMsg.style.color = 'var(--cinza-500)';
+    e.reservaMsg.textContent = 'A gerar o Excel…';
+    try {
+      const { blob, nomeFicheiro } = await ReservaViatura.gerarBlob(dados);
+      this.descarregarBlob(blob, nomeFicheiro);
+
+      const reserva = this.novaReservaViaturaObj({
+        projetoId: projeto.id, projetoNome: projeto.nome, requisitanteId: recurso.id, requisitanteNome: recurso.nome,
+        area: dados.area, chefia: dados.chefia, gestor: dados.gestor, justificacao: dados.justificacao,
+        dataPedido: dados.data_pedido, dataInicio: dados.data_inicio, horaInicio: dados.hora_inicio,
+        dataFim: dados.data_fim, horaFim: dados.hora_fim, nomeFicheiro
+      });
+      this.state.reservasViatura.push(reserva);
+      this.persist();
+      this.renderTabelaReservasViatura();
+
+      const emails = this.emailsViaturasConfigurados();
+      if (emails.length) {
+        this.abrirEmailReservaViatura(dados, nomeFicheiro, emails);
+        e.reservaMsg.textContent = `Excel descarregado (${nomeFicheiro}). A abrir o email — não te esqueças de anexar o ficheiro antes de enviar.`;
+      } else {
+        e.reservaMsg.textContent = `Excel descarregado (${nomeFicheiro}). Não há emails da equipa de viaturas configurados (o Administrador configura em "⚙ Definições") — envia o ficheiro manualmente.`;
+      }
+      e.reservaMsg.style.color = 'var(--verde)';
+      e.formReservaViatura.reset();
+      e.reservaDataPedido.value = DateUtil.todayISO();
+      this.atualizarGestorReservaViatura();
+    } catch (err) {
+      console.error(err);
+      e.reservaMsg.style.color = 'var(--vermelho)';
+      e.reservaMsg.textContent = 'Erro ao gerar o Excel: ' + err.message;
+    } finally {
+      e.btnReservaViatura.disabled = false;
+    }
+  },
+  // mailto: nunca consegue anexar ficheiros (limitação da própria plataforma web) — por isso o
+  // Excel já foi descarregado antes disto ser chamado, e o corpo do email pede explicitamente
+  // para o anexar à mão. É a aproximação mais próxima possível de "abrir o Outlook com tudo
+  // pronto" sem precisar de nenhuma extensão de browser nem de automação do lado do servidor.
+  abrirEmailReservaViatura(dados, nomeFicheiro, emails) {
+    const assunto = `Reserva de Viatura — ${dados.projeto} — ${DateUtil.formatShort(DateUtil.parseISO(dados.data_inicio))}`;
+    const corpo = [
+      'Pedido de reserva de viatura:', '',
+      `Projeto: ${dados.projeto}`,
+      `Requisitante: ${dados.requisitante}`,
+      `De: ${DateUtil.formatShort(DateUtil.parseISO(dados.data_inicio))} ${dados.hora_inicio}`,
+      `Até: ${DateUtil.formatShort(DateUtil.parseISO(dados.data_fim))} ${dados.hora_fim}`,
+      `Justificação: ${dados.justificacao}`, '',
+      `⚠ Anexa o ficheiro "${nomeFicheiro}" (acabou de ser descarregado) antes de enviares este email.`
+    ].join('\n');
+    window.location.href = `mailto:${emails.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  },
+  renderTabelaReservasViatura() {
+    const e = this.els;
+    if (!e.corpoTabelaReservasViatura) return;
+    const admin = this.souAdmin();
+    const lista = [...this.state.reservasViatura].sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+    e.corpoTabelaReservasViatura.innerHTML = '';
+    if (!lista.length) {
+      e.corpoTabelaReservasViatura.innerHTML = `<tr class="empty-row"><td colspan="7" style="text-align:center;color:var(--cinza-500);padding:20px">Ainda não há pedidos de reserva de viatura.</td></tr>`;
+      return;
+    }
+    lista.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(r.dataPedido)))}</td>
+        <td>${escapeHtml(r.requisitanteNome)}</td>
+        <td>${escapeHtml(r.projetoNome)}</td>
+        <td>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(r.dataInicio)))} ${escapeHtml(r.horaInicio)}</td>
+        <td>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(r.dataFim)))} ${escapeHtml(r.horaFim)}</td>
+        <td>${escapeHtml(r.justificacao)}</td>
+        <td class="col-acoes">${admin ? '<button class="btn-icon" title="Eliminar">🗑</button>' : ''}</td>`;
+      if (admin) tr.querySelector('button').addEventListener('click', () => this.eliminarReservaViatura(r.id));
+      e.corpoTabelaReservasViatura.appendChild(tr);
+    });
+  },
+  eliminarReservaViatura(id) {
+    if (!this.souAdmin()) return;
+    if (!confirm('Eliminar este pedido do histórico? Isto não cancela nada junto da equipa de viaturas, só remove o registo da app.')) return;
+    this.state.reservasViatura = this.state.reservasViatura.filter(r => r.id !== id);
+    this.persist();
+    this.renderTabelaReservasViatura();
+  },
+
   // ---------- Tab: Acompanhamento (pontos de situação + next steps) ----------
   // Pontos de situação: só o Administrador cria/edita/apaga. Next steps: Administrador e Gestor do
   // projeto podem criar (sempre associados a uma sessão de ponto de situação, com um consultor do
@@ -3298,8 +3480,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao' },
-  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', horas: 'registo', faturacao: 'faturacao' },
+  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', recursos: 'equipa', capacidade: 'equipa', feriados: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas' },
+  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'recursos', horas: 'registo', faturacao: 'faturacao', viaturas: 'viaturas' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -3395,6 +3577,36 @@ const App = {
         this.fecharModal();
         this.renderTudo();
         this.toast('Conta atualizada.');
+      } catch (err) {
+        msg.style.color = 'var(--vermelho)';
+        msg.textContent = 'Erro: ' + err.message;
+      }
+    });
+  },
+  // Definições gerais da app — só Administrador. Para já só os emails da equipa de viaturas,
+  // usados para pré-preencher o destinatário do email aberto a cada pedido de reserva.
+  abrirModalDefinicoes() {
+    if (!this.souAdmin()) return;
+    const c = this.state.configuracoes || {};
+    const html = `
+      <p class="pagina-sub" style="margin-top:0;">Emails da equipa que trata dos pedidos de reserva de viatura — usados para pré-preencher o destinatário do email aberto a cada pedido.</p>
+      <label>Email 1 <input type="email" id="defEmail1" value="${escapeAttr(c.emailViaturas1 || '')}"></label>
+      <label>Email 2 <input type="email" id="defEmail2" value="${escapeAttr(c.emailViaturas2 || '')}"></label>
+      <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
+      <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
+    this.abrirModal('⚙ Definições', html);
+    const m = this.els.modalCorpo;
+    const msg = m.querySelector('#defMsg');
+    m.querySelector('#btnGuardarDefinicoes').addEventListener('click', async () => {
+      const email1 = m.querySelector('#defEmail1').value.trim();
+      const email2 = m.querySelector('#defEmail2').value.trim();
+      msg.style.color = 'var(--cinza-500)';
+      msg.textContent = 'A guardar...';
+      try {
+        await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2 });
+        this.state.configuracoes = { emailViaturas1: email1, emailViaturas2: email2 };
+        this.fecharModal();
+        this.toast('Definições guardadas.');
       } catch (err) {
         msg.style.color = 'var(--vermelho)';
         msg.textContent = 'Erro: ' + err.message;
@@ -3691,6 +3903,9 @@ const App = {
       e.fFatProjeto.value = ''; e.fFatDe.value = ''; e.fFatAte.value = ''; e.fFatNumRegisto.value = '';
       this.aplicarFiltrosFaturacao();
     });
+    if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
+    if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
+    if (e.btnDefinicoes) e.btnDefinicoes.addEventListener('click', () => this.abrirModalDefinicoes());
     [e.fProjGestor, e.fProjCliente, e.fProjEstado, e.fProjEstadoOrc].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosProjetos()));
     document.getElementById('btnLimparFiltrosProjetos').addEventListener('click', () => {
       e.fProjGestor.value = ''; e.fProjCliente.value = ''; e.fProjEstado.value = ''; e.fProjEstadoOrc.value = '';

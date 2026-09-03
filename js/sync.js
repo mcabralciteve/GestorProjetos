@@ -23,6 +23,7 @@ const Sync = {
       this.sincronizarListaSimples('ausencias', antes.ausencias, depois.ausencias,
         a => ({ id: a.id, recurso_id: a.recursoId, data_inicio: a.dataInicio, data_fim: a.dataFim, tipo: a.tipo, notas: a.notas })),
       this.sincronizarRegistos(antes.registos, depois.registos),
+      this.sincronizarReservasViatura(antes.reservasViatura, depois.reservasViatura),
       this.sincronizarProjetos(antes.projetos || {}, depois.projetos || {})
     ]);
   },
@@ -67,6 +68,31 @@ const Sync = {
         horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm
       }));
       const { error } = await supabaseClient.from('registos').insert(linhas);
+      if (error) throw error;
+    }
+  },
+
+  // Mesmo padrão de "registos": histórico só de inserir/apagar, nunca reenviado depois de criado.
+  async sincronizarReservasViatura(listaAntes, listaDepois) {
+    listaAntes = listaAntes || [];
+    listaDepois = listaDepois || [];
+    const idsAntes = new Set(listaAntes.map(x => x.id));
+    const idsDepois = new Set(listaDepois.map(x => x.id));
+    const removidos = [...idsAntes].filter(id => !idsDepois.has(id));
+    if (removidos.length) {
+      const { error } = await supabaseClient.from('reservas_viatura').delete().in('id', removidos);
+      if (error) throw error;
+    }
+    const novos = listaDepois.filter(r => !idsAntes.has(r.id));
+    if (novos.length) {
+      const linhas = novos.map(r => ({
+        id: r.id, projeto_id: r.projetoId || null, projeto_nome: r.projetoNome,
+        requisitante_id: r.requisitanteId || null, requisitante_nome: r.requisitanteNome,
+        area: r.area, chefia: r.chefia || '', gestor: r.gestor || '', justificacao: r.justificacao,
+        data_pedido: r.dataPedido, data_inicio: r.dataInicio, hora_inicio: r.horaInicio,
+        data_fim: r.dataFim, hora_fim: r.horaFim, nome_ficheiro: r.nomeFicheiro, criado_em: r.criadoEm
+      }));
+      const { error } = await supabaseClient.from('reservas_viatura').insert(linhas);
       if (error) throw error;
     }
   },
@@ -184,7 +210,7 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp] = await Promise.all([
+    const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
       supabaseClient.from('recursos').select('*'),
       supabaseClient.from('feriados').select('*'),
@@ -195,9 +221,11 @@ const Sync = {
       supabaseClient.from('tarefa_recursos').select('*'),
       supabaseClient.from('faturas').select('*'),
       supabaseClient.from('pontos_situacao').select('*'),
-      supabaseClient.from('proximos_passos').select('*')
+      supabaseClient.from('proximos_passos').select('*'),
+      supabaseClient.from('reservas_viatura').select('*'),
+      supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle()
     ]);
-    [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp].forEach(r => { if (r.error) throw r.error; });
+    [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg].forEach(r => { if (r.error) throw r.error; });
 
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome }));
     const recursos = rec.data.map(r => ({
@@ -271,7 +299,22 @@ const Sync = {
       });
     });
 
-    App.state = { equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, projetoAtivoId: Object.keys(projetos)[0] || null };
+    const reservasViatura = rv.data.map(r => ({
+      id: r.id, projetoId: r.projeto_id, projetoNome: r.projeto_nome,
+      requisitanteId: r.requisitante_id, requisitanteNome: r.requisitante_nome,
+      area: r.area, chefia: r.chefia || '', gestor: r.gestor || '', justificacao: r.justificacao,
+      dataPedido: r.data_pedido, dataInicio: r.data_inicio, horaInicio: r.hora_inicio,
+      dataFim: r.data_fim, horaFim: r.hora_fim, nomeFicheiro: r.nome_ficheiro, criadoEm: r.criado_em
+    }));
+    const configuracoes = {
+      emailViaturas1: cfg.data ? (cfg.data.email_viaturas_1 || '') : '',
+      emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : ''
+    };
+
+    App.state = {
+      equipas, recursos, feriados, ausencias, registos, projetos, utilizadores,
+      reservasViatura, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
+    };
   },
 
   // ---------- Edição direta de acesso (fora do fluxo de diff/undo do resto da app) ----------
@@ -301,6 +344,14 @@ const Sync = {
       const { error } = await supabaseClient.from('recursos').update({ nome }).eq('id', recursoId);
       if (error) throw error;
     }
+  },
+
+  // ---------- Configurações gerais (linha única, id=1) ----------
+  // Só o Administrador mexe nisto (emails da equipa de viaturas, para já) — escreve-se logo no
+  // Supabase, sem passar por persist()/undo, mesma razão de atualizarUtilizador/atualizarConta.
+  async atualizarConfiguracoes(campos) {
+    const { error } = await supabaseClient.from('configuracoes').update(campos).eq('id', 1);
+    if (error) throw error;
   },
 
   // ---------- Edição direta de um registo já existente (só Administrador) ----------

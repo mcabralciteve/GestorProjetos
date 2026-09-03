@@ -197,6 +197,41 @@ alter table public.proximos_passos drop constraint if exists proximos_passos_est
 alter table public.proximos_passos add constraint proximos_passos_estado_check check (estado in ('aberto', 'em_curso', 'concluido', 'abandonado'));
 
 -- ============================================================================
+-- Reserva de Viatura: qualquer utilizador envolvido num projeto pode pedir a
+-- reserva de uma viatura para esse projeto. A app gera o Excel oficial
+-- (DFRH-008/12) e abre o cliente de email; esta tabela é só o histórico do
+-- que já foi pedido (auditoria/consulta), não faz parte do fluxo de geração.
+-- ============================================================================
+create table if not exists public.reservas_viatura (
+  id uuid primary key default gen_random_uuid(),
+  projeto_id uuid references public.projetos(id) on delete set null,
+  projeto_nome text not null default '',
+  requisitante_id uuid references public.recursos(id) on delete set null,
+  requisitante_nome text not null default '',
+  area text not null default '',
+  chefia text not null default '',
+  gestor text not null default '',
+  justificacao text not null default '',
+  data_pedido date not null default current_date,
+  data_inicio date not null,
+  hora_inicio text not null default '',
+  data_fim date not null,
+  hora_fim text not null default '',
+  nome_ficheiro text not null default '',
+  criado_em timestamptz not null default now()
+);
+create index if not exists reservas_viatura_projeto_id_idx on public.reservas_viatura(projeto_id);
+
+-- Configurações gerais da app (linha única, id fixo = 1) — para já só os dois emails da equipa
+-- que trata das viaturas, geridos pelo Administrador; extensível a outras definições no futuro.
+create table if not exists public.configuracoes (
+  id int primary key default 1 check (id = 1),
+  email_viaturas_1 text not null default '',
+  email_viaturas_2 text not null default ''
+);
+insert into public.configuracoes (id) values (1) on conflict (id) do nothing;
+
+-- ============================================================================
 -- Migração pontual: versões anteriores tinham uma tabela "profiles" separada
 -- (utilizador da plataforma) ligada a "recursos" por "recurso_id". Passa tudo
 -- para "recursos" (colunas "auth_user_id"/"acesso" acima) e apaga "profiles" —
@@ -274,7 +309,7 @@ begin
   for t in select unnest(array[
     'equipas','recursos','feriados','ausencias',
     'projetos','tarefas','tarefa_recursos','faturas','registos',
-    'pontos_situacao','proximos_passos'
+    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes'
   ])
   loop
     execute format('alter table public.%I enable row level security;', t);
