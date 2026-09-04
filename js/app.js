@@ -831,11 +831,59 @@ const App = {
     this.renderTudo();
     this.toast('Projeto duplicado.');
   },
+  // Eliminar um projeto é irreversível (arrasta tarefas, faturas, registos de horas, pontos de
+  // situação, tudo) — por isso não basta confirm()+ser Administrador: pede também a password da
+  // própria conta, verificada a sério contra o Supabase (signInWithPassword outra vez, com o email
+  // já autenticado — não muda a sessão, só confirma que quem está a clicar sabe mesmo a password).
   eliminarProjeto(id) {
     if (!this.souAdmin()) return;
     const alvo = this.state.projetos[id || this.state.projetoAtivoId];
     if (!alvo) return;
-    if (!confirm(`Eliminar o projeto "${alvo.nome}"? Esta ação não pode ser desfeita.`)) return;
+    this.abrirModalConfirmarEliminarProjeto(alvo.id);
+  },
+  abrirModalConfirmarEliminarProjeto(id) {
+    const alvo = this.state.projetos[id];
+    if (!alvo) return;
+    const perfil = this.perfilAtual();
+    const html = `
+      <p class="pagina-sub" style="margin-top:0;color:var(--vermelho);">⚠ Vais eliminar definitivamente o projeto "${escapeHtml(alvo.nome)}" — tarefas, faturas, registos de horas, pontos de situação e tudo o resto associado. Esta ação não pode ser desfeita.</p>
+      <label>Confirma a tua password para eliminar
+        <input type="password" id="confEliminarPassword" autocomplete="current-password" placeholder="••••••">
+      </label>
+      <button class="btn btn-danger" id="btnConfirmarEliminarProjeto" style="margin-top:10px;">Eliminar definitivamente</button>
+      <span id="confEliminarMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
+    this.abrirModal('Eliminar projeto', html);
+    const m = this.els.modalCorpo;
+    const inputPassword = m.querySelector('#confEliminarPassword');
+    const msg = m.querySelector('#confEliminarMsg');
+    inputPassword.focus();
+    const confirmarEliminacao = async () => {
+      if (!perfil || !perfil.email) {
+        msg.style.color = 'var(--vermelho)';
+        msg.textContent = 'Não foi possível confirmar a tua conta (sem email associado).';
+        return;
+      }
+      const password = inputPassword.value;
+      if (!password) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Introduz a tua password.'; return; }
+      msg.style.color = 'var(--cinza-500)';
+      msg.textContent = 'A verificar password...';
+      try {
+        const { error } = await supabaseClient.auth.signInWithPassword({ email: perfil.email, password });
+        if (error) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Password incorreta.'; return; }
+        this.fecharModal();
+        this.eliminarProjetoConfirmado(id);
+      } catch (err) {
+        msg.style.color = 'var(--vermelho)';
+        msg.textContent = 'Erro: ' + err.message;
+      }
+    };
+    m.querySelector('#btnConfirmarEliminarProjeto').addEventListener('click', confirmarEliminacao);
+    inputPassword.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); confirmarEliminacao(); } });
+  },
+  eliminarProjetoConfirmado(id) {
+    if (!this.souAdmin()) return;
+    const alvo = this.state.projetos[id];
+    if (!alvo) return;
     delete this.state.projetos[alvo.id];
     const restantes = Object.keys(this.state.projetos);
     if (this.state.projetoAtivoId === alvo.id) {
