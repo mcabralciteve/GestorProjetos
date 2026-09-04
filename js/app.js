@@ -943,6 +943,104 @@ const App = {
     this.persist();
     this.renderTudo();
   },
+  // Tarefa/subtarefa recorrente: gera de uma vez várias tarefas iguais (mesma duração), espaçadas
+  // por um intervalo fixo de dias, até acabar o projeto/tarefa-mãe, um nº de ocorrências, ou uma
+  // data escolhida. Cada ocorrência fica INDEPENDENTE depois de criada — edita-se, arrasta-se ou
+  // apaga-se cada uma à parte, exatamente como qualquer outra tarefa; "recorrente" é só um atalho
+  // para criar várias de uma vez, não uma série ligada.
+  abrirModalTarefaRecorrente() {
+    const p = this.projetoAtivo();
+    if (!p) return;
+    const selecionada = this.selecionadaId ? this.tarefaPorId(p, this.selecionadaId) : null;
+    const inicioDefault = selecionada ? selecionada.inicio : DateUtil.todayISO();
+    const html = `
+      <label>Nome base <span style="color:var(--vermelho);">*</span>
+        <input type="text" id="recNome" value="Nova tarefa recorrente">
+      </label>
+      ${selecionada ? `
+      <label class="zoom-label" style="padding:5px 0;">
+        <input type="checkbox" id="recComoSubtarefa">
+        Criar como subtarefas de "${escapeHtml(selecionada.nome)}"
+      </label>` : ''}
+      <div class="row-2">
+        <label>Início da 1ª ocorrência <span style="color:var(--vermelho);">*</span>
+          <input type="date" id="recDataInicio" value="${escapeAttr(inicioDefault)}">
+        </label>
+        <label>Duração de cada ocorrência (dias) <span style="color:var(--vermelho);">*</span>
+          <input type="number" id="recDuracao" min="1" step="1" value="1">
+        </label>
+      </div>
+      <label>Repete a cada (dias) <span style="color:var(--vermelho);">*</span>
+        <input type="number" id="recIntervalo" min="1" step="1" value="7">
+      </label>
+      <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Termina</p>
+      <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="projeto" checked> No fim do projeto (ou da tarefa-mãe, se for subtarefa)</label>
+      <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="ocorrencias"> Após <input type="number" id="recNumOcorrencias" min="1" step="1" value="10" style="width:64px;" disabled> ocorrências</label>
+      <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="data"> Numa data <input type="date" id="recDataFim" disabled></label>
+      <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Atribuir consultores a cada ocorrência <span class="hint">(opcional — dá para ajustar depois em cada uma)</span></p>
+      ${this.state.recursos.length ? this.state.recursos.map(r => `<label class="zoom-label" style="padding:3px 0;"><input type="checkbox" class="rec-recorrente-recurso" value="${escapeAttr(r.id)}"> ${escapeHtml(r.nome)}</label>`).join('') : '<p class="hint">Sem consultores definidos.</p>'}
+      <button class="btn btn-primary" id="btnGerarRecorrente" style="margin-top:12px;">Gerar ocorrências</button>
+      <span id="recMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
+    this.abrirModal('Tarefa/Subtarefa recorrente', html);
+    const m = this.els.modalCorpo;
+    const radios = m.querySelectorAll('input[name="recFim"]');
+    const numOcorrencias = m.querySelector('#recNumOcorrencias');
+    const dataFim = m.querySelector('#recDataFim');
+    radios.forEach(r => r.addEventListener('change', () => {
+      const valorAtivo = m.querySelector('input[name="recFim"]:checked').value;
+      numOcorrencias.disabled = valorAtivo !== 'ocorrencias';
+      dataFim.disabled = valorAtivo !== 'data';
+    }));
+    m.querySelector('#btnGerarRecorrente').addEventListener('click', () => {
+      const nome = m.querySelector('#recNome').value.trim();
+      const comoSubtarefa = selecionada && m.querySelector('#recComoSubtarefa') ? m.querySelector('#recComoSubtarefa').checked : false;
+      const dataInicio = m.querySelector('#recDataInicio').value;
+      const duracaoDias = parseInt(m.querySelector('#recDuracao').value, 10);
+      const intervaloDias = parseInt(m.querySelector('#recIntervalo').value, 10);
+      const fimTipo = m.querySelector('input[name="recFim"]:checked').value;
+      const fimValor = fimTipo === 'ocorrencias' ? numOcorrencias.value : (fimTipo === 'data' ? dataFim.value : null);
+      const recursoIds = [...m.querySelectorAll('.rec-recorrente-recurso:checked')].map(cb => cb.value);
+      const msg = m.querySelector('#recMsg');
+      if (!nome) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'O nome não pode ficar vazio.'; return; }
+      if (!dataInicio) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe a data de início da 1ª ocorrência.'; return; }
+      if (!(duracaoDias > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'A duração de cada ocorrência tem de ser pelo menos 1 dia.'; return; }
+      if (!(intervaloDias > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'O intervalo de repetição tem de ser pelo menos 1 dia.'; return; }
+      if (fimTipo === 'ocorrencias' && !(parseInt(fimValor, 10) > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Indica quantas ocorrências.'; return; }
+      if (fimTipo === 'data' && !fimValor) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe a data limite.'; return; }
+      const parentId = comoSubtarefa ? selecionada.id : (selecionada ? selecionada.parentId : null);
+      const criadas = this.criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds });
+      if (!criadas) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Nenhuma ocorrência gerada — confere as datas e a duração.'; return; }
+      this.fecharModal();
+    });
+  },
+  // Gera as ocorrências e devolve quantas foram criadas (0 se nenhuma coube nas condições dadas).
+  // "500" é só uma rede de segurança contra parâmetros absurdos (ex.: intervalo enorme com data
+  // limite distante) — nunca deve ser atingido em uso normal.
+  criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds }) {
+    const parent = parentId ? this.tarefaPorId(p, parentId) : null;
+    const limiteData = fimTipo === 'projeto' ? (parent ? parent.fim : p.dataFim) : (fimTipo === 'data' ? fimValor : null);
+    const numOcorrencias = fimTipo === 'ocorrencias' ? parseInt(fimValor, 10) : Infinity;
+    const novas = [];
+    let cursorInicio = DateUtil.parseISO(dataInicio);
+    let i = 1;
+    while (i <= numOcorrencias && novas.length < 500) {
+      const fimOcorrencia = DateUtil.addDays(cursorInicio, duracaoDias - 1);
+      if (limiteData && DateUtil.toISO(fimOcorrencia) > limiteData) break;
+      novas.push(this.novaTarefaObj(p, `${nome} ${i}`, parentId, DateUtil.toISO(cursorInicio), DateUtil.toISO(fimOcorrencia), recursoIds.slice()));
+      cursorInicio = DateUtil.addDays(cursorInicio, intervaloDias);
+      i++;
+    }
+    if (!novas.length) return 0;
+    p.tarefas.push(...novas);
+    this.selecionadaId = novas[novas.length - 1].id;
+    this.selecionadasIds = new Set(novas.map(t => t.id));
+    this._ancoraSelecao = this.selecionadaId;
+    this.recalcularAgendamento(p);
+    this.persist();
+    this.renderTudo();
+    this.toast(`${novas.length} ocorrência(s) criada(s).`);
+    return novas.length;
+  },
   // Elimina todas as tarefas selecionadas (e respetivos descendentes) numa só passagem.
   eliminarTarefaSelecionada() {
     const p = this.projetoAtivo();
@@ -4139,6 +4237,7 @@ const App = {
 
     document.getElementById('btnAddTarefa').addEventListener('click', () => this.adicionarTarefa(false));
     document.getElementById('btnAddSubtarefa').addEventListener('click', () => this.adicionarTarefa(true));
+    document.getElementById('btnAddRecorrente').addEventListener('click', () => this.abrirModalTarefaRecorrente());
     document.getElementById('btnSubir').addEventListener('click', () => this.moverOrdemSelecionada(-1));
     document.getElementById('btnDescer').addEventListener('click', () => this.moverOrdemSelecionada(1));
     document.getElementById('btnIndent').addEventListener('click', () => this.indentarSelecionada());
