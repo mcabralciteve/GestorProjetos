@@ -1128,6 +1128,61 @@ const App = {
     p.tarefas[posAtual] = vizinho;
     p.tarefas[posVizinho] = atual;
   },
+  // Associa UM consultor (e opcionalmente horas fixas) a todas as tarefas selecionadas de uma só
+  // vez — um atalho para não teres de abrir "Associar consultores" tarefa a tarefa. Deliberadamente
+  // mais simples do que esse modal: não mostra disponibilidade/conflitos por tarefa (seria uma
+  // grelha grande para N tarefas × consultores) nem pergunta para estender datas por feriados/
+  // ausências — aplica e pronto; os avisos de sobreposição continuam a aparecer depois, como
+  // sempre, na própria tabela de tarefas e na Capacidade.
+  abrirModalAssociarRecursoLote() {
+    const p = this.projetoAtivo();
+    const ids = this.idsSelecionados();
+    if (!p || !ids.length) return;
+    if (!this.state.recursos.length) {
+      this.abrirModal('Associar consultor a várias tarefas', '<p>Sem consultores definidos. Adiciona no separador "Pessoas".</p>');
+      return;
+    }
+    const html = `
+      <p class="pagina-sub" style="margin-top:0;">Vai associar um consultor a ${ids.length} tarefa(s) selecionada(s).</p>
+      <label>Consultor <span style="color:var(--vermelho);">*</span>
+        <select id="loteRecursoId"><option value="">Seleciona…</option>${this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</select>
+      </label>
+      <label>Horas totais previstas, por tarefa <span class="hint">(em branco = tempo inteiro, todos os dias úteis de cada tarefa)</span>
+        <input type="number" id="loteHoras" min="0" step="0.25" placeholder="ex.: 8">
+      </label>
+      <button class="btn btn-primary" id="btnAplicarRecursoLote" style="margin-top:10px;">Aplicar a ${ids.length} tarefa(s)</button>
+      <span id="loteMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
+    this.abrirModal('Associar consultor a várias tarefas', html);
+    const m = this.els.modalCorpo;
+    m.querySelector('#btnAplicarRecursoLote').addEventListener('click', () => {
+      const recursoId = m.querySelector('#loteRecursoId').value;
+      const horasTexto = m.querySelector('#loteHoras').value.trim();
+      const msg = m.querySelector('#loteMsg');
+      if (!recursoId) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe um consultor.'; return; }
+      const horas = horasTexto === '' ? null : parseFloat(horasTexto);
+      if (horas !== null && !(horas >= 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'As horas têm de ser um número válido (ou deixa em branco).'; return; }
+      this.fecharModal();
+      this.associarRecursoATarefasSelecionadas(recursoId, horas);
+    });
+  },
+  associarRecursoATarefasSelecionadas(recursoId, horas) {
+    const p = this.projetoAtivo();
+    const ids = this.idsSelecionados();
+    if (!p || !ids.length) return;
+    let aplicadas = 0;
+    ids.forEach(id => {
+      const t = this.tarefaPorId(p, id);
+      if (!t) return;
+      if (!t.recursoIds.includes(recursoId)) t.recursoIds.push(recursoId);
+      if (horas !== null) t.alocacoesHoras[recursoId] = horas;
+      else delete t.alocacoesHoras[recursoId]; // tempo inteiro (omisso), recalculado dinamicamente
+      aplicadas++;
+    });
+    this.recalcularAgendamento(p);
+    this.persist();
+    this.renderTudo();
+    this.toast(`Consultor associado a ${aplicadas} tarefa(s).`);
+  },
   atualizarCampoTarefa(id, campo, valor) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, id);
@@ -3608,7 +3663,7 @@ const App = {
     const tbody = this.els.corpoTabelaTarefas;
     tbody.innerHTML = '';
     const podeEditar = !!p && this.possoEditarProjeto(p.id);
-    ['btnAddTarefa', 'btnAddSubtarefa', 'btnSubir', 'btnDescer', 'btnIndent', 'btnOutdent', 'btnDelTarefa'].forEach(id => {
+    ['btnAddTarefa', 'btnAddSubtarefa', 'btnAddRecorrente', 'btnSubir', 'btnDescer', 'btnIndent', 'btnOutdent', 'btnAssociarLote', 'btnDelTarefa'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = podeEditar ? '' : 'none';
     });
@@ -4242,6 +4297,7 @@ const App = {
     document.getElementById('btnDescer').addEventListener('click', () => this.moverOrdemSelecionada(1));
     document.getElementById('btnIndent').addEventListener('click', () => this.indentarSelecionada());
     document.getElementById('btnOutdent').addEventListener('click', () => this.promoverSelecionada());
+    document.getElementById('btnAssociarLote').addEventListener('click', () => this.abrirModalAssociarRecursoLote());
     document.getElementById('btnDelTarefa').addEventListener('click', () => this.eliminarTarefaSelecionada());
     e.btnToggleSidebar.addEventListener('click', () => this.alternarSidebar());
 
