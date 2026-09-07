@@ -3718,7 +3718,10 @@ const App = {
         const sufixoPct = explicito ? ` (${horasFmt}h)` : '';
         if (filhos) return `<span class="badge-rec">${escapeHtml(r.nome)}${sufixoPct}</span>`;
         const resultado = Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, pct);
-        if (resultado.nivel === 'ok' || resultado.nivel === 'vazio') return `<span class="badge-rec">${escapeHtml(r.nome)}${sufixoPct}</span>`;
+        // "subutilizado" não é um problema — é o oposto (pouca ocupação total nesse mês, quase
+        // garantido para uma tarefa pequena com prazo largo) — por isso não tem descrição em
+        // descreverProblema, e não deve acender ⚠ aqui; só "aviso"/"crítico" são alertas reais.
+        if (resultado.nivel !== 'aviso' && resultado.nivel !== 'critico') return `<span class="badge-rec">${escapeHtml(r.nome)}${sufixoPct}</span>`;
         const dica = Capacidade.descreverProblema(r.nome, resultado);
         return `<span class="badge-rec ${resultado.nivel}" title="${escapeAttr(dica)}">⚠ ${escapeHtml(r.nome)}${sufixoPct}</span>`;
       }).join('');
@@ -4199,7 +4202,7 @@ const App = {
       this.abrirModal(`Associar consultores — ${t.nome}`, '<p>Sem consultores definidos. Adiciona no separador "Pessoas".</p>');
       return;
     }
-    const ordemNivel = { critico: 0, aviso: 1, ok: 2, vazio: 2 };
+    const ordemNivel = { critico: 0, aviso: 1, ok: 2, subutilizado: 2, vazio: 2 };
     const linhas = this.state.recursos.map(r => ({ r, horas: this.horasAlocadas(t, r.id), resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
