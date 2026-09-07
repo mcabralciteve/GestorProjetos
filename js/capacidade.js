@@ -198,7 +198,7 @@ const Capacidade = {
     });
     if (opts.extra && opts.extra.horas > 0) {
       const janela = recortarNaJanela(opts.extra.inicio, opts.extra.fim);
-      tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas: opts.extra.horas, nome: opts.extraNome || '(esta tarefa)' });
+      tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas: opts.extra.horas, nome: opts.extraNome || '(esta tarefa)', extra: true });
     }
     if (tarefas.length < 2) return []; // uma só tarefa nunca entra em conflito consigo própria
 
@@ -222,7 +222,13 @@ const Capacidade = {
         if (demanda > capacidadeAcumulada + 1e-9) {
           violacoes.push({
             inicio: a, fim: b, demanda, capacidade: capacidadeAcumulada, excesso: demanda - capacidadeAcumulada,
-            tarefas: envolvidas.map(t => t.nome)
+            tarefas: envolvidas.map(t => t.nome),
+            // Só usado por avaliarAtribuicao, para não atribuir a uma tarefa um problema
+            // genuíno mas COMPLETAMENTE ALHEIO a ela — uma tarefa de 24h com um prazo de 609
+            // dias não devia acender "crítico" só porque, algures nesse prazo gigante, existe um
+            // conflito real e inevitável de OUTRA tarefa qualquer. Só interessa quando "esta
+            // tarefa" (opts.extra) é mesmo uma das que compõem ESTA violação específica.
+            envolveExtra: envolvidas.some(t => t.extra)
           });
         }
       }
@@ -368,6 +374,11 @@ const Capacidade = {
   // inteiro da tarefa cai dentro de uma ausência prolongada), isso já dispara "crítico" sozinho —
   // capacidadeDiaria devolve 0h nesses dias, o que já reduz a capacidade testada em
   // intervalosCriticos. Não sobra nenhum caso real por cobrir à parte.
+  // IMPORTANTE: das violações devolvidas por intervalosCriticos, só interessam as que realmente
+  // ENVOLVEM esta tarefa (ver "envolveExtra" ali) — não todas as que a data calha sobrepor. Uma
+  // tarefa de poucas horas com um prazo de anos não devia acender "crítico" só porque, algures
+  // nesse prazo gigante, existe um problema real de OUTRA tarefa qualquer com que esta nem
+  // partilha dias; isso seria "verdade" mas inútil (nada que se faça a esta tarefa resolve isso).
   // O nível de "aviso" usa o(s) resumo(s) MENSAL(AIS) do recurso para o(s) mês(es) que a tarefa
   // atravessa — os mesmos números do heatmap da Capacidade — para a badge nunca poder contradizer
   // o que lá está mostrado.
@@ -387,7 +398,12 @@ const Capacidade = {
       excluir: { projetoId, taskId },
       extra: { inicio, fim, horas: estaHorasTotais },
       extraNome: tarefaAtual ? tarefaAtual.nome : '(esta tarefa)'
-    }).filter(v => v.fim >= inicio && v.inicio <= fim);
+    // "envolveExtra", não sobreposição de datas: uma violação só interessa aqui se "esta tarefa"
+    // for mesmo uma das que a compõem — não basta as datas coincidirem. Sem isto, uma tarefa de
+    // poucas horas com um prazo de anos acendia "crítico" só por existir, algures nesse prazo
+    // gigante, um problema real de OUTRA tarefa qualquer — mesmo que remover esta tarefa não
+    // mudasse nada nesse problema.
+    }).filter(v => v.envolveExtra);
 
     if (intervalosSobreAlocados.length > 0) {
       // Indisponibilidade (feriados/ausências) dentro do período — só CONTEXTO para a descrição
