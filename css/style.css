@@ -600,9 +600,9 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 /* ---------- Registo de Horas — Calendário mensal ---------- */
 .cal-topbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
 .calendario-registos{border:1px solid var(--cinza-200);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);background:var(--branco);}
-.cal-cabecalho{display:grid;grid-template-columns:repeat(7,1fr);background:var(--cinza-100);}
+.cal-cabecalho{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:var(--cinza-100);}
 .cal-cabecalho div{padding:6px 8px;font-size:11px;font-weight:600;color:var(--cinza-500);text-transform:uppercase;letter-spacing:.02em;text-align:center;}
-.cal-grelha{display:grid;grid-template-columns:repeat(7,1fr);}
+.cal-grelha{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));}
 .cal-dia{min-height:96px;border-top:1px solid var(--cinza-200);border-left:1px solid var(--cinza-200);padding:4px 5px;display:flex;flex-direction:column;gap:3px;}
 .cal-dia:nth-child(7n+1){border-left:none;}
 .cal-dia.fora-mes{background:var(--cinza-100);}
