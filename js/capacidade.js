@@ -360,13 +360,17 @@ const Capacidade = {
   // "Associar recursos" avise corretamente de conflitos antes de a atribuição ser confirmada, não
   // só depois. "taskId" é excluído da contagem de "outras tarefas" e recontado à parte, para não
   // duplicar quando já está atribuída.
-  // "Crítico" só dispara em dois casos: (1) sobre-alocação real — ver intervalosCriticos, com esta
-  // tarefa incluída na simulação; ou (2) indisponibilidade (feriado/ausência) sem folga no período
-  // para compensar. Um simples dia de ausência isolado, dentro de uma tarefa cuja % de alocação
-  // deixa folga (ex.: tarefa de 1 mês a 20%), NÃO bloqueia — a pessoa tem margem para se organizar.
-  // O nível de "aviso" usa antes o(s) resumo(s) MENSAL(AIS) do recurso para o(s) mês(es) que a
-  // tarefa atravessa — os mesmos números do heatmap da Capacidade — para a badge nunca poder
-  // contradizer o que lá está mostrado.
+  // "Crítico" só dispara quando há sobre-alocação real — ver intervalosCriticos, com esta tarefa
+  // incluída na simulação. Já NÃO existe um nível "conflito" à parte para "há um feriado/ausência
+  // algures no período desta tarefa": isso, por si só, quase nunca é um problema — uma tarefa de
+  // 24h com 609 dias de prazo tem imensa folga para se reorganizar à volta de qualquer ausência
+  // isolada. E quando um feriado/ausência REALMENTE impede o encaixe do trabalho (ex.: o período
+  // inteiro da tarefa cai dentro de uma ausência prolongada), isso já dispara "crítico" sozinho —
+  // capacidadeDiaria devolve 0h nesses dias, o que já reduz a capacidade testada em
+  // intervalosCriticos. Não sobra nenhum caso real por cobrir à parte.
+  // O nível de "aviso" usa o(s) resumo(s) MENSAL(AIS) do recurso para o(s) mês(es) que a tarefa
+  // atravessa — os mesmos números do heatmap da Capacidade — para a badge nunca poder contradizer
+  // o que lá está mostrado.
   avaliarAtribuicao(recurso, projetoId, taskId, inicioISO, fimISO, pctTarefa) {
     pctTarefa = pctTarefa === undefined ? 100 : pctTarefa;
     const inicio = DateUtil.parseISO(inicioISO);
@@ -377,31 +381,6 @@ const Capacidade = {
     const diasUteisEstaTarefa = App.diasUteisEntre(inicioISO, fimISO);
     const estaHorasTotais = diasUteisEstaTarefa > 0 ? (pctTarefa / 100) * diasUteisEstaTarefa * this.HORAS_DIA : 0;
 
-    // Indisponibilidade (feriados/ausências) continua a ser avaliada dia a dia — é um facto do
-    // calendário para ESTE dia específico, não uma suposição de distribuição.
-    const detalheIndisponivel = [];
-    let capacidadePeriodo = 0, demandaOutrasPeriodo = 0;
-    for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
-      if (this.ehFimDeSemana(d)) continue;
-      const cap = this.capacidadeDiaria(d, recurso);
-      capacidadePeriodo += cap;
-      // IDs de tarefa são sequenciais POR PROJETO, não globalmente únicos — é preciso comparar o
-      // par (projeto, tarefa) para excluir a tarefa em avaliação.
-      const outras = this.tarefasAtivasNoDia(d, recurso.id).filter(x => !(x.projeto.id === projetoId && x.tarefa.id === taskId));
-      demandaOutrasPeriodo += outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.projeto, x.tarefa, recurso.id, d), 0);
-      if (cap === 0) {
-        let motivo = 'ausência';
-        if (this.ehFeriado(d)) motivo = 'feriado';
-        else if (this.ehAusente(d, recurso.id)) {
-          const a = App.state.ausencias.find(x => x.recursoId === recurso.id && DateUtil.toISO(d) >= x.dataInicio && DateUtil.toISO(d) <= x.dataFim);
-          motivo = a ? a.tipo.toLowerCase() : 'ausência';
-        }
-        detalheIndisponivel.push({ data: new Date(d), motivo });
-      }
-    }
-    const demandaPeriodo = demandaOutrasPeriodo + estaHorasTotais;
-    const semFolgaNoPeriodo = demandaPeriodo > capacidadePeriodo;
-
     const projetoDaTarefa = App.state.projetos[projetoId];
     const tarefaAtual = projetoDaTarefa && projetoDaTarefa.tarefas.find(x => x.id === taskId);
     const intervalosSobreAlocados = this.intervalosCriticos(recurso, {
@@ -410,30 +389,37 @@ const Capacidade = {
       extraNome: tarefaAtual ? tarefaAtual.nome : '(esta tarefa)'
     }).filter(v => v.fim >= inicio && v.inicio <= fim);
 
-    if (intervalosSobreAlocados.length > 0 || (detalheIndisponivel.length > 0 && semFolgaNoPeriodo)) {
-      return {
-        // "critico" só quando há sobre-alocação real; um dia indisponível sem folga para
-        // compensar é "conflito" (agenda vs. disponibilidade), não sobre-alocação.
-        nivel: intervalosSobreAlocados.length > 0 ? 'critico' : 'conflito',
-        diasIndisponivel: detalheIndisponivel.length, intervalosSobreAlocados,
-        detalheIndisponivel, semFolgaNoPeriodo,
-        capacidade: capacidadePeriodo, alocado: demandaPeriodo,
-        pct: capacidadePeriodo > 0 ? demandaPeriodo / capacidadePeriodo : Infinity, mesLabel: ''
-      };
+    if (intervalosSobreAlocados.length > 0) {
+      // Indisponibilidade (feriados/ausências) dentro do período — só CONTEXTO para a descrição
+      // deste problema já detetado (ver descreverProblema), nunca calculada à toa: só vale a pena
+      // percorrer o período dia a dia quando já se sabe que há mesmo um "crítico" para explicar.
+      const detalheIndisponivel = [];
+      for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
+        if (this.ehFimDeSemana(d)) continue;
+        if (this.capacidadeDiaria(d, recurso) === 0) {
+          let motivo = 'ausência';
+          if (this.ehFeriado(d)) motivo = 'feriado';
+          else if (this.ehAusente(d, recurso.id)) {
+            const a = App.state.ausencias.find(x => x.recursoId === recurso.id && DateUtil.toISO(d) >= x.dataInicio && DateUtil.toISO(d) <= x.dataFim);
+            motivo = a ? a.tipo.toLowerCase() : 'ausência';
+          }
+          detalheIndisponivel.push({ data: new Date(d), motivo });
+        }
+      }
+      return { nivel: 'critico', diasIndisponivel: detalheIndisponivel.length, intervalosSobreAlocados, detalheIndisponivel, mesLabel: '' };
     }
 
     const meses = this.mesesEntre(inicio, fim).map(m => Object.assign({ resumo: this.resumoMes(recurso, m.ano, m.mes) }, m));
     const pior = meses.reduce((p, m) => (m.resumo.pct > p.resumo.pct ? m : p), meses[0]);
     const nivel = this.classeResumo(Object.assign({}, pior.resumo, { diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 }));
-    return Object.assign({ nivel, diasIndisponivel: detalheIndisponivel.length, intervalosSobreAlocados: [], mesLabel: pior.label }, pior.resumo);
+    return Object.assign({ nivel, diasIndisponivel: 0, intervalosSobreAlocados: [], mesLabel: pior.label }, pior.resumo);
   },
   descreverProblema(nomeRecurso, resultado) {
     if (resultado.nivel === 'critico') {
       const partes = [];
       if (resultado.diasIndisponivel > 0) {
         const lista = (resultado.detalheIndisponivel || []).map(d => `${DateUtil.formatShort(d.data)} (${d.motivo})`).join(', ');
-        const semFolga = resultado.semFolgaNoPeriodo ? ` — sem folga no período para compensar (${resultado.alocado.toFixed(0)}h pedidas de ${resultado.capacidade.toFixed(0)}h disponíveis)` : '';
-        partes.push(`indisponível em ${lista || resultado.diasIndisponivel + ' dia(s) úteis deste período'}${semFolga}`);
+        partes.push(`indisponível em ${lista || resultado.diasIndisponivel + ' dia(s) úteis deste período'}`);
       }
       if ((resultado.intervalosSobreAlocados || []).length > 0) {
         const outrasTarefas = new Set();
@@ -445,10 +431,6 @@ const Capacidade = {
         partes.push(`sobre-alocado(a) em ${lista} — em simultâneo com: ${Array.from(outrasTarefas).join(', ')}`);
       }
       return `${nomeRecurso} está ${partes.join(' e ')}.`;
-    }
-    if (resultado.nivel === 'conflito') {
-      const lista = (resultado.detalheIndisponivel || []).map(d => `${DateUtil.formatShort(d.data)} (${d.motivo})`).join(', ');
-      return `${nomeRecurso} tem trabalho agendado em dia(s) sem disponibilidade — indisponível em ${lista || resultado.diasIndisponivel + ' dia(s) úteis deste período'}, sem folga no período para compensar (${resultado.alocado.toFixed(0)}h pedidas de ${resultado.capacidade.toFixed(0)}h disponíveis).`;
     }
     if (resultado.nivel === 'aviso') {
       return `${nomeRecurso} está perto do limite de capacidade em ${resultado.mesLabel}: ${resultado.alocado.toFixed(0)}h alocadas de ${resultado.capacidade.toFixed(0)}h disponíveis (${Math.round(resultado.pct * 100)}%) — ver separador Capacidade.`;

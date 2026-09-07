@@ -4143,7 +4143,7 @@ const App = {
       l.resultado = Capacidade.avaliarAtribuicao(r, l.projeto.id, l.tarefa.id, l.tarefa.inicio, l.tarefa.fim, pct);
     });
 
-    const numConflito = linhas.filter(l => l.resultado.nivel === 'critico' || l.resultado.nivel === 'conflito').length;
+    const numConflito = linhas.filter(l => l.resultado.nivel === 'critico').length;
     const resumoTopo = linhas.length
       ? `<p class="hint" style="margin:0 0 10px;">${linhas.length} alocação(ões) em ${new Set(linhas.map(l => l.projeto.id)).size} projeto(s).${numConflito ? ` <b style="color:#dc2626;">⚠ ${numConflito} com conflito de alocação.</b>` : ' Sem conflitos de alocação.'} Ajusta as horas de alocação diretamente aqui para resolver.</p>`
       : '';
@@ -4156,7 +4156,7 @@ const App = {
           <tbody>
             ${linhas.map(l => {
               const disp = this.rotuloDisponibilidade(l.resultado);
-              const classeLinha = l.resultado.nivel === 'critico' ? 'linha-sobreposta' : (l.resultado.nivel === 'conflito' ? 'linha-conflito' : '');
+              const classeLinha = l.resultado.nivel === 'critico' ? 'linha-sobreposta' : '';
               const dias = DateUtil.diffDays(DateUtil.parseISO(l.tarefa.inicio), DateUtil.parseISO(l.tarefa.fim)) + 1;
               const dicaEstado = Capacidade.descreverProblema(r.nome, l.resultado) || 'Sem conflitos conhecidos neste período.';
               return `<tr class="${classeLinha}">
@@ -4188,11 +4188,6 @@ const App = {
       if (temAusencia) return { texto: '● Ausente / sobre-alocado', classe: 'critico' };
       return { texto: '● Sobre-alocado', classe: 'critico' };
     }
-    if (resultado.nivel === 'conflito') {
-      const motivos = new Set((resultado.detalheIndisponivel || []).map(d => d.motivo));
-      const motivo = motivos.size === 1 ? Array.from(motivos)[0] : 'ausência';
-      return { texto: `● Ausente (${motivo.charAt(0).toUpperCase()}${motivo.slice(1)})`, classe: 'conflito' };
-    }
     if (resultado.nivel === 'aviso') return { texto: `● Perto do limite (${Math.round(resultado.pct * 100)}%)`, classe: 'aviso' };
     return { texto: '● Livre', classe: 'ok' };
   },
@@ -4204,7 +4199,7 @@ const App = {
       this.abrirModal(`Associar consultores — ${t.nome}`, '<p>Sem consultores definidos. Adiciona no separador "Pessoas".</p>');
       return;
     }
-    const ordemNivel = { critico: 0, conflito: 1, aviso: 2, ok: 3, vazio: 3 };
+    const ordemNivel = { critico: 0, aviso: 1, ok: 2, vazio: 2 };
     const linhas = this.state.recursos.map(r => ({ r, horas: this.horasAlocadas(t, r.id), resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
