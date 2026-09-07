@@ -235,6 +235,8 @@ const App = {
       ocupLimiteCritico: document.getElementById('ocupLimiteCritico'),
       btnGuardarOcupacao: document.getElementById('btnGuardarOcupacao'),
       ocupMsg: document.getElementById('ocupMsg'),
+      btnExportarBackup: document.getElementById('btnExportarBackup'),
+      backupMsg: document.getElementById('backupMsg'),
       fAlocPessoa: document.getElementById('fAlocPessoa'),
       fAlocProjeto: document.getElementById('fAlocProjeto'),
       fAlocCliente: document.getElementById('fAlocCliente'),
@@ -4051,6 +4053,46 @@ const App = {
       e.ocupMsg.textContent = 'Erro: ' + err.message;
     }
   },
+  // Carrega um <script> só quando é mesmo preciso (usado para lib/xlsx.full.min.js — ~860KB, só
+  // interessa ao Administrador e só nesta ação, não faz sentido pesar no arranque da app para
+  // toda a gente). Idempotente: se já estiver carregado (XLSX definido), não volta a inserir a tag.
+  carregarScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`Falha ao carregar ${src}`));
+      document.head.appendChild(s);
+    });
+  },
+  // Backup manual dos dados (ver js/backup.js) — só Administrador, e só a partir do que já está
+  // carregado em memória (state), que é sempre o espelho fiel do que está na Supabase.
+  async exportarBackup() {
+    if (!this.souAdmin()) return;
+    const e = this.els;
+    e.backupMsg.style.color = 'var(--cinza-500)';
+    e.backupMsg.textContent = 'A gerar backup...';
+    e.btnExportarBackup.disabled = true;
+    try {
+      const dataStr = DateUtil.todayISO().replace(/-/g, '');
+      const sql = Backup.gerarSQL(this.state);
+      this.descarregarBlob(new Blob([sql], { type: 'text/plain;charset=utf-8' }), `backup_dados_${dataStr}.sql`);
+
+      if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
+      const excelBlob = Backup.gerarExcelBlob(this.state);
+      this.descarregarBlob(excelBlob, `backup_dados_${dataStr}.xlsx`);
+
+      e.backupMsg.style.color = 'var(--verde)';
+      e.backupMsg.textContent = `Backup gerado (${dataStr}): 2 ficheiros descarregados (.sql e .xlsx).`;
+    } catch (err) {
+      console.error(err);
+      e.backupMsg.style.color = 'var(--vermelho)';
+      e.backupMsg.textContent = 'Erro ao gerar backup: ' + err.message;
+    } finally {
+      e.btnExportarBackup.disabled = false;
+    }
+  },
   abrirModalAlocacoesRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
     if (!r) return;
@@ -4347,6 +4389,7 @@ const App = {
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
+    if (e.btnExportarBackup) e.btnExportarBackup.addEventListener('click', () => this.exportarBackup());
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocCliente) e.fAlocCliente.addEventListener('change', () => this.aplicarFiltrosAlocacoes());

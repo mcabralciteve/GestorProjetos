@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260903i">
+<link rel="stylesheet" href="css/style.css?v=20260903j">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -566,6 +566,13 @@
       <button class="btn btn-primary" id="btnGuardarOcupacao" style="margin-top:10px;">Guardar</button>
       <span id="ocupMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
+
+    <div class="card" style="max-width:480px;margin-top:16px;">
+      <h3 style="margin-top:0;">💾 Backup dos Dados</h3>
+      <p class="pagina-sub" style="margin-top:0;">A app não tem acesso ao backup automático (pago) do Supabase. Este botão gera, na hora, uma cópia de todos os dados atuais em dois ficheiros: um <b>.sql</b> — o que serve para recriar a base de dados de raiz, se alguma vez for preciso (instruções dentro do próprio ficheiro) — e um <b>.xlsx</b>, só para leitura/conferência. Não inclui contas de login: cada pessoa tem de voltar a criar conta com o mesmo email, e liga-se sozinha aos dados restaurados.</p>
+      <button class="btn btn-primary" id="btnExportarBackup">Exportar Backup (.sql + .xlsx)</button>
+      <span id="backupMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
+    </div>
   </div>
 </section>
 
@@ -840,13 +847,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260903i"></script>
-<script src="js/auth.js?v=20260903i"></script>
-<script src="js/sync.js?v=20260903i"></script>
-<script src="js/gantt.js?v=20260903i"></script>
-<script src="js/capacidade.js?v=20260903i"></script>
-<script src="js/portfolio-gantt.js?v=20260903i"></script>
-<script src="js/reserva-viatura.js?v=20260903i"></script>
-<script src="js/app.js?v=20260903i"></script>
+<script src="js/supabase-config.js?v=20260903j"></script>
+<script src="js/auth.js?v=20260903j"></script>
+<script src="js/sync.js?v=20260903j"></script>
+<script src="js/gantt.js?v=20260903j"></script>
+<script src="js/capacidade.js?v=20260903j"></script>
+<script src="js/portfolio-gantt.js?v=20260903j"></script>
+<script src="js/reserva-viatura.js?v=20260903j"></script>
+<script src="js/backup.js?v=20260903j"></script>
+<script src="js/app.js?v=20260903j"></script>
 </body>
 </html>
