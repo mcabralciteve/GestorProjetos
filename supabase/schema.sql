@@ -172,6 +172,11 @@ create index if not exists registos_projeto_id_idx on public.registos(projeto_id
 -- Cliente do projeto associado, copiado tal como projeto_nome/projeto_id_interno (denormalizado,
 -- não é uma referência viva) — segue sempre o Projeto escolhido, nunca se edita à parte.
 alter table public.registos add column if not exists cliente text not null default '';
+-- Referência direta à tarefa (além de "tarefa_nome", que fica para pessoas/mostra) — usada para
+-- somar com confiança "quantas horas já foram registadas nesta tarefa" (ver
+-- Capacidade.horasRestantesTarefa/App.horasJaRegistadasTarefa), sem depender de o nome nunca mudar.
+-- Nula em registos anteriores a este campo — para esses, o cálculo cai para trás no nome + projeto.
+alter table public.registos add column if not exists tarefa_id uuid references public.tarefas(id) on delete set null;
 
 -- ---------- Acompanhamento: pontos de situação e next steps por projeto ----------
 -- Pontos de situação: só o Administrador cria/edita/apaga (registados numa reunião com o Gestor).

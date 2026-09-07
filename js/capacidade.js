@@ -20,13 +20,20 @@ const Capacidade = {
   },
 
   tarefasAtivasNoDia(date, recursoId) {
+    const hojeISO = DateUtil.todayISO();
     const iso = DateUtil.toISO(date);
     const out = [];
     Object.values(App.state.projetos).forEach(p => {
       p.tarefas.forEach(t => {
         if (!t.recursoIds.includes(recursoId)) return;
         if (App.temFilhos(p, t.id)) return;
-        if (iso >= t.inicio && iso <= t.fim) out.push({ projeto: p, tarefa: t });
+        // Uma tarefa em atraso (prazo já passado) mas ainda com trabalho por fazer continua
+        // "ativa" pelo menos até hoje — ver horasTarefaNoDia, que lhe cola todas as horas
+        // restantes a hoje. Sem esta extensão, ela desaparecia silenciosamente de qualquer soma
+        // (alocacaoDiaria, capacidadeLivreHoras, avaliarAtribuicao, calendário de Alocações)
+        // assim que o seu prazo original passasse — mesmo continuando a "dever" horas.
+        const fimEfetivo = (iso >= hojeISO && t.fim < hojeISO && this.horasRestantesTarefa(p, t, recursoId) > 0) ? hojeISO : t.fim;
+        if (iso >= t.inicio && iso <= fimEfetivo) out.push({ projeto: p, tarefa: t });
       });
     });
     return out;
@@ -38,10 +45,9 @@ const Capacidade = {
   // NENHUM dia do período está disponível, reparte pelos dias úteis do calendário — o trabalho não
   // cabe de forma nenhuma, mas continua a aparecer nalgum lado em vez de desaparecer silenciosamente.
   //
-  // IMPORTANTE: isto é só uma distribuição ILUSTRATIVA para desenhar barras/blocos (Gantt,
-  // Alocações) — não é uma afirmação de que a pessoa vai trabalhar exatamente estas horas neste
-  // dia exato. Por isso NUNCA se usa isto para decidir "sobre-alocação real" — ver
-  // intervalosCriticos() para essa pergunta, que é resolvida de forma completamente diferente.
+  // IMPORTANTE: isto é só uma distribuição para desenhar barras/blocos (Gantt, Alocações) — nunca
+  // se usa isto para decidir "sobre-alocação real" (ver intervalosCriticos, resolvida de forma
+  // completamente diferente).
   horasNoDia(horasTotais, inicioISO, fimISO, recursoId, date) {
     if (horasTotais <= 0) return 0;
     const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
@@ -55,15 +61,48 @@ const Capacidade = {
     if (this.capacidadeDiaria(date, { id: recursoId }) === 0) return 0;
     return horasTotais / diasDisp;
   },
-  horasTarefaNoDia(tarefa, recursoId, date) {
-    return this.horasNoDia(App.horasAlocadas(tarefa, recursoId), tarefa.inicio, tarefa.fim, recursoId, date);
+  // Quanto esta tarefa contribui neste dia — distribuída pelos dias disponíveis (ver horasNoDia),
+  // mas com um "hoje" a partir do qual o ritmo passa a ser dinâmico:
+  //  - ANTES de hoje: distribuição original e estática (histórico — o que estava planeado nesse
+  //    dia não muda com o passar do tempo).
+  //  - A PARTIR de hoje (inclusive): reparte só o que FALTA (ver horasRestantesTarefa) pelos dias
+  //    úteis que restam até ao prazo — não o total original pelos dias úteis originais. Uma tarefa
+  //    de 90h/45 dias em que passaram 15 dias sem nada feito passa a exigir, dali para a frente,
+  //    90h nos 30 dias que restam (3h/dia), não 2h/dia para sempre. Uma tarefa concluída (100%) ou
+  //    já toda registada deixa de aparecer aqui (0h) — ver horasRestantesTarefa.
+  horasTarefaNoDia(projeto, tarefa, recursoId, date) {
+    const hoje = DateUtil.parseISO(DateUtil.todayISO());
+    if (date < hoje) {
+      return this.horasNoDia(App.horasAlocadas(tarefa, recursoId), tarefa.inicio, tarefa.fim, recursoId, date);
+    }
+    const horasRestantes = this.horasRestantesTarefa(projeto, tarefa, recursoId);
+    if (horasRestantes <= 0) return 0;
+    const inicioTarefa = DateUtil.parseISO(tarefa.inicio);
+    const fimTarefa = DateUtil.parseISO(tarefa.fim);
+    const inicioEfetivo = inicioTarefa > hoje ? inicioTarefa : hoje;
+    // Prazo já passado e ainda falta trabalho: não sobra nenhum dia útil "dentro do prazo" — cai
+    // tudo em cima de hoje (sinal correto: um atraso sem tempo para recuperar deve parecer
+    // urgente, não desaparecer silenciosamente só porque o prazo já passou).
+    const fimEfetivo = fimTarefa < hoje ? hoje : fimTarefa;
+    return this.horasNoDia(horasRestantes, DateUtil.toISO(inicioEfetivo), DateUtil.toISO(fimEfetivo), recursoId, date);
+  },
+  // Quanto FALTA fazer desta tarefa, para este recurso — só para prever carga FUTURA (nunca para
+  // mostrar "quanto foi planeado", isso continua a ser App.horasAlocadas, inalterado). Uma tarefa
+  // a 100% de progresso deixa de contar para isto, sejam quais forem os números de horas — já
+  // terminou, o saldo por bater não importa mais. Caso contrário: previsto menos já registado
+  // (nunca negativo) — ver App.horasJaRegistadasTarefa.
+  horasRestantesTarefa(projeto, tarefa, recursoId) {
+    if ((tarefa.progresso || 0) >= 100) return 0;
+    const previstas = App.horasAlocadas(tarefa, recursoId);
+    const feitas = App.horasJaRegistadasTarefa(projeto, tarefa, recursoId);
+    return Math.max(0, previstas - feitas);
   },
   // Cada tarefa contribui as horas que lhe cabem neste dia, distribuídas apenas pelos dias
-  // disponíveis da sua própria duração (ver horasNoDia) — não uma fração fixa de todos os dias
-  // do calendário entre o início e o fim da tarefa.
+  // disponíveis da sua própria duração (ver horasNoDia/horasTarefaNoDia) — não uma fração fixa de
+  // todos os dias do calendário entre o início e o fim da tarefa.
   alocacaoDiaria(date, recursoId) {
     return this.tarefasAtivasNoDia(date, recursoId).reduce((soma, x) => {
-      return soma + this.horasTarefaNoDia(x.tarefa, recursoId, date);
+      return soma + this.horasTarefaNoDia(x.projeto, x.tarefa, recursoId, date);
     }, 0);
   },
 
@@ -81,7 +120,7 @@ const Capacidade = {
       const cap = this.capacidadeDiaria(d, recurso);
       if (cap === 0) continue;
       const outras = this.tarefasAtivasNoDia(d, recurso.id).filter(x => x.tarefa.id !== taskId);
-      const outrasHoras = outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.tarefa, recurso.id, d), 0);
+      const outrasHoras = outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.projeto, x.tarefa, recurso.id, d), 0);
       livre += Math.max(0, cap - outrasHoras);
     }
     return livre;
@@ -110,44 +149,56 @@ const Capacidade = {
   },
 
   // ---------------------------------------------------------------------------------------------
-  // Sobre-alocação REAL — o coração da questão "o meu consultor consegue mesmo encaixar tudo?".
+  // Sobre-alocação REAL — o coração da questão "o meu consultor consegue mesmo encaixar tudo que
+  // FALTA fazer?". Olha sempre para a frente, a partir de hoje — o que já aconteceu não se pode
+  // desalocar, só interessa se ainda há tempo/capacidade para o que resta.
   //
   // NÃO se responde perguntando "este dia, com a distribuição uniforme de cada tarefa, excede 8h?"
   // — isso dá falsos positivos: uma tarefa de 90h num prazo de 45 dias úteis não obriga a pessoa a
-  // fazer exatamente 2h TODOS os dias; ela pode fazer 0h hoje e 4h amanhã, desde que cume o prazo.
+  // fazer exatamente 2h TODOS os dias; ela pode fazer 0h hoje e 4h amanhã, desde que cumpra o prazo.
   // Se noutro projeto houver 8h "a sério" marcadas para hoje, a pessoa simplesmente desloca as 2h
   // do primeiro projeto para outro dia dentro do seu próprio prazo — não há conflito nenhum.
   //
   // A pergunta certa é sobre SALDO ACUMULADO num intervalo, não sobre um dia isolado: "existe algum
-  // período [a,b] em que a soma das horas de tarefas cujo prazo cabe inteiramente dentro de [a,b]
-  // excede a soma da capacidade disponível nesse mesmo [a,b]?". Se a resposta for não para
-  // qualquer [a,b] possível, existe SEMPRE alguma forma de arrumar os dias em que tudo cabe — a
-  // pessoa não está realmente sobre-alocada, só tem menos folga. Só quando essa soma não cabe em
-  // lado nenhum é que há um problema genuíno e inevitável, seja qual for o dia em que se olhe.
+  // período [a,b] (sempre dentro de [hoje, prazo]) em que a soma das horas QUE FALTAM de tarefas
+  // cujo prazo cabe inteiramente dentro de [a,b] excede a soma da capacidade disponível nesse mesmo
+  // [a,b]?". Se a resposta for não para qualquer [a,b] possível, existe SEMPRE alguma forma de
+  // arrumar os dias em que tudo cabe. Só quando essa soma não cabe em lado nenhum é que há um
+  // problema genuíno e inevitável, seja qual for o dia em que se olhe.
   //
-  // Basta testar os pares (a,b) tirados das datas de início/fim das próprias tarefas — a procura e
-  // a capacidade só mudam de "degrau" nesses pontos. Devolve só as violações MÍNIMAS (não contêm
-  // nenhuma outra já encontrada) — são as mais específicas e acionáveis; uma janela maior que
-  // contenha uma mais pequena é só sintoma do mesmo problema, reportá-la também seria redundante.
+  // Cada tarefa entra com o que FALTA (horasRestantesTarefa — 0 se concluída ou já toda registada,
+  // ver essa função) e com a janela recortada a partir de hoje (uma tarefa já em atraso, sem dias
+  // úteis que sobrem dentro do prazo, cola-se toda a hoje — um atraso sem margem deve parecer
+  // urgente, não desaparecer). Basta testar os pares (a,b) tirados dessas datas — procura e
+  // capacidade só mudam de "degrau" nesses pontos. Devolve só as violações MÍNIMAS (não contêm
+  // nenhuma outra já encontrada) — são as mais específicas e acionáveis.
   //
   // "opts.excluir" tira uma tarefa já existente do cálculo (para não a contar em duplicado);
-  // "opts.extra" acrescenta uma tarefa hipotética (para simular "e se eu atribuísse isto?" antes de
-  // gravar — ver avaliarAtribuicao). Sem isto, o cálculo é só sobre as tarefas já atribuídas.
+  // "opts.extra" acrescenta uma tarefa hipotética, já com o total que se propõe atribuir (para
+  // simular "e se eu atribuísse isto?" antes de gravar — ver avaliarAtribuicao; não passa por
+  // horasRestantesTarefa, é sempre o total todo, já que ainda nem está gravada).
   intervalosCriticos(recurso, opts) {
     opts = opts || {};
+    const hoje = DateUtil.parseISO(DateUtil.todayISO());
+    const recortarNaJanela = (inicio, fim) => ({
+      inicio: inicio > hoje ? inicio : hoje,
+      fim: fim < hoje ? hoje : fim
+    });
     const tarefas = [];
     Object.values(App.state.projetos).forEach(p => {
       p.tarefas.forEach(t => {
         if (!t.recursoIds.includes(recurso.id)) return;
         if (App.temFilhos(p, t.id)) return;
         if (opts.excluir && opts.excluir.projetoId === p.id && opts.excluir.taskId === t.id) return;
-        const horas = App.horasAlocadas(t, recurso.id);
+        const horas = this.horasRestantesTarefa(p, t, recurso.id);
         if (horas <= 0) return;
-        tarefas.push({ inicio: DateUtil.parseISO(t.inicio), fim: DateUtil.parseISO(t.fim), horas, nome: t.nome });
+        const janela = recortarNaJanela(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim));
+        tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas, nome: t.nome });
       });
     });
     if (opts.extra && opts.extra.horas > 0) {
-      tarefas.push({ inicio: opts.extra.inicio, fim: opts.extra.fim, horas: opts.extra.horas, nome: opts.extraNome || '(esta tarefa)' });
+      const janela = recortarNaJanela(opts.extra.inicio, opts.extra.fim);
+      tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas: opts.extra.horas, nome: opts.extraNome || '(esta tarefa)' });
     }
     if (tarefas.length < 2) return []; // uma só tarefa nunca entra em conflito consigo própria
 
@@ -182,13 +233,13 @@ const Capacidade = {
 
   // Resume capacidade/alocação de um recurso num intervalo de dias (dias úteis apenas). Distingue
   // dois problemas bem diferentes: "diasSobreAlocado" (na prática, nº de intervalos críticos que
-  // tocam este período — ver intervalosCriticos, é sobre-alocação real) e
+  // tocam este período — ver intervalosCriticos, é sobre-alocação real do que falta fazer) e
   // "diasConflitoDisponibilidade" (trabalho agendado num dia sem disponibilidade — feriado/
   // ausência — que já por si não recebe horas na distribuição normal; só dispara no caso raro de a
   // tarefa não ter NENHUM dia disponível em todo o seu prazo, ver horasNoDia).
-  // "intervalosPrecalculados" evita recalcular intervalosCriticos (O(n³), caro) uma vez por mês —
-  // quem chama isto num ciclo por vários meses do MESMO recurso deve calcular uma vez só e passar
-  // aqui (ver renderCapacidade em app.js).
+  // "intervalosPrecalculados" evita recalcular intervalosCriticos (caro) uma vez por mês — quem
+  // chama isto num ciclo por vários meses do MESMO recurso deve calcular uma vez só e passar aqui
+  // (ver renderCapacidade em app.js).
   resumoPeriodo(recurso, inicio, fim, intervalosPrecalculados) {
     let capacidade = 0, alocado = 0;
     const datasConflitoDisponibilidade = [];
@@ -287,11 +338,11 @@ const Capacidade = {
     const cap = this.capacidadeDiaria(date, recurso);
     const aloc = this.alocacaoDiaria(date, recursoId);
     const lim = this.limiaresOcupacao();
-    // "pct" aqui é só ilustrativo (distribuição uniforme de cada tarefa no seu próprio prazo, ver
-    // horasNoDia) — pode passar de 100% num dia isolado sem existir sobre-alocação real nenhuma
-    // (é exactamente o falso positivo que motivou tratar isto à parte, ver intervalosCriticos).
-    // Por isso NUNCA deixa, sozinho, classificar como "crítico" — fica sempre logo abaixo desse
-    // limiar; só um dia que toque mesmo um intervalo crítico real (abaixo) pode chegar a "crítico".
+    // "pct" aqui é só ilustrativo (distribuição de cada tarefa, ver horasTarefaNoDia) — pode passar
+    // de 100% num dia isolado sem existir sobre-alocação real nenhuma (é exatamente o falso
+    // positivo que motivou tratar isto à parte, ver intervalosCriticos). Por isso NUNCA deixa,
+    // sozinho, classificar como "crítico" — fica sempre logo abaixo desse limiar; só um dia que
+    // toque mesmo um intervalo crítico real (abaixo) pode chegar a "crítico".
     const pctBruto = cap > 0 ? aloc / cap : (aloc > 0 ? Infinity : 0);
     const pct = Math.min(pctBruto, lim.critico - 0.0001);
     const intervalos = intervalosPrecalculados || this.intervalosCriticos(recurso);
@@ -321,8 +372,8 @@ const Capacidade = {
     const inicio = DateUtil.parseISO(inicioISO);
     const fim = DateUtil.parseISO(fimISO);
     // Recupera o total de horas de "esta tarefa" a partir da percentagem média (o inverso do
-    // cálculo em App.pctAlocacao) — é só o total que interessa para a simulação de conflitos, a
-    // distribuição diária concreta já não entra na conta (ver nota grande em intervalosCriticos).
+    // cálculo em App.pctAlocacao) — é só o total proposto que interessa para a simulação de
+    // conflitos (ainda nem está gravada, não há "já registado" a descontar aqui).
     const diasUteisEstaTarefa = App.diasUteisEntre(inicioISO, fimISO);
     const estaHorasTotais = diasUteisEstaTarefa > 0 ? (pctTarefa / 100) * diasUteisEstaTarefa * this.HORAS_DIA : 0;
 
@@ -337,7 +388,7 @@ const Capacidade = {
       // IDs de tarefa são sequenciais POR PROJETO, não globalmente únicos — é preciso comparar o
       // par (projeto, tarefa) para excluir a tarefa em avaliação.
       const outras = this.tarefasAtivasNoDia(d, recurso.id).filter(x => !(x.projeto.id === projetoId && x.tarefa.id === taskId));
-      demandaOutrasPeriodo += outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.tarefa, recurso.id, d), 0);
+      demandaOutrasPeriodo += outras.reduce((soma, x) => soma + this.horasTarefaNoDia(x.projeto, x.tarefa, recurso.id, d), 0);
       if (cap === 0) {
         let motivo = 'ausência';
         if (this.ehFeriado(d)) motivo = 'feriado';

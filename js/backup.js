@@ -79,7 +79,7 @@ const Backup = {
     linhas.registos = (state.registos || []).map(r => ({
       id: r.id, data: r.data, pessoa: r.pessoa, projeto_id: r.projetoId || null,
       projeto_id_interno: r.projetoIdInterno || '', projeto_nome: r.projetoNome || '', tarefa_nome: r.tarefaNome || '',
-      horas: r.horas, notas: r.notas || '', origem: r.origem || 'app',
+      tarefa_id: r.tarefaId || null, horas: r.horas, notas: r.notas || '', origem: r.origem || 'app',
       user_id: null, // ver nota grande no topo do ficheiro
       submetido_em: r.submetidoEm || null, cliente: r.cliente || ''
     }));

@@ -1364,6 +1364,23 @@ const App = {
     if (t.alocacoesHoras && t.alocacoesHoras[recursoId] !== undefined) return t.alocacoesHoras[recursoId];
     return this.horasTempoInteiro(t);
   },
+  // Soma das horas já registadas (Registo de Horas) para esta tarefa e este recurso — usada só
+  // para prever carga FUTURA (ver Capacidade.horasRestantesTarefa), nunca para alterar o que foi
+  // planeado (horasAlocadas continua a ser sempre o valor introduzido/editável). Registos novos
+  // guardam "tarefaId" (referência direta, sem ambiguidade); registos anteriores a este campo só
+  // têm o nome da tarefa em texto — para esses, casa por projeto + nome da tarefa + nome da
+  // pessoa. Não é perfeito (um registo antigo "perde-se" se entretanto renomeares a tarefa), mas é
+  // o melhor que dá com os dados que já existiam antes desta referência direta existir.
+  horasJaRegistadasTarefa(projeto, tarefa, recursoId) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return 0;
+    return this.state.registos.reduce((soma, r) => {
+      if (r.tarefaId) return r.tarefaId === tarefa.id ? soma + (parseFloat(r.horas) || 0) : soma;
+      const projetoBate = r.projetoId ? r.projetoId === projeto.id : r.projetoIdInterno === projeto.idInterno;
+      if (projetoBate && r.pessoa === recurso.nome && r.tarefaNome === tarefa.nome) return soma + (parseFloat(r.horas) || 0);
+      return soma;
+    }, 0);
+  },
   definirHorasRecursoTarefa(projeto, taskId, recursoId, valor) {
     const t = this.tarefaPorId(projeto, taskId);
     if (!t || !t.recursoIds.includes(recursoId)) return;
@@ -1531,6 +1548,7 @@ const App = {
       projetoId: dados.projetoId || null,
       cliente: dados.cliente || '',
       tarefaNome: dados.tarefaNome || '',
+      tarefaId: dados.tarefaId || null,
       horas: dados.horas,
       notas: dados.notas || '',
       origem: dados.origem || 'app',
@@ -2476,7 +2494,7 @@ const App = {
         Capacidade.tarefasAtivasNoDia(cursor, r.id).forEach(({ projeto, tarefa }) => {
           if (f.projeto && projeto.id !== f.projeto) return;
           if (f.cliente && projeto.cliente !== f.cliente) return;
-          const horas = Capacidade.horasTarefaNoDia(tarefa, r.id, cursor);
+          const horas = Capacidade.horasTarefaNoDia(projeto, tarefa, r.id, cursor);
           if (horas <= 0) return;
           itens.push({ pessoa: r.nome, projetoId: projeto.id, projetoNome: projeto.nome, cliente: projeto.cliente || '', tarefaNome: tarefa.nome, horas });
         });
@@ -2776,6 +2794,14 @@ const App = {
       campos.cliente = r.cliente;
     }
     if ('tarefaNome' in alteracoes) { r.tarefaNome = alteracoes.tarefaNome; campos.tarefa_nome = r.tarefaNome; }
+    // Sempre que pessoa/projeto/tarefa mudam, tenta re-resolver a referência direta à tarefa (só
+    // usada para saber quanto já foi feito dela — ver App.horasJaRegistadasTarefa); fica null se a
+    // combinação final não corresponder a nenhuma tarefa real (não deve acontecer, mas não bloqueia).
+    if ('pessoa' in alteracoes || 'projetoIdInterno' in alteracoes || 'tarefaNome' in alteracoes) {
+      const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(r.projetoIdInterno, r.pessoa).find(t => t.nome === r.tarefaNome);
+      r.tarefaId = tarefaReal ? tarefaReal.id : null;
+      campos.tarefa_id = r.tarefaId;
+    }
     try {
       await Sync.atualizarRegisto(id, campos);
     } catch (err) {
@@ -2806,8 +2832,10 @@ const App = {
     }
     const proj = Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno);
     const projetoNome = proj ? proj.nome : projetoIdInterno;
+    const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.nome === tarefaNome);
     const payload = {
-      data, pessoa, projetoIdInterno, projetoNome, projetoId: proj ? proj.id : null, cliente: proj ? (proj.cliente || '') : '', tarefaNome, horas, notas,
+      data, pessoa, projetoIdInterno, projetoNome, projetoId: proj ? proj.id : null, cliente: proj ? (proj.cliente || '') : '',
+      tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null, horas, notas,
       origem: 'app-gestor-projetos', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
     };
 
