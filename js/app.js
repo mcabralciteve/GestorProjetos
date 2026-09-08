@@ -1211,18 +1211,22 @@ const App = {
     this.renderTudo();
     this.toast(`Consultor associado a ${aplicadas} tarefa(s).`);
   },
+  // Um <input type="date"> dispara "change" assim que o valor fica "completo" — ao escrever o ano
+  // dígito a dígito (ex.: "2026"), isso acontece logo no primeiro "2" (ano 0002), muito antes de a
+  // pessoa acabar de escrever. Nos campos de data dentro de uma linha de tabela (que se re-desenha
+  // a cada "change"), aceitar isso destruía o próprio campo a meio da escrita, tirando-lhe o foco.
+  // Usado em toda a app onde se edita uma data em linha — tarefas, registos, faturas, ausências,
+  // feriados, pontos de situação, next steps — para ignorar anos claramente incompletos.
+  anoDataPlausivel(valor) {
+    const ano = parseInt(String(valor).slice(0, 4), 10);
+    return !!ano && ano >= 1000;
+  },
   atualizarCampoTarefa(id, campo, valor) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, id);
     if (!t) return;
     if (campo === 'inicio' || campo === 'fim') {
-      // Um <input type="date"> dispara "change" assim que o valor fica "completo" — ao escrever
-      // o ano dígito a dígito (ex.: "2026"), isso acontece logo no primeiro "2" (ano 0002), muito
-      // antes de a pessoa acabar de escrever. Se aceitássemos e re-desenhássemos a linha nesse
-      // instante, o campo perdia o foco/estado a meio da escrita. Ignora anos claramente
-      // incompletos — a app só reage quando o ano já é plausível.
-      const ano = parseInt(String(valor).slice(0, 4), 10);
-      if (!ano || ano < 1000) return;
+      if (!this.anoDataPlausivel(valor)) return;
       t[campo] = valor;
       if (DateUtil.parseISO(t.fim) < DateUtil.parseISO(t.inicio)) {
         if (campo === 'inicio') t.fim = t.inicio; else t.inicio = t.fim;
@@ -1522,6 +1526,7 @@ const App = {
   atualizarFeriado(id, campo, valor) {
     const f = this.state.feriados.find(x => x.id === id);
     if (!f) return;
+    if (campo === 'data' && !this.anoDataPlausivel(valor)) return;
     f[campo] = valor;
     this.persist();
     this.renderTabelaTarefas();
@@ -1547,6 +1552,7 @@ const App = {
   atualizarAusencia(id, campo, valor) {
     const a = this.state.ausencias.find(x => x.id === id);
     if (!a) return;
+    if ((campo === 'dataInicio' || campo === 'dataFim') && !this.anoDataPlausivel(valor)) return;
     a[campo] = valor;
     if (campo === 'dataInicio' || campo === 'dataFim') {
       if (DateUtil.parseISO(a.dataFim) < DateUtil.parseISO(a.dataInicio)) {
@@ -1599,6 +1605,9 @@ const App = {
       if (f.emitida && !f.dataEmissao) f.dataEmissao = DateUtil.todayISO();
     } else if (campo === 'percentagem' || campo === 'valor') {
       f[campo] = parseFloat(valor) || 0;
+    } else if (campo === 'dataPrevista' || campo === 'dataEmissao') {
+      if (!this.anoDataPlausivel(valor)) return;
+      f[campo] = valor;
     } else {
       f[campo] = valor;
     }
@@ -2839,10 +2848,7 @@ const App = {
     if (!r || !this.possoEditarRegisto(r)) return;
     const campos = {};
     if (campo === 'data') {
-      // Mesmo problema do <input type="date"> nas tarefas do Gantt: dispara "change" logo ao
-      // primeiro dígito do ano (ex.: "2" vira 0002) — ignora enquanto o ano não for plausível.
-      const ano = parseInt(String(valor).slice(0, 4), 10);
-      if (!ano || ano < 1000) return;
+      if (!this.anoDataPlausivel(valor)) return;
       r.data = valor; campos.data = valor;
     } else if (campo === 'horas') {
       // Horas é obrigatório e tem de ser maior que zero — nunca se aceita vazio/zero/negativo,
@@ -3567,6 +3573,7 @@ const App = {
     const p = this.projetoAtivo();
     const ps = p && p.pontosSituacao.find(x => x.id === id);
     if (!ps) return;
+    if (campo === 'data' && !this.anoDataPlausivel(valor)) return;
     ps[campo] = valor;
     this.persist();
     this.renderAcompanhamento();
@@ -3595,6 +3602,7 @@ const App = {
     if (!p) return;
     const pp = p.proximosPassos.find(x => x.id === id);
     if (!pp || !this.podeEditarProximoPasso(p, pp)) return;
+    if ((campo === 'dataPrevista' || campo === 'dataReal') && valor && !this.anoDataPlausivel(valor)) return;
     pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId', 'dataPrevista', 'dataReal'].includes(campo) ? (valor || null) : valor;
     pp.atualizadoEm = new Date().toISOString();
     this.persist();
@@ -4589,8 +4597,8 @@ const App = {
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projCliente.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().cliente = e.projCliente.value; this.persist(); this.renderTabelaProjetos(); });
     e.projDescricao.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().descricao = e.projDescricao.value; this.persist(); });
-    e.projInicio.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().dataInicio = e.projInicio.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
-    e.projFim.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().dataFim = e.projFim.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
+    e.projInicio.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projInicio.value)) return; this.projetoAtivo().dataInicio = e.projInicio.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
+    e.projFim.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projFim.value)) return; this.projetoAtivo().dataFim = e.projFim.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
     e.projHorasVendidas.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().horasVendidas = parseFloat(e.projHorasVendidas.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.projValorVendido.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().valorVendido = parseFloat(e.projValorVendido.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.projGestorId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().gestorId = e.projGestorId.value || null; this.persist(); this.renderTudo(); });
