@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260908e">
+<link rel="stylesheet" href="css/style.css?v=20260908f">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -343,10 +343,20 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>Acompanhamento — <span id="acompanhamentoProjetoNome">—</span></h2>
-      <button id="btnAddPontoSituacao" class="btn btn-primary btn-sm">+ Ponto de Situação</button>
+      <button id="btnAddPontoSituacao" class="btn btn-sm">+ Ponto de Situação avulso</button>
     </div>
-    <p class="pagina-sub">Pontos de situação e next steps do projeto escolhido no separador "Gantt do Projeto". Visível só para o Administrador e o Gestor deste projeto.</p>
-    <div id="acompanhamentoSemProjeto" class="hint" style="display:none;">Escolhe um projeto no separador "Gantt do Projeto" primeiro.</div>
+    <p class="pagina-sub">Uma reunião cobre uma data e um feedback partilhados — escolhe o Gestor, depois o projeto, e cria os next steps; ao mudar de projeto na mesma reunião, o Ponto de Situação desse projeto é criado/atualizado sozinho com a mesma data/feedback.</p>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row-2">
+        <label>Gestor <select id="acompGestor"><option value="">Escolhe…</option></select></label>
+        <label>Projeto <select id="acompProjeto"><option value="">Escolhe…</option></select></label>
+      </div>
+      <div class="row-2">
+        <label>Data da reunião <input type="date" id="acompReuniaoData"></label>
+        <label>Feedback geral <input type="text" id="acompReuniaoFeedback" placeholder="Notas da reunião — aplicam-se a cada projeto que abrires a seguir"></label>
+      </div>
+    </div>
+    <div id="acompanhamentoSemProjeto" class="hint" style="display:none;">Escolhe um Gestor e um projeto acima primeiro.</div>
     <div id="acompanhamentoConteudo">
       <h3>Pontos de Situação</h3>
       <div class="table-scroll">
@@ -372,6 +382,7 @@
               <th data-col="sessao" data-sort="sessao" style="width:130px">Sessão<span class="col-resizer"></span></th>
               <th data-col="tarefa" data-sort="tarefa">Tarefa<span class="col-resizer"></span></th>
               <th data-col="responsavel" data-sort="responsavel" style="width:140px">Responsável<span class="col-resizer"></span></th>
+              <th data-col="horas" style="width:110px">Horas (Prev./Real)<span class="col-resizer"></span></th>
               <th data-col="dataPrevista" data-sort="dataPrevista" style="width:120px">Data Prevista<span class="col-resizer"></span></th>
               <th data-col="dataReal" data-sort="dataReal" style="width:120px">Data Real<span class="col-resizer"></span></th>
               <th data-col="estado" data-sort="estado" style="width:110px">Estado<span class="col-resizer"></span></th>
@@ -851,14 +862,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260908e"></script>
-<script src="js/auth.js?v=20260908e"></script>
-<script src="js/sync.js?v=20260908e"></script>
-<script src="js/gantt.js?v=20260908e"></script>
-<script src="js/capacidade.js?v=20260908e"></script>
-<script src="js/portfolio-gantt.js?v=20260908e"></script>
-<script src="js/reserva-viatura.js?v=20260908e"></script>
-<script src="js/backup.js?v=20260908e"></script>
-<script src="js/app.js?v=20260908e"></script>
+<script src="js/supabase-config.js?v=20260908f"></script>
+<script src="js/auth.js?v=20260908f"></script>
+<script src="js/sync.js?v=20260908f"></script>
+<script src="js/gantt.js?v=20260908f"></script>
+<script src="js/capacidade.js?v=20260908f"></script>
+<script src="js/portfolio-gantt.js?v=20260908f"></script>
+<script src="js/reserva-viatura.js?v=20260908f"></script>
+<script src="js/backup.js?v=20260908f"></script>
+<script src="js/app.js?v=20260908f"></script>
 </body>
 </html>

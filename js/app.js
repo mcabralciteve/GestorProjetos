@@ -62,6 +62,14 @@ const App = {
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
   filtrosTodosPassos: { gestor: '', projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
+  // Estado da sessão de Acompanhamento — só do lado do cliente, nunca gravado/sincronizado (por
+  // isso vive fora de "state", tal como filtrosRegisto/paginaRegistos etc.). Uma "reunião" é só
+  // uma data + um feedback partilhados que se propagam automaticamente para o Ponto de Situação de
+  // CADA projeto que se visite durante essa sessão — ver selecionarProjetoAcompanhamento — para não
+  // ser preciso reescrever a mesma nota de reunião projeto a projeto quando um Gestor tem vários.
+  reuniaoAtiva: { data: '', feedback: '' },
+  acompanhamentoGestorId: '',
+  acompanhamentoProjetoId: '',
   filtrosProjetos: { gestorId: '', cliente: '', estado: '', estadoOrc: '' },
   // Definição das colunas da tabela de Projetos, para o painel "⚙ Colunas" — a ordem aqui é só a
   // do painel de checkboxes, não afeta a ordem real das colunas na tabela (essa é fixa no HTML).
@@ -132,6 +140,10 @@ const App = {
       acompanhamentoProjetoNome: document.getElementById('acompanhamentoProjetoNome'),
       acompanhamentoSemProjeto: document.getElementById('acompanhamentoSemProjeto'),
       acompanhamentoConteudo: document.getElementById('acompanhamentoConteudo'),
+      acompGestor: document.getElementById('acompGestor'),
+      acompProjeto: document.getElementById('acompProjeto'),
+      acompReuniaoData: document.getElementById('acompReuniaoData'),
+      acompReuniaoFeedback: document.getElementById('acompReuniaoFeedback'),
       corpoPontosSituacao: document.getElementById('corpoPontosSituacao'),
       corpoProximosPassos: document.getElementById('corpoProximosPassos'),
       tabBtnTodosPassos: document.getElementById('tabBtnTodosPassos'),
@@ -2938,6 +2950,11 @@ const App = {
     const proj = Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno);
     const projetoNome = proj ? proj.nome : projetoIdInterno;
     const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.nome === tarefaNome);
+    // A tarefa já está dada como concluída — não é um erro (pode haver um saldo real por acertar,
+    // ou o registo ser de antes de a marcarem concluída), só um aviso: avança se confirmar.
+    if (tarefaReal && tarefaReal.progresso >= 100) {
+      if (!confirm(`A tarefa "${tarefaReal.nome}" já está marcada como concluída (100%). Registar horas nela na mesma?`)) return;
+    }
     const payload = {
       data, pessoa, projetoIdInterno, projetoNome, projetoId: proj ? proj.id : null, cliente: proj ? (proj.cliente || '') : '',
       tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null, horas, notas,
@@ -3555,14 +3572,69 @@ const App = {
   },
 
   // ---------- Tab: Acompanhamento (pontos de situação + next steps) ----------
-  // Pontos de situação: só o Administrador cria/edita/apaga. Next steps: Administrador e Gestor do
-  // projeto podem criar (sempre associados a uma sessão de ponto de situação, com um consultor do
-  // projeto como responsável); cada um só edita/apaga os que criou, exceto o Administrador que pode
-  // editar/apagar qualquer um (ver podeEditarProximoPasso/podeEliminarProximoPasso). Mostra sempre o
-  // projeto ativo do Gantt (não tem filtro de projeto próprio, ao contrário da Faturação).
+  // O projeto aberto aqui é PRÓPRIO deste separador (acompanhamentoProjetoId), independente do
+  // projeto ativo no Gantt — permite trabalhar vários projetos do mesmo Gestor sem ir mudar o
+  // projeto ativo lá, exatamente o fluxo de uma reunião de acompanhamento (escolher o Gestor,
+  // depois o projeto, repetir para outro projeto do mesmo Gestor sem sair daqui).
+  //
+  // "reuniaoAtiva" (data + feedback) é só estado de sessão do browser, nunca gravado à parte —
+  // propaga-se para o Ponto de Situação de CADA projeto que se abra a seguir (ver
+  // garantirPontoSituacaoParaReuniao), para não ser preciso reescrever a mesma nota de reunião
+  // projeto a projeto quando um Gestor tem vários.
+  //
+  // Pontos de situação: os automáticos (ligados à reunião) e o botão "avulso" só o Administrador
+  // cria; qualquer um pode editar o feedback/data depois (mesma regra de sempre). Next steps:
+  // Administrador e Gestor do projeto podem criar — sempre através do modal (nunca ficam sem
+  // tarefa ligada: ou já existe uma que sirva, ou cria-se logo uma nova a partir da descrição, ver
+  // abrirModalNovoProximoPasso) — e cada um só edita/apaga os que criou, exceto o Administrador
+  // que pode editar/apagar qualquer um (ver podeEditarProximoPasso/podeEliminarProximoPasso).
+  projetoAcompanhamento() {
+    return this.state.projetos[this.acompanhamentoProjetoId] || null;
+  },
+  selecionarGestorAcompanhamento(gestorId) {
+    this.acompanhamentoGestorId = gestorId;
+    const pAtual = this.projetoAcompanhamento();
+    if (!pAtual || pAtual.gestorId !== gestorId) this.acompanhamentoProjetoId = '';
+    this.renderAcompanhamento();
+  },
+  selecionarProjetoAcompanhamento(projetoId) {
+    this.acompanhamentoProjetoId = projetoId;
+    const p = this.projetoAcompanhamento();
+    if (p && this.souAdmin()) this.garantirPontoSituacaoParaReuniao(p);
+    this.persist();
+    this.renderAcompanhamento();
+  },
+  // Atualiza a data/feedback partilhados da reunião ativa — e, se já houver um projeto aberto,
+  // propaga de imediato para o Ponto de Situação desse projeto (ver garantirPontoSituacaoParaReuniao).
+  atualizarReuniaoAtiva(campo, valor) {
+    if (campo === 'data' && valor && !this.anoDataPlausivel(valor)) return;
+    this.reuniaoAtiva[campo] = valor;
+    const p = this.projetoAcompanhamento();
+    if (p && this.souAdmin()) this.garantirPontoSituacaoParaReuniao(p);
+    this.persist();
+    this.renderAcompanhamento();
+  },
+  // Garante que o projeto tem um Ponto de Situação para a data da reunião ativa (hoje, por
+  // omissão), com o feedback atual — encontra-o pela data se já existir (idempotente: reabrir o
+  // mesmo projeto na mesma reunião, ou mudar o feedback a meio, nunca duplica a linha, só
+  // atualiza-a), ou cria um novo. Só o Administrador cria/atualiza (mesma regra de sempre);
+  // devolve o ponto de situação encontrado/criado, ou null se não tiver permissão.
+  garantirPontoSituacaoParaReuniao(p) {
+    if (!this.souAdmin()) return p.pontosSituacao[0] || null;
+    const data = this.reuniaoAtiva.data || DateUtil.todayISO();
+    let ps = p.pontosSituacao.find(x => x.data === data);
+    if (!ps) {
+      ps = this.novoPontoSituacaoObj(this.reuniaoAtiva.feedback, this.perfilAtual()?.recursoId);
+      ps.data = data;
+      p.pontosSituacao.push(ps);
+    } else if (this.reuniaoAtiva.feedback) {
+      ps.feedback = this.reuniaoAtiva.feedback;
+    }
+    return ps;
+  },
   criarPontoSituacao() {
     if (!this.souAdmin()) return;
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     if (!p) return;
     p.pontosSituacao.push(this.novoPontoSituacaoObj('', this.perfilAtual()?.recursoId));
     this.persist();
@@ -3570,7 +3642,7 @@ const App = {
   },
   atualizarPontoSituacao(id, campo, valor) {
     if (!this.souAdmin()) return;
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     const ps = p && p.pontosSituacao.find(x => x.id === id);
     if (!ps) return;
     if (campo === 'data' && !this.anoDataPlausivel(valor)) return;
@@ -3580,43 +3652,138 @@ const App = {
   },
   eliminarPontoSituacao(id) {
     if (!this.souAdmin()) return;
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     if (!p || !confirm('Eliminar este ponto de situação?')) return;
     p.pontosSituacao = p.pontosSituacao.filter(x => x.id !== id);
     this.persist();
     this.renderAcompanhamento();
   },
-  // Um next step tem sempre de estar associado a uma sessão já existente — não há para onde o
-  // associar sem pelo menos um Ponto de Situação criado primeiro (só o Administrador cria esses).
-  criarProximoPasso() {
-    const p = this.projetoAtivo();
+  // Um next step é sempre criado através deste modal — nunca fica sem tarefa ligada: ou já existe
+  // uma que sirva (escolhe-se), ou cria-se logo uma nova a partir da descrição. Se um responsável
+  // for escolhido, pode logo indicar-se quantas horas se prevê que ele vá dedicar — grava
+  // diretamente em alocacoesHoras da tarefa, exatamente como "Associar consultores" no Gantt.
+  abrirModalNovoProximoPasso() {
+    const p = this.projetoAcompanhamento();
     if (!p || !this.possoEditarProjeto(p.id)) return;
-    const ultimoPonto = [...p.pontosSituacao].sort((a, b) => a.criadoEm.localeCompare(b.criadoEm)).pop();
-    if (!ultimoPonto) { this.toast('Cria primeiro um Ponto de Situação — um next step tem de estar associado a uma sessão.'); return; }
-    p.proximosPassos.push(this.novoProximoPassoObj('Novo next step', null, ultimoPonto.id, null, this.perfilAtual()?.recursoId));
+    const ps = this.garantirPontoSituacaoParaReuniao(p);
+    if (!ps) { this.toast('Sem Ponto de Situação para associar — pede a um Administrador para criar um.'); return; }
+    const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
+    const opcoesTarefa = tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+    const consultores = this.consultoresDoProjeto(p);
+    const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    const temTarefas = tarefasFolha.length > 0;
+    const html = `
+      <label>Descrição <span style="color:var(--vermelho);">*</span>
+        <input type="text" id="npDescricao" placeholder="O que precisa de acontecer?">
+      </label>
+      <div class="row-2" style="margin-top:10px;align-items:center;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="npTarefaModo" value="existente" ${temTarefas ? 'checked' : 'disabled'}> Tarefa existente
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="npTarefaModo" value="nova" ${temTarefas ? '' : 'checked'}> + Nova tarefa
+        </label>
+      </div>
+      <div id="npTarefaExistenteWrap" style="margin-top:6px;${temTarefas ? '' : 'display:none;'}">
+        <label>Tarefa <select id="npTarefaId">${opcoesTarefa}</select></label>
+      </div>
+      <div id="npTarefaNovaWrap" style="margin-top:6px;${temTarefas ? 'display:none;' : ''}">
+        <label>Nome da nova tarefa <input type="text" id="npTarefaNome" placeholder="Por omissão, usa a descrição"></label>
+      </div>
+      <div class="row-2" style="margin-top:10px;">
+        <label>Responsável <select id="npResponsavel">${opcoesResponsavel}</select></label>
+        <label>Data prevista <input type="date" id="npDataPrevista" value="${DateUtil.todayISO()}"></label>
+      </div>
+      <label id="npHorasWrap" style="margin-top:10px;display:none;">Horas previstas para o responsável <input type="number" id="npHoras" min="0" step="0.5" placeholder="ex.: 4"></label>
+      <p class="hint" style="margin-top:12px;">Fica associado ao Ponto de Situação de ${DateUtil.formatShort(DateUtil.parseISO(ps.data))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 60)) : ''}.</p>
+      <button type="button" class="btn btn-primary" id="btnCriarNovoPasso" style="margin-top:10px;">Criar Next Step</button>`;
+    this.abrirModal(`Novo Next Step — ${p.nome}`, html);
+    const wrapExistente = document.getElementById('npTarefaExistenteWrap');
+    const wrapNova = document.getElementById('npTarefaNovaWrap');
+    this.els.modalCorpo.querySelectorAll('input[name="npTarefaModo"]').forEach(r => r.addEventListener('change', () => {
+      const modo = this.els.modalCorpo.querySelector('input[name="npTarefaModo"]:checked').value;
+      wrapExistente.style.display = modo === 'existente' ? '' : 'none';
+      wrapNova.style.display = modo === 'nova' ? '' : 'none';
+    }));
+    const selResp = document.getElementById('npResponsavel');
+    const horasWrap = document.getElementById('npHorasWrap');
+    selResp.addEventListener('change', () => { horasWrap.style.display = selResp.value ? '' : 'none'; });
+    document.getElementById('btnCriarNovoPasso').addEventListener('click', () => this.criarProximoPassoDoModal(p.id, ps.id));
+  },
+  criarProximoPassoDoModal(projetoId, pontoSituacaoId) {
+    const p = this.state.projetos[projetoId];
+    if (!p) return;
+    const descricao = document.getElementById('npDescricao').value.trim();
+    if (!descricao) { this.toast('A descrição é obrigatória.'); return; }
+    const modoEl = this.els.modalCorpo.querySelector('input[name="npTarefaModo"]:checked');
+    const modo = modoEl ? modoEl.value : 'nova';
+    const responsavelId = document.getElementById('npResponsavel').value || null;
+    const dataPrevista = document.getElementById('npDataPrevista').value || null;
+    const horas = parseFloat(document.getElementById('npHoras').value) || 0;
+
+    let tarefa;
+    if (modo === 'existente') {
+      const tid = document.getElementById('npTarefaId').value;
+      tarefa = this.tarefaPorId(p, tid);
+      if (!tarefa) { this.toast('Escolhe uma tarefa existente, ou "+ Nova tarefa".'); return; }
+    } else {
+      const nomeTarefa = (document.getElementById('npTarefaNome').value || descricao).trim();
+      const hojeISO = DateUtil.todayISO();
+      const fim = (dataPrevista && dataPrevista > hojeISO) ? dataPrevista : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hojeISO), 1));
+      const recursoIds = responsavelId ? [responsavelId] : [];
+      tarefa = this.novaTarefaObj(p, nomeTarefa, null, hojeISO, fim, recursoIds);
+      p.tarefas.push(tarefa);
+    }
+    if (responsavelId) {
+      if (!tarefa.recursoIds.includes(responsavelId)) tarefa.recursoIds.push(responsavelId);
+      if (horas > 0) {
+        if (!tarefa.alocacoesHoras) tarefa.alocacoesHoras = {};
+        tarefa.alocacoesHoras[responsavelId] = horas;
+      }
+    }
+    const pp = this.novoProximoPassoObj(descricao, tarefa.id, pontoSituacaoId, responsavelId, this.perfilAtual()?.recursoId);
+    pp.dataPrevista = dataPrevista;
+    p.proximosPassos.push(pp);
+    this.recalcularAgendamento(p);
+    this.fecharModal();
     this.persist();
-    this.renderAcompanhamento();
+    this.renderTudo();
+    this.toast('Next step criado.');
   },
   atualizarProximoPasso(id, campo, valor) {
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     if (!p) return;
     const pp = p.proximosPassos.find(x => x.id === id);
     if (!pp || !this.podeEditarProximoPasso(p, pp)) return;
     if ((campo === 'dataPrevista' || campo === 'dataReal') && valor && !this.anoDataPlausivel(valor)) return;
     pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId', 'dataPrevista', 'dataReal'].includes(campo) ? (valor || null) : valor;
     pp.atualizadoEm = new Date().toISOString();
+    // Marcar como Concluído dá por terminada a atividade ligada — sobe logo a 100%, para não
+    // ficar uma tarefa "concluída" no acompanhamento mas parada a meio no Gantt.
+    if (campo === 'estado' && valor === 'concluido' && pp.tarefaId) {
+      const t = this.tarefaPorId(p, pp.tarefaId);
+      if (t) t.progresso = 100;
+    }
     this.persist();
-    this.renderAcompanhamento();
+    this.renderTudo();
   },
-  // Cria uma tarefa nova no Gantt deste projeto a partir de um next step — para os que valem a
-  // pena passar a ser uma atividade acompanhada no plano, em vez de ficarem só como uma linha de
-  // acompanhamento. Pré-preenche nome (descrição), responsável (se já for um consultor válido
-  // deste projeto) e data prevista como fim (início é sempre hoje — a tarefa está a ser criada
-  // agora, não no passado); sem data prevista, ou já no passado, fica uma tarefa de 1 dia, tal
-  // como "+ Tarefa" já faz por omissão. Liga o next step à tarefa nova (tarefaId) — só se pode
-  // promover uma vez; depois disso, o próprio dropdown de Tarefa já mostra a ligação.
+  // Horas previstas do responsável atual de um next step — grava direto em alocacoesHoras da
+  // tarefa ligada (mesmo campo que "Associar consultores" usa no Gantt); só faz sentido havendo
+  // tarefa E responsável.
+  atualizarHorasPrevistasProximoPasso(id, valor) {
+    const p = this.projetoAcompanhamento();
+    const pp = p && p.proximosPassos.find(x => x.id === id);
+    if (!pp || !this.podeEditarProximoPasso(p, pp) || !pp.tarefaId || !pp.responsavelId) return;
+    this.definirHorasRecursoTarefa(p, pp.tarefaId, pp.responsavelId, valor);
+  },
+  // Cria uma tarefa nova no Gantt deste projeto a partir de um next step antigo, criado antes desta
+  // ligação ser obrigatória — para os que valem a pena passar a ser uma atividade acompanhada no
+  // plano. Pré-preenche nome (descrição), responsável (se já for um consultor válido deste
+  // projeto) e data prevista como fim (início é sempre hoje); sem data prevista, ou já no passado,
+  // fica uma tarefa de 1 dia, tal como "+ Tarefa" já faz por omissão. Só se pode promover uma vez;
+  // depois disso, o próprio dropdown de Tarefa já mostra a ligação.
   promoverProximoPassoATarefa(id) {
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     if (!p || !this.possoEditarProjeto(p.id)) return;
     const pp = p.proximosPassos.find(x => x.id === id);
     if (!pp || pp.tarefaId) return;
@@ -3633,7 +3800,7 @@ const App = {
     this.toast(`Tarefa "${t.nome}" criada no Gantt a partir deste next step.`);
   },
   eliminarProximoPasso(id) {
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     if (!p) return;
     const pp = p.proximosPassos.find(x => x.id === id);
     if (!pp || !this.podeEliminarProximoPasso(p, pp)) return;
@@ -3647,7 +3814,7 @@ const App = {
   // próprio select da linha; o fecho fica para o próximo clique em "Fechar").
   fecharProximoPasso(id) {
     if (!this.souAdmin()) return;
-    const p = this.projetoAtivo();
+    const p = this.projetoAcompanhamento();
     const pp = p && p.proximosPassos.find(x => x.id === id);
     if (!pp) return;
     if (!['concluido', 'abandonado'].includes(pp.estado)) {
@@ -3659,25 +3826,63 @@ const App = {
     this.persist();
     this.renderAcompanhamento();
   },
+  // Atalho para "já executei isto, quanto gastei" — vai para o Registo de Horas com Pessoa/
+  // Projeto/Tarefa já escolhidos (o responsável do next step, este projeto, a tarefa ligada); as
+  // horas ficam associadas à tarefa automaticamente (ver App.horasJaRegistadasTarefa/tarefaId no
+  // registo), tal como pedido — só falta escrever a data e as horas.
+  registarHorasDoProximoPasso(id) {
+    const p = this.projetoAcompanhamento();
+    const pp = p && p.proximosPassos.find(x => x.id === id);
+    if (!pp) return;
+    const tarefa = pp.tarefaId ? this.tarefaPorId(p, pp.tarefaId) : null;
+    const recurso = pp.responsavelId ? this.state.recursos.find(r => r.id === pp.responsavelId) : null;
+    const e = this.els;
+    this.irParaAba('registo');
+    e.regPessoa.value = recurso ? recurso.nome : '';
+    this.renderProjetosRegisto();
+    e.regProjeto.value = p.idInterno || '';
+    this.renderTarefasRegisto();
+    if (tarefa) e.regTarefa.value = tarefa.nome;
+    e.regHoras.focus();
+  },
   renderAcompanhamento() {
     const e = this.els;
     if (!e.corpoPontosSituacao) return;
-    const p = this.projetoAtivo();
+    const admin = this.souAdmin();
+    // Gestor: Admin vê e escolhe qualquer um; um Gestor (não-admin) só se vê a si próprio, já
+    // pré-escolhido — não faz sentido oferecer-lhe outros Gestores, nunca teria acesso aos
+    // projetos deles (ver possoEditarProjeto mais abaixo).
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    if (!admin) this.acompanhamentoGestorId = meuRecursoId || '';
+    const idsGestores = new Set(Object.values(this.state.projetos).map(p => p.gestorId).filter(Boolean));
+    const gestoresDisponiveis = admin
+      ? this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome))
+      : this.state.recursos.filter(r => r.id === meuRecursoId);
+    e.acompGestor.innerHTML = '<option value="">Escolhe…</option>' + gestoresDisponiveis.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
+    e.acompGestor.value = this.acompanhamentoGestorId;
+    e.acompGestor.disabled = !admin;
+
+    const projetosDoGestor = this.acompanhamentoGestorId
+      ? Object.values(this.state.projetos).filter(p => p.gestorId === this.acompanhamentoGestorId)
+      : [];
+    e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.acompProjeto.value = this.acompanhamentoProjetoId;
+    e.acompProjeto.disabled = !this.acompanhamentoGestorId;
+    if (e.acompProjeto.value !== this.acompanhamentoProjetoId) this.acompanhamentoProjetoId = '';
+
+    e.acompReuniaoData.value = this.reuniaoAtiva.data || DateUtil.todayISO();
+    e.acompReuniaoFeedback.value = this.reuniaoAtiva.feedback;
+
+    const p = this.projetoAcompanhamento();
     const podeVer = !!p && this.possoEditarProjeto(p.id);
     const btnAddPS = document.getElementById('btnAddPontoSituacao');
     const btnAddPP = document.getElementById('btnAddProximoPasso');
     e.acompanhamentoProjetoNome.textContent = p ? p.nome : '—';
     e.acompanhamentoConteudo.style.display = podeVer ? '' : 'none';
     e.acompanhamentoSemProjeto.style.display = podeVer ? 'none' : '';
-    e.acompanhamentoSemProjeto.textContent = p ? 'Não tens acesso ao acompanhamento deste projeto.' : 'Escolhe um projeto no separador "Gantt do Projeto" primeiro.';
-    const admin = this.souAdmin();
+    e.acompanhamentoSemProjeto.textContent = p ? 'Não tens acesso ao acompanhamento deste projeto.' : 'Escolhe um Gestor e um projeto acima primeiro.';
     if (btnAddPS) btnAddPS.style.display = (podeVer && admin) ? '' : 'none';
-    if (btnAddPP) {
-      btnAddPP.style.display = podeVer ? '' : 'none';
-      const semSessao = podeVer && !p.pontosSituacao.length;
-      btnAddPP.disabled = semSessao;
-      btnAddPP.title = semSessao ? 'Cria primeiro um Ponto de Situação — um next step tem de estar associado a uma sessão.' : '';
-    }
+    if (btnAddPP) btnAddPP.style.display = podeVer ? '' : 'none';
     if (!podeVer) return;
 
     const pontos = this.aplicarOrdenacaoTabela('tabelaPontosSituacao', p.pontosSituacao, (ps, campo) => campo === 'feedback' ? (ps.feedback || '').toLowerCase() : ps.data);
@@ -3717,7 +3922,7 @@ const App = {
         default: return pp.fechado ? 1 : 0;
       }
     });
-    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
+    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="11" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
       tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
@@ -3728,12 +3933,21 @@ const App = {
       const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
       const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
       const marcadorAtraso = this.proximoPassoAtrasado(pp) ? '⚠ ' : '';
+      // Horas: só faz sentido havendo tarefa E responsável — previstas (editável, alocacoesHoras
+      // da tarefa) e reais (só leitura, soma dos registos já ligados a esta tarefa+pessoa).
+      const tarefaLigada = pp.tarefaId ? this.tarefaPorId(p, pp.tarefaId) : null;
+      const temHoras = !!(tarefaLigada && pp.responsavelId);
+      const horasPrevistas = temHoras ? this.horasAlocadas(tarefaLigada, pp.responsavelId) : null;
+      const horasReais = temHoras ? this.horasJaRegistadasTarefa(p, tarefaLigada, pp.responsavelId) : null;
       tr.innerHTML = `
         <td>${podeEditar ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px">` : escapeHtml(pp.descricao)}</td>
         <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessao}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
         <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}
           ${podePromover ? '<button type="button" class="btn btn-sm" data-acao="promover" style="margin-top:4px;" title="Cria uma tarefa nova no Gantt deste projeto a partir deste next step (nome, responsável e data prevista já vêm preenchidos)">↳ Promover a Tarefa</button>' : ''}</td>
         <td>${podeEditar ? `<select data-campo="responsavelId">${opcoesResponsavel}</select>` : escapeHtml((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '—')}</td>
+        <td>${temHoras
+          ? `${podeEditar ? `<input type="number" min="0" step="0.5" value="${horasPrevistas}" data-acao="horas-previstas" style="width:56px">` : escapeHtml(String(horasPrevistas))}h / ${horasReais.toFixed(1)}h`
+          : '<span class="hint">—</span>'}</td>
         <td>${podeEditar ? `<input type="date" value="${pp.dataPrevista || ''}" data-campo="dataPrevista">` : marcadorAtraso + escapeHtml(pp.dataPrevista ? DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : '—')}</td>
         <td>${podeEditar ? `<input type="date" value="${pp.dataReal || ''}" data-campo="dataReal">` : escapeHtml(pp.dataReal ? DateUtil.formatShort(DateUtil.parseISO(pp.dataReal)) : '—')}</td>
         <td><select data-campo="estado" ${dis}>
@@ -3745,6 +3959,7 @@ const App = {
         <td>${podeEditar ? `<textarea data-campo="notas" rows="1" style="width:100%;resize:vertical;">${escapeHtml(pp.notas)}</textarea>` : escapeHtml(pp.notas)}</td>
         <td class="hint" title="Criado por">${escapeHtml(nomeCriador)}</td>
         <td class="col-acoes">
+          ${tarefaLigada ? '<button class="btn btn-sm" data-acao="registar-horas" title="Ir para o Registo de Horas com Pessoa/Projeto/Tarefa já escolhidos">🕒 Horas</button>' : ''}
           ${admin && !pp.fechado ? '<button class="btn btn-sm" data-acao="fechar">Fechar</button>' : ''}
           ${pp.fechado ? '<span class="hint">Fechado</span>' : ''}
           ${podeEliminar ? '<button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>' : ''}
@@ -3758,19 +3973,26 @@ const App = {
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => this.atualizarProximoPasso(pp.id, inp.dataset.campo, inp.value));
       });
+      const inpHoras = tr.querySelector('[data-acao="horas-previstas"]');
+      if (inpHoras) inpHoras.addEventListener('change', () => this.atualizarHorasPrevistasProximoPasso(pp.id, inpHoras.value));
       const btnFechar = tr.querySelector('[data-acao="fechar"]');
       if (btnFechar) btnFechar.addEventListener('click', () => this.fecharProximoPasso(pp.id));
       const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
       if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProximoPasso(pp.id));
       const btnPromover = tr.querySelector('[data-acao="promover"]');
       if (btnPromover) btnPromover.addEventListener('click', () => this.promoverProximoPassoATarefa(pp.id));
+      const btnHoras = tr.querySelector('[data-acao="registar-horas"]');
+      if (btnHoras) btnHoras.addEventListener('click', () => this.registarHorasDoProximoPasso(pp.id));
       e.corpoProximosPassos.appendChild(tr);
     });
   },
   abrirProjetoNoAcompanhamento(id) {
-    this.selecionarProjeto(id);
-    this.renderProjetoSelect();
+    const p = this.state.projetos[id];
+    if (!p) return;
+    this.acompanhamentoGestorId = p.gestorId || '';
+    this.acompanhamentoProjetoId = id;
     this.irParaAba('acompanhamento');
+    this.renderAcompanhamento();
   },
 
   // ---------- Tab: Todos os Next Steps (visão global, só Administrador) ----------
@@ -4721,7 +4943,11 @@ const App = {
       if (document.visibilityState === 'visible') this.atualizarDaNuvem({ silencioso: true });
     });
     document.getElementById('btnAddPontoSituacao').addEventListener('click', () => this.criarPontoSituacao());
-    document.getElementById('btnAddProximoPasso').addEventListener('click', () => this.criarProximoPasso());
+    document.getElementById('btnAddProximoPasso').addEventListener('click', () => this.abrirModalNovoProximoPasso());
+    e.acompGestor.addEventListener('change', () => this.selecionarGestorAcompanhamento(e.acompGestor.value));
+    e.acompProjeto.addEventListener('change', () => this.selecionarProjetoAcompanhamento(e.acompProjeto.value));
+    e.acompReuniaoData.addEventListener('change', () => this.atualizarReuniaoAtiva('data', e.acompReuniaoData.value));
+    e.acompReuniaoFeedback.addEventListener('change', () => this.atualizarReuniaoAtiva('feedback', e.acompReuniaoFeedback.value));
 
     let sincronizando = false;
     e.painelTabela.addEventListener('scroll', () => {
