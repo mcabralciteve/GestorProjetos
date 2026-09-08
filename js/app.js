@@ -634,6 +634,22 @@ const App = {
   souGestorDeAlgumProjeto() {
     return this.souAdmin() || Object.keys(this.state.projetos).some(id => this.souGestorDe(id));
   },
+  // Resolve o projeto real a que um registo pertence — por "projetoId" (uuid, registos recentes)
+  // ou, em registos anteriores a esse campo, por "projetoIdInterno" (mesmo padrão de fallback de
+  // App.horasJaRegistadasTarefa). Devolve null se não corresponder a nenhum projeto carregado.
+  projetoDoRegisto(r) {
+    if (r.projetoId && this.state.projetos[r.projetoId]) return this.state.projetos[r.projetoId];
+    return Object.values(this.state.projetos).find(p => p.idInterno === r.projetoIdInterno) || null;
+  },
+  // Quem pode editar/reatribuir ou apagar um registo já existente (tabela de Registos): o
+  // Administrador (qualquer registo), ou o Gestor do projeto a que ESSE registo pertence — nunca
+  // um Gestor de outro projeto, nem um Consultor comum (mesmo em registos seus). Um registo órfão
+  // (projeto entretanto eliminado, ou nunca resolvido) só o Administrador consegue tocar.
+  possoEditarRegisto(r) {
+    if (this.souAdmin()) return true;
+    const p = this.projetoDoRegisto(r);
+    return !!p && this.souGestorDe(p.id);
+  },
   meusProjetosEnvolvidos() {
     return Object.values(this.state.projetos).filter(p => this.estouEnvolvidoEm(p.id));
   },
@@ -1569,6 +1585,8 @@ const App = {
     return registo;
   },
   eliminarRegisto(id) {
+    const r = this.state.registos.find(x => x.id === id);
+    if (!r || !this.possoEditarRegisto(r)) return;
     if (!confirm('Eliminar este registo? A base de dados é partilhada — esta ação remove-o para toda a equipa, não só para ti.')) return;
     this.state.registos = this.state.registos.filter(r => r.id !== id);
     this.persist();
@@ -2727,7 +2745,9 @@ const App = {
     e.regTarefa.disabled = !p;
   },
   // Mesma lógica de "a que projetos/tarefas esta pessoa está ligada" do formulário de criar
-  // registo, reutilizada para editar linhas já existentes na tabela de Registos (só Administrador).
+  // registo, reutilizada para editar linhas já existentes na tabela de Registos (Administrador ou
+  // Gestor do projeto — ver possoEditarRegisto/renderTabelaRegistos, que filtra o resultado desta
+  // função aos projetos que o Gestor gere; devolve tudo sem filtrar, é o chamador que restringe).
   projetosDaPessoaRegisto(nomePessoa) {
     const recurso = this.state.recursos.find(r => r.nome === nomePessoa);
     if (!recurso) return [];
@@ -2739,14 +2759,14 @@ const App = {
     if (!p || !recurso) return [];
     return this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa);
   },
-  // Edição direta de um registo já existente (só Administrador) — ao contrário da criação, isto
-  // não passa pelo undo/redo nem pelo diff de sincronização normal (registos, por design, só são
-  // sincronizados como "novo" ou "apagado" — ver Sync.sincronizarListaSimples/sincronizarRegistos);
-  // por isso escreve logo na Supabase, como já acontece com atualizarUtilizador/atualizarConta.
+  // Edição direta de um registo já existente (Administrador, ou o Gestor do projeto a que o
+  // registo pertence — ver possoEditarRegisto) — ao contrário da criação, isto não passa pelo
+  // undo/redo nem pelo diff de sincronização normal (registos, por design, só são sincronizados
+  // como "novo" ou "apagado" — ver Sync.sincronizarListaSimples/sincronizarRegistos); por isso
+  // escreve logo na Supabase, como já acontece com atualizarUtilizador/atualizarConta.
   async atualizarCampoRegisto(id, campo, valor) {
-    if (!this.souAdmin()) return;
     const r = this.state.registos.find(x => x.id === id);
-    if (!r) return;
+    if (!r || !this.possoEditarRegisto(r)) return;
     const campos = {};
     if (campo === 'data') {
       // Mesmo problema do <input type="date"> nas tarefas do Gantt: dispara "change" logo ao
@@ -2777,9 +2797,16 @@ const App = {
   // com a combinação final validada (a tarefa escolhida tem mesmo de pertencer ao projeto e a
   // pessoa indicados).
   async gravarLinhaRegisto(id, alteracoes) {
-    if (!this.souAdmin()) return;
     const r = this.state.registos.find(x => x.id === id);
-    if (!r) return;
+    if (!r || !this.possoEditarRegisto(r)) return;
+    // Um Gestor (não-admin) só pode mover o registo para outro projeto que ele próprio também
+    // gira — nunca "emprestar" um registo a um projeto alheio. A interface já só lhe oferece essas
+    // opções (ver renderTabelaRegistos); isto é só a defesa a mais, verificada ANTES de mexer em
+    // qualquer coisa, para nunca deixar `r` a meio de uma alteração parcial.
+    if ('projetoIdInterno' in alteracoes && !this.souAdmin()) {
+      const projAlvo = Object.values(this.state.projetos).find(p => p.idInterno === alteracoes.projetoIdInterno);
+      if (!projAlvo || !this.souGestorDe(projAlvo.id)) return;
+    }
     const campos = {};
     if ('pessoa' in alteracoes) { r.pessoa = alteracoes.pessoa; campos.pessoa = r.pessoa; }
     if ('projetoIdInterno' in alteracoes) {
@@ -2912,13 +2939,13 @@ const App = {
     const pagina = filtrados.slice(inicio, inicio + tamanho);
 
     e.corpoTabelaRegistos.innerHTML = '';
-    const admin = this.souAdmin();
     if (!pagina.length) {
       e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="9" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
     }
     pagina.forEach(r => {
       const tr = document.createElement('tr');
-      if (!admin) {
+      const podeEditar = this.possoEditarRegisto(r);
+      if (!podeEditar) {
         tr.innerHTML = `
           <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
           <td>${escapeHtml(r.pessoa)}</td>
@@ -2928,16 +2955,21 @@ const App = {
           <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
           <td>${escapeHtml(r.notas)}</td>
           <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
-          <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
-        tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+          <td class="col-acoes"></td>`;
         e.corpoTabelaRegistos.appendChild(tr);
         return;
       }
-      // Administrador: todos os campos editáveis, com Projeto/Tarefa em cascata sobre a Pessoa —
-      // as mesmas regras de "a que projetos/tarefas esta pessoa está ligada" do formulário de
-      // criar registo (renderProjetosRegisto/renderTarefasRegisto), só que por linha já existente.
+      // Administrador: todos os campos editáveis, sem restrição de Pessoa/Projeto. Gestor de
+      // Projeto (não-admin): mesma edição, mas as opções de Pessoa/Projeto ficam limitadas ao que
+      // ele próprio gere (recursosPermitidosRegisto/só projetos onde souGestorDe) — nunca pode
+      // "emprestar" horas a um projeto ou consultor fora da sua gestão (ver também a defesa em
+      // gravarLinhaRegisto). Projeto/Tarefa em cascata sobre a Pessoa — as mesmas regras de "a que
+      // projetos/tarefas esta pessoa está ligada" do formulário de criar registo
+      // (renderProjetosRegisto/renderTarefasRegisto), só que por linha já existente.
       // Cliente nunca se edita à parte — segue sempre o Projeto escolhido (ver atualizarCampoRegisto).
-      const opcoesPessoa = this.state.recursos.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
+      const admin = this.souAdmin();
+      const pessoasPermitidas = admin ? this.state.recursos : this.recursosPermitidosRegisto();
+      const opcoesPessoa = pessoasPermitidas.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
       tr.innerHTML = `
         <td><input type="date" value="${r.data}" data-campo="data" style="min-width:120px"></td>
         <td><select data-campo="pessoa">${opcoesPessoa}</select></td>
@@ -2956,7 +2988,9 @@ const App = {
       const preencherProjetos = (manterSelecao) => {
         const selProjeto = tr.querySelector('[data-campo="projetoIdInterno"]');
         const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
-        const projetos = this.projetosDaPessoaRegisto(nomePessoa);
+        // Gestor (não-admin): só projetos que ele próprio gere, mesmo que a pessoa tenha tarefas
+        // noutros — nunca oferecer como opção um projeto onde não tem permissão para mexer.
+        const projetos = this.projetosDaPessoaRegisto(nomePessoa).filter(p => admin || this.souGestorDe(p.id));
         if (!projetos.length) {
           selProjeto.innerHTML = '<option value="">Sem projetos atribuídos</option>';
           selProjeto.disabled = true;
