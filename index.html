@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260908b">
+<link rel="stylesheet" href="css/style.css?v=20260908c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -622,6 +622,7 @@
       <label class="zoom-label">Até <input type="date" id="fRegAte"></label>
       <label class="zoom-label">Pesquisar <input type="text" id="fRegTexto" placeholder="tarefa, notas…"></label>
       <button id="btnLimparFiltrosRegisto" class="btn btn-sm">Limpar filtros</button>
+      <button id="btnExportRegistosCsv" class="btn btn-sm" title="Exportar os registos filtrados para CSV (abre no Excel)">⬇ CSV</button>
     </div>
     <div class="legend-row" id="statsRegisto"></div>
     <div class="table-scroll">
@@ -684,6 +685,7 @@
       <label class="zoom-label">Até <input type="date" id="fFatAte"></label>
       <label class="zoom-label">Nº de registo <input type="text" id="fFatNumRegisto" placeholder="ex.: FT 2026/123"></label>
       <button id="btnLimparFiltrosFaturacao" class="btn btn-sm">Limpar filtros</button>
+      <button id="btnExportFaturasCsv" class="btn btn-sm" title="Exportar as faturas filtradas para CSV (abre no Excel)">⬇ CSV</button>
     </div>
 
     <div class="table-scroll">
@@ -847,14 +849,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260908b"></script>
-<script src="js/auth.js?v=20260908b"></script>
-<script src="js/sync.js?v=20260908b"></script>
-<script src="js/gantt.js?v=20260908b"></script>
-<script src="js/capacidade.js?v=20260908b"></script>
-<script src="js/portfolio-gantt.js?v=20260908b"></script>
-<script src="js/reserva-viatura.js?v=20260908b"></script>
-<script src="js/backup.js?v=20260908b"></script>
-<script src="js/app.js?v=20260908b"></script>
+<script src="js/supabase-config.js?v=20260908c"></script>
+<script src="js/auth.js?v=20260908c"></script>
+<script src="js/sync.js?v=20260908c"></script>
+<script src="js/gantt.js?v=20260908c"></script>
+<script src="js/capacidade.js?v=20260908c"></script>
+<script src="js/portfolio-gantt.js?v=20260908c"></script>
+<script src="js/reserva-viatura.js?v=20260908c"></script>
+<script src="js/backup.js?v=20260908c"></script>
+<script src="js/app.js?v=20260908c"></script>
 </body>
 </html>

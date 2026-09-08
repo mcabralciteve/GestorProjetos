@@ -754,8 +754,7 @@ const App = {
   // continuarem a apontar umas para as outras (recursoIds/alocacoesHoras não mudam, porque
   // continuam a referir-se aos MESMOS recursos, não a outras tarefas). Usado sempre que um
   // conjunto de tarefas muda de "dono" sem deixar de ser, estruturalmente, a mesma árvore —
-  // duplicar um projeto, ou importar um ficheiro Excel (onde os IDs do ficheiro só servem para
-  // resolver as referências dentro dele, nunca são usados como o UUID final).
+  // hoje só ao duplicar um projeto (não existe importação de ficheiro nesta app).
   remaparIdsTarefas(tarefas) {
     const mapa = new Map();
     tarefas.forEach(t => mapa.set(t.id, crypto.randomUUID()));
@@ -2959,13 +2958,13 @@ const App = {
       default: return r.data || '';
     }
   },
-  renderTabelaRegistos() {
-    const e = this.els;
-    if (!e.corpoTabelaRegistos) return;
+  // Registos filtrados (filtrosRegisto) e ordenados (ordenacaoRegistos) — partilhado entre a
+  // tabela (paginada) e a exportação CSV (sempre tudo, sem paginar), para nunca poderem divergir.
+  registosFiltradosOrdenados() {
     const f = this.filtrosRegisto;
     const { campo, dir } = this.ordenacaoRegistos;
     const mult = dir === 'desc' ? -1 : 1;
-    const filtrados = this.state.registos.filter(r => {
+    return this.state.registos.filter(r => {
       if (f.pessoa && r.pessoa !== f.pessoa) return false;
       if (f.projeto && r.projetoIdInterno !== f.projeto) return false;
       if (f.de && r.data < f.de) return false;
@@ -2978,6 +2977,12 @@ const App = {
       if (va > vb) return 1 * mult;
       return b.id - a.id;
     });
+  },
+  renderTabelaRegistos() {
+    const e = this.els;
+    if (!e.corpoTabelaRegistos) return;
+    const filtrados = this.registosFiltradosOrdenados();
+    const { campo, dir } = this.ordenacaoRegistos;
 
     document.querySelectorAll('#tabelaRegistos thead th[data-sort]').forEach(th => {
       const ativo = th.dataset.sort === campo;
@@ -3262,17 +3267,22 @@ const App = {
       default: return f.dataPrevista || '';
     }
   },
-  renderTabelaFaturas() {
-    const e = this.els;
-    if (!e.corpoTabelaFaturas) return;
-    const f = this.filtrosFaturacao || {};
-    const { campo, dir } = this.ordenacaoFaturas;
-    const mult = dir === 'desc' ? -1 : 1;
+  // Faturas (de projetos editáveis pelo utilizador) filtradas e ordenadas — partilhado entre a
+  // tabela e a exportação CSV, para nunca poderem divergir. "linhasTodas" (sem filtro) fica à
+  // parte porque renderTabelaFaturas também precisa dela para os totais/alerta de sobrefaturação
+  // (que são sobre TODAS as faturas visíveis, não só as que passam o filtro).
+  linhasFaturas() {
     const linhas = [];
     Object.values(this.state.projetos).filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
       (p.faturas || []).forEach(fat => linhas.push({ projeto: p, fatura: fat }));
     });
-    const filtradas = linhas.filter(({ projeto: p, fatura: fat }) => {
+    return linhas;
+  },
+  faturasFiltradasOrdenadas(linhasTodas) {
+    const f = this.filtrosFaturacao || {};
+    const { campo, dir } = this.ordenacaoFaturas;
+    const mult = dir === 'desc' ? -1 : 1;
+    return linhasTodas.filter(({ projeto: p, fatura: fat }) => {
       if (f.projeto && p.id !== f.projeto) return false;
       if (f.de && fat.dataPrevista < f.de) return false;
       if (f.ate && fat.dataPrevista > f.ate) return false;
@@ -3284,6 +3294,13 @@ const App = {
       if (va > vb) return 1 * mult;
       return 0;
     });
+  },
+  renderTabelaFaturas() {
+    const e = this.els;
+    if (!e.corpoTabelaFaturas) return;
+    const { campo, dir } = this.ordenacaoFaturas;
+    const linhas = this.linhasFaturas();
+    const filtradas = this.faturasFiltradasOrdenadas(linhas);
 
     document.querySelectorAll('#tabelaFaturas thead th[data-sort]').forEach(th => {
       const ativo = th.dataset.sort === campo;
@@ -3337,6 +3354,17 @@ const App = {
       tr.querySelector('button').addEventListener('click', () => this.eliminarFatura(p.id, fat.id));
       e.corpoTabelaFaturas.appendChild(tr);
     });
+  },
+  exportarFaturasCsv() {
+    const filtradas = this.faturasFiltradasOrdenadas(this.linhasFaturas());
+    if (!filtradas.length) { this.toast('Sem faturas para exportar — revê os filtros.'); return; }
+    const linhas = [['Projeto', 'Cliente', 'Data Prevista', 'Tipo', '%', 'Valor (€)', 'Emitida', 'Data Emissão', 'Emitido Por', 'Nº Registo']];
+    filtradas.forEach(({ projeto: p, fatura: fat }) => linhas.push([
+      p.idInterno || p.nome, p.cliente || '', fat.dataPrevista, fat.tipo === 'percentagem' ? '%' : 'Valor',
+      fat.tipo === 'percentagem' ? fat.percentagem : '', this.valorFatura(fat, p).toFixed(2),
+      fat.emitida ? 'Sim' : 'Não', fat.dataEmissao || '', fat.emitidoPor || '', fat.numeroRegisto || ''
+    ]));
+    this.descarregarBlob(this.csvParaBlob(linhas), `Faturacao_${DateUtil.todayISO()}.csv`);
   },
 
   // ---------- Tab: Viaturas ----------
@@ -3801,7 +3829,7 @@ const App = {
       if (btn) btn.style.display = podeEditar ? '' : 'none';
     });
     if (!p) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo ou importa um ficheiro de projeto.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo projeto para começar.</td></tr>';
       return;
     }
     const lista = this.flatten(p);
@@ -3961,9 +3989,23 @@ const App = {
       const nomesPred = t.predecessores.map(pr => { const pt = this.tarefaPorId(p, pr.id); return pt ? `${pt.nome} (${pr.tipo})` : ''; }).filter(Boolean).join('; ');
       linhas.push(['  '.repeat(nivel) + t.nome, t.inicio, t.fim, duracao, t.progresso, horasReais || '', nomesRec, nomesPred]);
     });
+    this.descarregarBlob(this.csvParaBlob(linhas), this.nomeFicheiroExport(p, 'csv'));
+  },
+  // Junta as linhas (array de arrays) num único ".csv" pronto a descarregar — mesmo separador ";"
+  // e BOM UTF-8 usados em todas as exportações CSV da app (ver csvEscape).
+  csvParaBlob(linhas) {
     const csv = linhas.map(l => l.map(v => this.csvEscape(v)).join(';')).join('\r\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    this.descarregarBlob(blob, this.nomeFicheiroExport(p, 'csv'));
+    return new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  },
+  exportarRegistosCsv() {
+    const filtrados = this.registosFiltradosOrdenados();
+    if (!filtrados.length) { this.toast('Sem registos para exportar — revê os filtros.'); return; }
+    const linhas = [['Data', 'Pessoa', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
+    filtrados.forEach(r => linhas.push([
+      r.data, r.pessoa, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
+      r.tarefaNome || '', parseFloat(r.horas) || 0, r.notas || '', r.origem || ''
+    ]));
+    this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${DateUtil.todayISO()}.csv`);
   },
   // Copia, do SVG ainda ligado ao documento (onde var(--...) e as classes CSS já estão
   // resolvidas), as propriedades visuais para o clone que vai ser serializado sozinho — um SVG
@@ -4534,6 +4576,7 @@ const App = {
       e.fRegPessoa.value = ''; e.fRegProjeto.value = ''; e.fRegDe.value = ''; e.fRegAte.value = ''; e.fRegTexto.value = '';
       this.aplicarFiltrosRegisto();
     });
+    document.getElementById('btnExportRegistosCsv').addEventListener('click', () => this.exportarRegistosCsv());
 
     if (e.fCalPessoa) e.fCalPessoa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.fCalProjeto) e.fCalProjeto.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
@@ -4548,6 +4591,7 @@ const App = {
       e.fFatProjeto.value = ''; e.fFatDe.value = ''; e.fFatAte.value = ''; e.fFatNumRegisto.value = '';
       this.aplicarFiltrosFaturacao();
     });
+    document.getElementById('btnExportFaturasCsv').addEventListener('click', () => this.exportarFaturasCsv());
     if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
