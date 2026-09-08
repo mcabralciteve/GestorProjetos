@@ -1,6 +1,38 @@
 const Capacidade = {
   HORAS_DIA: 8,
 
+  // ---------------------------------------------------------------------------------------------
+  // Caches de curta duração (um render/interação) — limparCaches() é chamado no arranque de cada
+  // sítio que faz muitas perguntas seguidas ao motor de capacidade para o mesmo conjunto de dados
+  // (tabela de tarefas do Gantt, modal "Associar consultores"), nunca a meio. Guardam só o que não
+  // muda dentro desse período (ausências/feriados/tarefas só mudam por ação do utilizador, que já
+  // dispara um novo render a seguir) — nunca se guardam entre ações diferentes, por isso não há
+  // invalidação fina a fazer: é tudo deitado fora no início do próximo render que precise disto.
+  _cacheDiasDisponiveis: new Map(),
+  limparCaches() {
+    this._cacheDiasDisponiveis.clear();
+  },
+  // Quantos dias úteis e quantos desses estão realmente disponíveis (capacidadeDiaria > 0) numa
+  // janela [inicioISO, fimISO] para um recurso — horasNoDia precisava disto uma vez por CADA dia
+  // pedido da mesma tarefa (uma vez por célula do calendário, por ex.), refazendo o varrimento
+  // inteiro da janela de cada vez; para uma tarefa de largos meses, isso é o mesmo trabalho
+  // repetido dezenas de vezes só para desenhar um único mês. Aqui calcula-se uma vez por janela.
+  diasDisponiveisJanela(inicioISO, fimISO, recursoId) {
+    const chave = inicioISO + '|' + fimISO + '|' + recursoId;
+    const emCache = this._cacheDiasDisponiveis.get(chave);
+    if (emCache) return emCache;
+    const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
+    let diasUteis = 0, diasDisp = 0;
+    for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
+      if (this.ehFimDeSemana(d)) continue;
+      diasUteis++;
+      if (this.capacidadeDiaria(d, { id: recursoId }) > 0) diasDisp++;
+    }
+    const resultado = { diasUteis, diasDisp };
+    this._cacheDiasDisponiveis.set(chave, resultado);
+    return resultado;
+  },
+
   ehFimDeSemana(date) {
     const dow = date.getDay();
     return dow === 0 || dow === 6;
@@ -50,13 +82,7 @@ const Capacidade = {
   // completamente diferente).
   horasNoDia(horasTotais, inicioISO, fimISO, recursoId, date) {
     if (horasTotais <= 0) return 0;
-    const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
-    let diasUteis = 0, diasDisp = 0;
-    for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
-      if (this.ehFimDeSemana(d)) continue;
-      diasUteis++;
-      if (this.capacidadeDiaria(d, { id: recursoId }) > 0) diasDisp++;
-    }
+    const { diasUteis, diasDisp } = this.diasDisponiveisJanela(inicioISO, fimISO, recursoId);
     if (diasDisp === 0) return diasUteis > 0 ? horasTotais / diasUteis : 0;
     if (this.capacidadeDiaria(date, { id: recursoId }) === 0) return 0;
     return horasTotais / diasDisp;

@@ -1355,12 +1355,26 @@ const App = {
     this.renderTudo();
   },
   // Nº de dias úteis (seg-sex, sem descontar feriados/ausências) entre duas datas ISO, inclusive.
+  // Cache de curta duração (um render — ver Capacidade.limparCaches, chamado a par desta função
+  // nos mesmos sítios): sem depender de recurso nenhum (só conta dias da semana), esta conta é
+  // chamada em massa por horasTempoInteiro/horasAlocadas sempre que uma tarefa não tem horas
+  // explícitas definidas (o caso mais comum) — dentro de intervalosCriticos/avaliarAtribuicao,
+  // isso pode significar repetir o mesmo varrimento da MESMA tarefa milhares de vezes num único
+  // render (era o maior custo medido na tabela de tarefas e no modal "Associar consultores").
+  _cacheDiasUteisEntre: new Map(),
+  limparCacheDiasUteisEntre() {
+    this._cacheDiasUteisEntre.clear();
+  },
   diasUteisEntre(inicioISO, fimISO) {
+    const chave = inicioISO + '|' + fimISO;
+    const emCache = this._cacheDiasUteisEntre.get(chave);
+    if (emCache !== undefined) return emCache;
     const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
     let dias = 0;
     for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
       if (!Capacidade.ehFimDeSemana(d)) dias++;
     }
+    this._cacheDiasUteisEntre.set(chave, dias);
     return dias;
   },
   diasUteisTarefa(t) {
@@ -1380,6 +1394,38 @@ const App = {
     if (t.alocacoesHoras && t.alocacoesHoras[recursoId] !== undefined) return t.alocacoesHoras[recursoId];
     return this.horasTempoInteiro(t);
   },
+  // Índice de "registos" por tarefa (tarefaId -> horas somadas; e à parte, para registos sem
+  // tarefaId, "projeto|pessoa|nome da tarefa" -> horas) — horasJaRegistadasTarefa era chamada uma
+  // vez por tarefa dentro de Capacidade.intervalosCriticos (por sua vez chamada por tarefa×recurso
+  // em avaliarAtribuicao, usada na tabela de tarefas do Gantt e no modal "Associar consultores"),
+  // e cada chamada percorria TODOS os registos — o mesmo array, vezes sem conta, por render. Aqui
+  // percorre-se uma vez só; reconstrói-se sozinho sempre que "state.registos" passa a ser outro
+  // array (undo/redo, recarregar do Supabase — nesses casos a referência muda). A única falha
+  // desse cheque é editar um registo já existente SEM trocar o array (atualizarCampoRegisto/
+  // gravarLinhaRegisto mutam o objeto no próprio sítio) — por isso essas duas funções chamam
+  // invalidarIndiceRegistos() explicitamente a seguir a qualquer mudança que afete a soma.
+  indiceRegistosPorTarefa() {
+    if (this._indiceRegistosRef !== this.state.registos) {
+      const porTarefa = new Map(), legado = new Map();
+      this.state.registos.forEach(r => {
+        const horas = parseFloat(r.horas) || 0;
+        if (r.tarefaId) {
+          porTarefa.set(r.tarefaId, (porTarefa.get(r.tarefaId) || 0) + horas);
+        } else {
+          const chaveProjeto = r.projetoId || r.projetoIdInterno;
+          const chave = chaveProjeto + '|' + r.pessoa + '|' + r.tarefaNome;
+          legado.set(chave, (legado.get(chave) || 0) + horas);
+        }
+      });
+      this._indiceRegistosPorTarefa = porTarefa;
+      this._indiceRegistosLegado = legado;
+      this._indiceRegistosRef = this.state.registos;
+    }
+    return { porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado };
+  },
+  invalidarIndiceRegistos() {
+    this._indiceRegistosRef = null;
+  },
   // Soma das horas já registadas (Registo de Horas) para esta tarefa e este recurso — usada só
   // para prever carga FUTURA (ver Capacidade.horasRestantesTarefa), nunca para alterar o que foi
   // planeado (horasAlocadas continua a ser sempre o valor introduzido/editável). Registos novos
@@ -1390,12 +1436,15 @@ const App = {
   horasJaRegistadasTarefa(projeto, tarefa, recursoId) {
     const recurso = this.state.recursos.find(r => r.id === recursoId);
     if (!recurso) return 0;
-    return this.state.registos.reduce((soma, r) => {
-      if (r.tarefaId) return r.tarefaId === tarefa.id ? soma + (parseFloat(r.horas) || 0) : soma;
-      const projetoBate = r.projetoId ? r.projetoId === projeto.id : r.projetoIdInterno === projeto.idInterno;
-      if (projetoBate && r.pessoa === recurso.nome && r.tarefaNome === tarefa.nome) return soma + (parseFloat(r.horas) || 0);
-      return soma;
-    }, 0);
+    const { porTarefa, legado } = this.indiceRegistosPorTarefa();
+    const viaId = porTarefa.get(tarefa.id) || 0;
+    // O projeto pode ter sido casado por "projetoId" ou por "projetoIdInterno" (ver o índice
+    // acima) — um registo antigo só bate contra UMA das duas formas, nunca as duas ao mesmo tempo,
+    // por isso somar as duas chaves não arrisca contar nada em duplicado.
+    const chaveBase = '|' + recurso.nome + '|' + tarefa.nome;
+    const viaLegadoId = legado.get(projeto.id + chaveBase) || 0;
+    const viaLegadoInterno = legado.get(projeto.idInterno + chaveBase) || 0;
+    return viaId + viaLegadoId + viaLegadoInterno;
   },
   definirHorasRecursoTarefa(projeto, taskId, recursoId, valor) {
     const t = this.tarefaPorId(projeto, taskId);
@@ -1574,7 +1623,10 @@ const App = {
   },
   submeterRegisto(dados) {
     const registo = this.novoRegistoObj(Object.assign({ origem: 'app' }, dados));
+    // "push" muda o conteúdo mas não a referência do array — o índice de indiceRegistosPorTarefa
+    // não notaria sozinho que há um registo novo (só deteta troca de array, ver esse método).
     this.state.registos.push(registo);
+    this.invalidarIndiceRegistos();
     try { localStorage.setItem(this.ULTIMA_PESSOA_KEY, dados.pessoa); } catch (e) { /* ignora */ }
     this.persist();
     this.renderTabelaRegistos();
@@ -2455,6 +2507,10 @@ const App = {
     if (!e.calendarioAlocacoes) return;
     this.renderLegendaOcupacao('legendaOcupacao');
     if (!this.souGestorDeAlgumProjeto()) return; // sem acesso (separador nem devia estar visível)
+    // Ver a nota em renderTabelaTarefas — garante que este render nunca reaproveita um cache do
+    // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
     if (!this.alocMesAtual) { const hoje = new Date(); this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
 
     const recursosPermitidos = this.recursosPermitidosRegisto();
@@ -2585,6 +2641,10 @@ const App = {
     const e = this.els;
     if (!e.gridCapacidade) return;
     this.renderLegendaOcupacao('legendaCapacidade');
+    // Ver a nota em renderTabelaTarefas — garante que este render nunca reaproveita um cache do
+    // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
     const nMeses = parseInt(e.selHorizonteCap.value, 10) || 6;
     // "A partir de" (input type=month) — por omissão o mês atual (mantém o comportamento de
     // sempre mostrar os 6 meses seguintes), mas dá para recuar e ver meses passados.
@@ -2780,6 +2840,7 @@ const App = {
       const h = parseFloat(valor);
       if (!h || h <= 0) { this.toast('Horas é obrigatório e tem de ser maior que zero.'); this.renderTabelaRegistos(); return; }
       r.horas = h; campos.horas = h;
+      this.invalidarIndiceRegistos();
     } else if (campo === 'notas') {
       r.notas = valor.trim(); campos.notas = r.notas;
     } else {
@@ -2828,6 +2889,7 @@ const App = {
       const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(r.projetoIdInterno, r.pessoa).find(t => t.nome === r.tarefaNome);
       r.tarefaId = tarefaReal ? tarefaReal.id : null;
       campos.tarefa_id = r.tarefaId;
+      this.invalidarIndiceRegistos();
     }
     try {
       await Sync.atualizarRegisto(id, campos);
@@ -3726,6 +3788,13 @@ const App = {
     const p = this.projetoAtivo();
     const tbody = this.els.corpoTabelaTarefas;
     tbody.innerHTML = '';
+    // Limpa os caches de curta duração do motor de capacidade (ver Capacidade.limparCaches) — este
+    // render pede avaliarAtribuicao uma vez por (tarefa, consultor), e cada uma delas pode repetir
+    // o mesmo trabalho de "quantos dias tem esta janela disponíveis" várias vezes; limpar aqui
+    // garante que nunca se reaproveita nada de um render anterior (tarefas/ausências podem ter
+    // mudado entretanto), só dentro deste.
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
     const podeEditar = !!p && this.possoEditarProjeto(p.id);
     ['btnAddTarefa', 'btnAddSubtarefa', 'btnAddRecorrente', 'btnSubir', 'btnDescer', 'btnIndent', 'btnOutdent', 'btnAssociarLote', 'btnDelTarefa'].forEach(id => {
       const btn = document.getElementById(id);
@@ -4161,6 +4230,10 @@ const App = {
   abrirModalAlocacoesRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
     if (!r) return;
+    // Ver a nota em renderTabelaTarefas — garante que este modal nunca reaproveita um cache do
+    // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
     const linhas = [];
     Object.values(this.state.projetos).forEach(p => {
       p.tarefas.forEach(t => {
@@ -4228,6 +4301,28 @@ const App = {
     if (resultado.nivel === 'aviso') return { texto: `● Perto do limite (${Math.round(resultado.pct * 100)}%)`, classe: 'aviso' };
     return { texto: '● Livre', classe: 'ok' };
   },
+  // Monta o <label> de UM consultor na lista do modal "Associar consultores" — usado tanto para
+  // montar o modal inteiro (na primeira abertura) como para atualizar só esta linha depois (ver
+  // abrirModalRecursos), sem recalcular nem tocar nas linhas dos outros consultores.
+  montarLinhaModalRecursos(p, t, r) {
+    const resultado = Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id));
+    const horas = this.horasAlocadas(t, r.id);
+    const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
+    const disp = this.rotuloDisponibilidade(resultado);
+    const dica = Capacidade.descreverProblema(r.nome, resultado) || 'Sem conflitos conhecidos neste período.';
+    const marcado = t.recursoIds.includes(r.id);
+    const livreHoras = Capacidade.capacidadeLivreHoras(r, t.id, t.inicio, t.fim);
+    return `
+      <label class="rec-check" data-linha-recurso="${r.id}">
+        <input type="checkbox" value="${r.id}" ${marcado ? 'checked' : ''}>
+        <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:var(--cinza-500)">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
+        <span class="rec-horas-wrap">
+          <input type="number" class="rec-horas" min="0" step="0.25" value="${horas}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
+          ${livreHoras !== null ? `<span class="hint-livre" title="Horas livres deste consultor neste período, sem ultrapassar 100% em nenhum dia, dadas as outras tarefas desta pessoa">Livre: ${livreHoras.toFixed(1)}h</span>` : ''}
+        </span>
+        <span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dica)}">${disp.texto}</span>
+      </label>`;
+  },
   abrirModalRecursos(taskId) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, taskId);
@@ -4236,40 +4331,42 @@ const App = {
       this.abrirModal(`Associar consultores — ${t.nome}`, '<p>Sem consultores definidos. Adiciona no separador "Pessoas".</p>');
       return;
     }
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
+    // A ordenação por nível (crítico primeiro) só se faz UMA vez, ao abrir — mexer nas horas ou na
+    // atribuição de UM consultor nunca muda o resultado de avaliarAtribuicao de outro (cada um só
+    // olha para as SUAS PRÓPRIAS outras tarefas, nunca para as dos colegas), por isso não há razão
+    // nenhuma para recalcular e reordenar a lista inteira sempre que um único campo muda — só essa
+    // linha precisa de se atualizar (ver ligarEventosLinha/atualizarLinha, mais abaixo), o que era
+    // o maior custo sentido ao usar este modal com uma equipa grande.
     const ordemNivel = { critico: 0, aviso: 1, ok: 2, subutilizado: 2, vazio: 2 };
-    const linhas = this.state.recursos.map(r => ({ r, horas: this.horasAlocadas(t, r.id), resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
+    const linhas = this.state.recursos.map(r => ({ r, resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
     const html = `
       <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. Por omissão a alocação é a tempo inteiro (${horasCheias}h, toda a duração útil da tarefa) — ajusta as horas totais previstas se a pessoa não for dedicar esse tempo todo.</p>
-      ${linhas.map(({ r, horas, resultado }) => {
-        const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
-        const disp = this.rotuloDisponibilidade(resultado);
-        const dica = Capacidade.descreverProblema(r.nome, resultado) || 'Sem conflitos conhecidos neste período.';
-        const marcado = t.recursoIds.includes(r.id);
-        const livreHoras = Capacidade.capacidadeLivreHoras(r, t.id, t.inicio, t.fim);
-        return `
-        <label class="rec-check">
-          <input type="checkbox" value="${r.id}" ${marcado ? 'checked' : ''}>
-          <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:var(--cinza-500)">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
-          <span class="rec-horas-wrap">
-            <input type="number" class="rec-horas" min="0" step="0.25" value="${horas}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
-            ${livreHoras !== null ? `<span class="hint-livre" title="Horas livres deste consultor neste período, sem ultrapassar 100% em nenhum dia, dadas as outras tarefas desta pessoa">Livre: ${livreHoras.toFixed(1)}h</span>` : ''}
-          </span>
-          <span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dica)}">${disp.texto}</span>
-        </label>`;
-      }).join('')}`;
+      ${linhas.map(({ r }) => this.montarLinhaModalRecursos(p, t, r)).join('')}`;
     this.abrirModal(`Associar consultores — ${t.nome}`, html);
-    this.els.modalCorpo.querySelectorAll('[data-horas-recurso]').forEach(inp => {
-      inp.addEventListener('change', () => {
-        this.definirHorasRecursoTarefa(p, taskId, inp.dataset.horasRecurso, inp.value);
-        this.abrirModalRecursos(taskId);
+
+    const atualizarLinha = (recursoId) => {
+      const r = this.state.recursos.find(x => x.id === recursoId);
+      const linhaAtual = this.els.modalCorpo.querySelector(`[data-linha-recurso="${recursoId}"]`);
+      if (!r || !linhaAtual) return;
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = this.montarLinhaModalRecursos(p, t, r);
+      const novaLinha = wrapper.firstElementChild;
+      ligarEventosLinha(novaLinha);
+      linhaAtual.replaceWith(novaLinha);
+    };
+    const ligarEventosLinha = (linhaEl) => {
+      linhaEl.querySelector('[data-horas-recurso]').addEventListener('change', (ev) => {
+        this.definirHorasRecursoTarefa(p, taskId, ev.target.dataset.horasRecurso, ev.target.value);
+        atualizarLinha(ev.target.dataset.horasRecurso);
       });
-    });
-    this.els.modalCorpo.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const recursoId = cb.value;
-        if (cb.checked) {
+      linhaEl.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
+        const recursoId = ev.target.value;
+        let datasMudaram = false;
+        if (ev.target.checked) {
           const r = this.state.recursos.find(x => x.id === recursoId);
           const novoFim = Capacidade.calcularFimComCompensacao(r, t.inicio, t.fim);
           if (novoFim) {
@@ -4281,13 +4378,19 @@ const App = {
             if (estender) {
               t.fim = DateUtil.toISO(novoFim);
               this.recalcularAgendamento(p);
+              datasMudaram = true;
             }
           }
         }
         this.alternarRecursoTarefa(taskId, recursoId);
-        this.abrirModalRecursos(taskId);
+        // Só quando o PRAZO da tarefa muda (compensação de indisponibilidade) é que todas as
+        // linhas passam a depender de uma janela diferente — só nesse caso vale a pena refazer o
+        // modal inteiro; nos outros casos, (des)associar um consultor não muda o resultado de mais
+        // ninguém, só o dele.
+        if (datasMudaram) this.abrirModalRecursos(taskId); else atualizarLinha(recursoId);
       });
-    });
+    };
+    this.els.modalCorpo.querySelectorAll('[data-linha-recurso]').forEach(ligarEventosLinha);
   },
   abrirModalPredecessoras(taskId) {
     const p = this.projetoAtivo();
