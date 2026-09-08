@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260908c">
+<link rel="stylesheet" href="css/style.css?v=20260908d">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -794,6 +794,7 @@
     <p class="pagina-sub">Visão geral, só para o Administrador, de todos os next steps de todos os projetos — usa os filtros para encontrar rapidamente o que precisas. Clica em "Abrir" para ir para o Acompanhamento desse projeto e editar.</p>
 
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Gestor <select id="fPassoGestor"><option value="">Todos</option></select></label>
       <label class="zoom-label">Projeto <select id="fPassoProjeto"><option value="">Todos</option></select></label>
       <label class="zoom-label">Sessão <select id="fPassoSessao"><option value="">Todas</option></select></label>
       <label class="zoom-label">Responsável <select id="fPassoResponsavel"><option value="">Todos</option></select></label>
@@ -813,6 +814,7 @@
       <table class="tabela-crud" id="tabelaTodosPassos">
         <thead>
           <tr>
+            <th data-col="gestor" data-sort="gestor" style="width:120px">Gestor<span class="col-resizer"></span></th>
             <th data-col="projeto" data-sort="projeto">Projeto<span class="col-resizer"></span></th>
             <th data-col="sessao" data-sort="sessao" style="width:110px">Sessão<span class="col-resizer"></span></th>
             <th data-col="descricao" data-sort="descricao">Descrição<span class="col-resizer"></span></th>
@@ -849,14 +851,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260908c"></script>
-<script src="js/auth.js?v=20260908c"></script>
-<script src="js/sync.js?v=20260908c"></script>
-<script src="js/gantt.js?v=20260908c"></script>
-<script src="js/capacidade.js?v=20260908c"></script>
-<script src="js/portfolio-gantt.js?v=20260908c"></script>
-<script src="js/reserva-viatura.js?v=20260908c"></script>
-<script src="js/backup.js?v=20260908c"></script>
-<script src="js/app.js?v=20260908c"></script>
+<script src="js/supabase-config.js?v=20260908d"></script>
+<script src="js/auth.js?v=20260908d"></script>
+<script src="js/sync.js?v=20260908d"></script>
+<script src="js/gantt.js?v=20260908d"></script>
+<script src="js/capacidade.js?v=20260908d"></script>
+<script src="js/portfolio-gantt.js?v=20260908d"></script>
+<script src="js/reserva-viatura.js?v=20260908d"></script>
+<script src="js/backup.js?v=20260908d"></script>
+<script src="js/app.js?v=20260908d"></script>
 </body>
 </html>

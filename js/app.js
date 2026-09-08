@@ -61,7 +61,7 @@ const App = {
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
-  filtrosTodosPassos: { projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
+  filtrosTodosPassos: { gestor: '', projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
   filtrosProjetos: { gestorId: '', cliente: '', estado: '', estadoOrc: '' },
   // Definição das colunas da tabela de Projetos, para o painel "⚙ Colunas" — a ordem aqui é só a
   // do painel de checkboxes, não afeta a ordem real das colunas na tabela (essa é fixa no HTML).
@@ -135,6 +135,7 @@ const App = {
       corpoPontosSituacao: document.getElementById('corpoPontosSituacao'),
       corpoProximosPassos: document.getElementById('corpoProximosPassos'),
       tabBtnTodosPassos: document.getElementById('tabBtnTodosPassos'),
+      fPassoGestor: document.getElementById('fPassoGestor'),
       fPassoProjeto: document.getElementById('fPassoProjeto'),
       fPassoSessao: document.getElementById('fPassoSessao'),
       fPassoResponsavel: document.getElementById('fPassoResponsavel'),
@@ -653,11 +654,14 @@ const App = {
   meusProjetosEnvolvidos() {
     return Object.values(this.state.projetos).filter(p => this.estouEnvolvidoEm(p.id));
   },
-  // Consultores "do projeto" para efeitos de responsável de next step — quem já tem o recurso
-  // atribuído a alguma tarefa deste projeto (mesma definição usada por souConsultorDe).
+  // Pessoas elegíveis como responsável de um next step deste projeto: os consultores (quem já tem
+  // o recurso atribuído a alguma tarefa — mesma definição usada por souConsultorDe) MAIS o próprio
+  // Gestor do projeto, mesmo que não tenha nenhuma tarefa atribuída a si — muitos next steps de
+  // uma reunião de acompanhamento ficam mesmo para o Gestor tratar, não para um consultor.
   consultoresDoProjeto(p) {
     const ids = new Set();
     p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => ids.add(rid)));
+    if (p.gestorId) ids.add(p.gestorId);
     return this.state.recursos.filter(r => ids.has(r.id));
   },
   // Um next step só pode ser criado por quem pode editar o projeto (admin ou o gestor desse
@@ -674,6 +678,13 @@ const App = {
   podeEliminarProximoPasso(p, pp) {
     if (this.souAdmin()) return true;
     return !pp.fechado && this.souGestorDe(p.id) && pp.criadoPor === this.perfilAtual()?.recursoId;
+  },
+  // Em atraso: tem data prevista, já passou, e ainda não está arrumado (nem concluído/abandonado,
+  // nem fechado) — é precisamente o que vale a pena destacar antes da próxima reunião de
+  // acompanhamento. Um next step concluído ou abandonado com data prevista no passado não é um
+  // atraso, é só histórico.
+  proximoPassoAtrasado(pp) {
+    return !!pp.dataPrevista && pp.dataPrevista < DateUtil.todayISO() && pp.estado !== 'concluido' && pp.estado !== 'abandonado' && !pp.fechado;
   },
 
   // UUID gerado no cliente — aceite tal e qual pelo Postgres como chave primária (a base de
@@ -3589,6 +3600,30 @@ const App = {
     this.persist();
     this.renderAcompanhamento();
   },
+  // Cria uma tarefa nova no Gantt deste projeto a partir de um next step — para os que valem a
+  // pena passar a ser uma atividade acompanhada no plano, em vez de ficarem só como uma linha de
+  // acompanhamento. Pré-preenche nome (descrição), responsável (se já for um consultor válido
+  // deste projeto) e data prevista como fim (início é sempre hoje — a tarefa está a ser criada
+  // agora, não no passado); sem data prevista, ou já no passado, fica uma tarefa de 1 dia, tal
+  // como "+ Tarefa" já faz por omissão. Liga o next step à tarefa nova (tarefaId) — só se pode
+  // promover uma vez; depois disso, o próprio dropdown de Tarefa já mostra a ligação.
+  promoverProximoPassoATarefa(id) {
+    const p = this.projetoAtivo();
+    if (!p || !this.possoEditarProjeto(p.id)) return;
+    const pp = p.proximosPassos.find(x => x.id === id);
+    if (!pp || pp.tarefaId) return;
+    const hojeISO = DateUtil.todayISO();
+    const fim = (pp.dataPrevista && pp.dataPrevista > hojeISO) ? pp.dataPrevista : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hojeISO), 1));
+    const recursoIds = pp.responsavelId && this.state.recursos.some(r => r.id === pp.responsavelId) ? [pp.responsavelId] : [];
+    const t = this.novaTarefaObj(p, pp.descricao || 'Nova tarefa', null, hojeISO, fim, recursoIds);
+    p.tarefas.push(t);
+    pp.tarefaId = t.id;
+    pp.atualizadoEm = new Date().toISOString();
+    this.recalcularAgendamento(p);
+    this.persist();
+    this.renderTudo();
+    this.toast(`Tarefa "${t.nome}" criada no Gantt a partir deste next step.`);
+  },
   eliminarProximoPasso(id) {
     const p = this.projetoAtivo();
     if (!p) return;
@@ -3677,17 +3712,21 @@ const App = {
     e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
     passos.forEach(pp => {
       const tr = document.createElement('tr');
+      tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
       const podeEditar = this.podeEditarProximoPasso(p, pp);
       const podeEliminar = this.podeEliminarProximoPasso(p, pp);
+      const podePromover = !pp.tarefaId && this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
       const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
+      const marcadorAtraso = this.proximoPassoAtrasado(pp) ? '⚠ ' : '';
       tr.innerHTML = `
         <td>${podeEditar ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px">` : escapeHtml(pp.descricao)}</td>
         <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessao}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
-        <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}</td>
+        <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}
+          ${podePromover ? '<button type="button" class="btn btn-sm" data-acao="promover" style="margin-top:4px;" title="Cria uma tarefa nova no Gantt deste projeto a partir deste next step (nome, responsável e data prevista já vêm preenchidos)">↳ Promover a Tarefa</button>' : ''}</td>
         <td>${podeEditar ? `<select data-campo="responsavelId">${opcoesResponsavel}</select>` : escapeHtml((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '—')}</td>
-        <td>${podeEditar ? `<input type="date" value="${pp.dataPrevista || ''}" data-campo="dataPrevista">` : escapeHtml(pp.dataPrevista ? DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : '—')}</td>
+        <td>${podeEditar ? `<input type="date" value="${pp.dataPrevista || ''}" data-campo="dataPrevista">` : marcadorAtraso + escapeHtml(pp.dataPrevista ? DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : '—')}</td>
         <td>${podeEditar ? `<input type="date" value="${pp.dataReal || ''}" data-campo="dataReal">` : escapeHtml(pp.dataReal ? DateUtil.formatShort(DateUtil.parseISO(pp.dataReal)) : '—')}</td>
         <td><select data-campo="estado" ${dis}>
           <option value="aberto" ${pp.estado === 'aberto' ? 'selected' : ''}>Aberto</option>
@@ -3715,6 +3754,8 @@ const App = {
       if (btnFechar) btnFechar.addEventListener('click', () => this.fecharProximoPasso(pp.id));
       const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
       if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProximoPasso(pp.id));
+      const btnPromover = tr.querySelector('[data-acao="promover"]');
+      if (btnPromover) btnPromover.addEventListener('click', () => this.promoverProximoPassoATarefa(pp.id));
       e.corpoProximosPassos.appendChild(tr);
     });
   },
@@ -3730,7 +3771,7 @@ const App = {
   aplicarFiltrosTodosPassos() {
     const e = this.els;
     this.filtrosTodosPassos = {
-      projeto: e.fPassoProjeto.value, pontoSituacao: e.fPassoSessao.value, responsavel: e.fPassoResponsavel.value,
+      gestor: e.fPassoGestor.value, projeto: e.fPassoProjeto.value, pontoSituacao: e.fPassoSessao.value, responsavel: e.fPassoResponsavel.value,
       estado: e.fPassoEstado.value, criadoDe: e.fPassoCriadoDe.value, criadoAte: e.fPassoCriadoAte.value
     };
     this.renderTodosPassos();
@@ -3741,13 +3782,25 @@ const App = {
     const todosProjetos = Object.values(this.state.projetos);
     const f = this.filtrosTodosPassos;
 
-    const projAtual = e.fPassoProjeto.value;
-    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + todosProjetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
-    e.fPassoProjeto.value = projAtual;
+    // Gestor — uma reunião de acompanhamento é com uma PESSOA, que muitas vezes gere vários
+    // projetos; este filtro deixa ver de imediato todos os next steps dela, independentemente de
+    // em que projeto ficaram (só depois de escolher o Gestor é que normalmente interessa afinar
+    // por projeto/sessão).
+    const gestorAtual = e.fPassoGestor.value;
+    const idsGestores = new Set(todosProjetos.map(p => p.gestorId).filter(Boolean));
+    const gestoresOrdenados = this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome));
+    e.fPassoGestor.innerHTML = '<option value="">Todos</option>' + gestoresOrdenados.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
+    e.fPassoGestor.value = gestorAtual;
 
-    // A lista de sessões filtra-se pelo projeto escolhido (se houver); se o projeto mudar e a
-    // sessão selecionada deixar de fazer sentido, o filtro de sessão reinicia sozinho.
-    const projetosParaSessoes = f.projeto ? todosProjetos.filter(p => p.id === f.projeto) : todosProjetos;
+    const projetosDoGestor = f.gestor ? todosProjetos.filter(p => p.gestorId === f.gestor) : todosProjetos;
+    const projAtual = e.fPassoProjeto.value;
+    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.fPassoProjeto.value = projAtual;
+    if (e.fPassoProjeto.value !== projAtual) { f.projeto = ''; e.fPassoProjeto.value = ''; }
+
+    // A lista de sessões filtra-se pelo Gestor/projeto escolhidos; se a seleção deixar de fazer
+    // sentido, o filtro de sessão reinicia sozinho.
+    const projetosParaSessoes = f.projeto ? todosProjetos.filter(p => p.id === f.projeto) : projetosDoGestor;
     const opcoesSessao = [];
     projetosParaSessoes.forEach(p => {
       [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data)).forEach(ps => {
@@ -3766,6 +3819,7 @@ const App = {
     const linhas = [];
     todosProjetos.forEach(p => p.proximosPassos.forEach(pp => linhas.push({ p, pp })));
     const filtradas = linhas.filter(({ p, pp }) => {
+      if (f.gestor && p.gestorId !== f.gestor) return false;
       if (f.projeto && p.id !== f.projeto) return false;
       if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
       if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
@@ -3777,6 +3831,7 @@ const App = {
     const rotulosEstado = { aberto: 'Aberto', em_curso: 'Em curso', concluido: 'Concluído', abandonado: 'Abandonado' };
     const ordenadas = this.aplicarOrdenacaoTabela('tabelaTodosPassos', filtradas, ({ p, pp }, campo) => {
       switch (campo) {
+        case 'gestor': return ((this.state.recursos.find(r => r.id === p.gestorId) || {}).nome || '').toLowerCase();
         case 'projeto': return (p.idInterno || p.nome).toLowerCase();
         case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
         case 'descricao': return (pp.descricao || '').toLowerCase();
@@ -3789,18 +3844,21 @@ const App = {
       }
     });
 
-    e.corpoTodosPassos.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
+    e.corpoTodosPassos.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="11" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
     ordenadas.forEach(({ p, pp }) => {
       const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
+      const gestor = this.state.recursos.find(r => r.id === p.gestorId);
       const responsavel = this.state.recursos.find(r => r.id === pp.responsavelId);
       const criador = this.state.recursos.find(r => r.id === pp.criadoPor);
       const tr = document.createElement('tr');
+      tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
       tr.innerHTML = `
+        <td>${escapeHtml(gestor ? gestor.nome : '—')}</td>
         <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
         <td>${sessao ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(sessao.data))) : '—'}</td>
         <td>${escapeHtml(pp.descricao)}</td>
         <td>${escapeHtml(responsavel ? responsavel.nome : '—')}</td>
-        <td>${pp.dataPrevista ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista))) : '—'}</td>
+        <td>${pp.dataPrevista ? (this.proximoPassoAtrasado(pp) ? '⚠ ' : '') + escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista))) : '—'}</td>
         <td>${pp.dataReal ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataReal))) : '—'}</td>
         <td>${escapeHtml(rotulosEstado[pp.estado] || pp.estado)}${pp.fechado ? ' <span class="hint">(fechado)</span>' : ''}</td>
         <td>${escapeHtml(criador ? criador.nome : '—')}</td>
@@ -4611,9 +4669,9 @@ const App = {
     e.btnColunasProjetos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelColunasProjetos(); });
     e.painelColunasProjetos.addEventListener('click', (ev) => ev.stopPropagation()); // não fecha ao marcar várias colunas seguidas
     document.addEventListener('click', () => this.els.painelColunasProjetos.classList.remove('aberto'));
-    [e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
+    [e.fPassoGestor, e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
     document.getElementById('btnLimparFiltrosPassos').addEventListener('click', () => {
-      e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
+      e.fPassoGestor.value = ''; e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
       e.fPassoEstado.value = ''; e.fPassoCriadoDe.value = ''; e.fPassoCriadoAte.value = '';
       this.aplicarFiltrosTodosPassos();
     });
