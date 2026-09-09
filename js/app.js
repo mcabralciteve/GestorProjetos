@@ -4787,7 +4787,17 @@ const App = {
         <span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dica)}">${disp.texto}</span>
       </label>`;
   },
-  abrirModalRecursos(taskId) {
+  // Departamento por omissão do modal "Associar consultores": o do gestor do projeto (via
+  // recurso->equipa->departamento), para começar já filtrado no que mais provavelmente interessa.
+  // Cai em "Todos" (string vazia) se o gestor não tiver recurso/equipa/departamento associado —
+  // nunca esconde consultores por falta de dados, só quando há mesmo uma correspondência.
+  departamentoDefeitoAssociarConsultores(p) {
+    if (!p || !p.gestorId) return '';
+    const recGestor = this.state.recursos.find(r => r.id === p.gestorId);
+    const equipaGestor = recGestor && this.state.equipas.find(eq => eq.id === recGestor.equipaId);
+    return (equipaGestor && equipaGestor.departamento) || '';
+  },
+  abrirModalRecursos(taskId, filtrosIniciais) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, taskId);
     if (!t) return;
@@ -4802,19 +4812,70 @@ const App = {
     // olha para as SUAS PRÓPRIAS outras tarefas, nunca para as dos colegas), por isso não há razão
     // nenhuma para recalcular e reordenar a lista inteira sempre que um único campo muda — só essa
     // linha precisa de se atualizar (ver ligarEventosLinha/atualizarLinha, mais abaixo), o que era
-    // o maior custo sentido ao usar este modal com uma equipa grande.
+    // o maior custo sentido ao usar este modal com uma equipa grande. Os filtros de Departamento/
+    // Equipa/Nome (abaixo) só escondem/mostram linhas já calculadas — não recalculam nada.
     const ordemNivel = { critico: 0, aviso: 1, ok: 2, subutilizado: 2, vazio: 2 };
     const linhas = this.state.recursos.map(r => ({ r, resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
+    const departamentos = [...new Set(this.state.equipas.map(eq => eq.departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+    const filtros = Object.assign(
+      { departamento: this.departamentoDefeitoAssociarConsultores(p), equipa: '', nome: '' },
+      filtrosIniciais || {}
+    );
     const html = `
       <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. Por omissão a alocação é a tempo inteiro (${horasCheias}h, toda a duração útil da tarefa) — ajusta as horas totais previstas se a pessoa não for dedicar esse tempo todo.</p>
-      ${linhas.map(({ r }) => this.montarLinhaModalRecursos(p, t, r)).join('')}`;
+      <p id="recResumoAssociados" class="rec-resumo"></p>
+      <div class="rec-filtros">
+        <select id="recFiltroDepartamento">
+          <option value="">Todos os departamentos</option>
+          ${departamentos.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('')}
+        </select>
+        <select id="recFiltroEquipa"></select>
+        <input type="text" id="recFiltroNome" placeholder="Procurar por nome...">
+      </div>
+      <div id="recListaConsultores"></div>`;
     this.abrirModal(`Associar consultores — ${t.nome}`, html);
 
+    const m = this.els.modalCorpo;
+    const selDept = m.querySelector('#recFiltroDepartamento');
+    const selEquipa = m.querySelector('#recFiltroEquipa');
+    const inpNome = m.querySelector('#recFiltroNome');
+    const listaEl = m.querySelector('#recListaConsultores');
+    const resumoEl = m.querySelector('#recResumoAssociados');
+
+    const popularEquipas = () => {
+      const equipasDoDept = this.state.equipas.filter(eq => !filtros.departamento || eq.departamento === filtros.departamento);
+      selEquipa.innerHTML = `<option value="">Todas as equipas</option>` +
+        equipasDoDept.map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
+      if (filtros.equipa && !equipasDoDept.some(eq => eq.id === filtros.equipa)) filtros.equipa = '';
+      selEquipa.value = filtros.equipa;
+    };
+    // Resumo fixo dos já associados — não depende dos filtros ativos, para nunca "perder de vista"
+    // quem já está atribuído noutro departamento/equipa enquanto se procura mais gente.
+    const renderResumo = () => {
+      const nomes = t.recursoIds.map(id => (this.state.recursos.find(r => r.id === id) || {}).nome).filter(Boolean);
+      resumoEl.textContent = nomes.length ? `✓ ${nomes.length} já associado(s): ${nomes.join(', ')}` : 'Ainda sem consultores associados a esta tarefa.';
+    };
+    const renderLista = () => {
+      const termo = filtros.nome.trim().toLowerCase();
+      const visiveis = linhas.filter(({ r }) => {
+        if (filtros.departamento) {
+          const eq = this.state.equipas.find(x => x.id === r.equipaId);
+          if (!eq || eq.departamento !== filtros.departamento) return false;
+        }
+        if (filtros.equipa && r.equipaId !== filtros.equipa) return false;
+        if (termo && !r.nome.toLowerCase().includes(termo)) return false;
+        return true;
+      });
+      listaEl.innerHTML = visiveis.length
+        ? visiveis.map(({ r }) => this.montarLinhaModalRecursos(p, t, r)).join('')
+        : '<p class="rec-sem-resultado">Nenhum consultor corresponde a este filtro.</p>';
+      listaEl.querySelectorAll('[data-linha-recurso]').forEach(ligarEventosLinha);
+    };
     const atualizarLinha = (recursoId) => {
       const r = this.state.recursos.find(x => x.id === recursoId);
-      const linhaAtual = this.els.modalCorpo.querySelector(`[data-linha-recurso="${recursoId}"]`);
+      const linhaAtual = listaEl.querySelector(`[data-linha-recurso="${recursoId}"]`);
       if (!r || !linhaAtual) return;
       const wrapper = document.createElement('div');
       wrapper.innerHTML = this.montarLinhaModalRecursos(p, t, r);
@@ -4849,12 +4910,20 @@ const App = {
         this.alternarRecursoTarefa(taskId, recursoId);
         // Só quando o PRAZO da tarefa muda (compensação de indisponibilidade) é que todas as
         // linhas passam a depender de uma janela diferente — só nesse caso vale a pena refazer o
-        // modal inteiro; nos outros casos, (des)associar um consultor não muda o resultado de mais
-        // ninguém, só o dele.
-        if (datasMudaram) this.abrirModalRecursos(taskId); else atualizarLinha(recursoId);
+        // modal inteiro (preservando os filtros escolhidos); nos outros casos, (des)associar um
+        // consultor não muda o resultado de mais ninguém, só o dele e o resumo fixo.
+        if (datasMudaram) this.abrirModalRecursos(taskId, filtros);
+        else { atualizarLinha(recursoId); renderResumo(); }
       });
     };
-    this.els.modalCorpo.querySelectorAll('[data-linha-recurso]').forEach(ligarEventosLinha);
+
+    selDept.value = filtros.departamento;
+    popularEquipas();
+    renderResumo();
+    renderLista();
+    selDept.addEventListener('change', () => { filtros.departamento = selDept.value; popularEquipas(); renderLista(); });
+    selEquipa.addEventListener('change', () => { filtros.equipa = selEquipa.value; renderLista(); });
+    inpNome.addEventListener('input', () => { filtros.nome = inpNome.value; renderLista(); });
   },
   abrirModalPredecessoras(taskId) {
     const p = this.projetoAtivo();
