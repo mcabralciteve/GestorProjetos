@@ -51,6 +51,7 @@ const App = {
   redoStack: [],
   LIMITE_HISTORICO: 5,
   abaAtiva: 'gantt',
+  filtroGestorGantt: '',
   filtroEquipaCap: '',
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
   paginaRegistos: 1,
@@ -310,13 +311,16 @@ const App = {
         this.toast('Erro ao carregar dados da nuvem: ' + err.message);
         this.state = this.estadoVazio();
       }
-      // O projeto ativo carregado pode não ser um em que este utilizador esteja envolvido
-      // (o Supabase devolve todos os projetos, o filtro por papel é só na interface) — troca para
-      // o primeiro projeto acessível, se necessário.
-      if (!this.estouEnvolvidoEm(this.state.projetoAtivoId)) {
-        const primeiro = this.meusProjetosEnvolvidos()[0];
-        this.state.projetoAtivoId = primeiro ? primeiro.id : null;
+      // O projeto ativo carregado nem sempre é um que diga respeito a este utilizador (Sync
+      // carrega sempre o primeiro projeto da base de dados, por omissão — e um Administrador
+      // "está envolvido" em qualquer projeto por definição, o que nunca ajudava a escolher um
+      // sensato para ele). Prefere sempre um projeto onde seja mesmo Gestor ou Consultor, mesmo
+      // sendo Administrador; só cai para "qualquer um" se não tiver nenhum diretamente seu.
+      if (!this.estouDiretamenteEnvolvidoEm(this.state.projetoAtivoId)) {
+        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0];
+        this.state.projetoAtivoId = preferido ? preferido.id : null;
       }
+      this.aplicarFiltrosPorDefeito();
       this._ultimoEstadoPersistido = JSON.stringify(this.state);
       this.renderProjetoSelect();
       this.renderTudo();
@@ -416,9 +420,9 @@ const App = {
       await Sync.carregarDeSupabase();
       if (projetoAnteriorId && this.state.projetos[projetoAnteriorId] && this.estouEnvolvidoEm(projetoAnteriorId)) {
         this.state.projetoAtivoId = projetoAnteriorId;
-      } else if (!this.estouEnvolvidoEm(this.state.projetoAtivoId)) {
-        const primeiro = this.meusProjetosEnvolvidos()[0];
-        this.state.projetoAtivoId = primeiro ? primeiro.id : null;
+      } else if (!this.estouDiretamenteEnvolvidoEm(this.state.projetoAtivoId)) {
+        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0];
+        this.state.projetoAtivoId = preferido ? preferido.id : null;
       }
       this._ultimoEstadoPersistido = JSON.stringify(this.state);
       this.undoStack = [];
@@ -647,6 +651,37 @@ const App = {
   },
   souGestorDeAlgumProjeto() {
     return this.souAdmin() || Object.keys(this.state.projetos).some(id => this.souGestorDe(id));
+  },
+  // Só para decidir o projeto/filtros por OMISSÃO ao entrar na app — nunca para permissões (ver
+  // estouEnvolvidoEm para isso). Um Administrador "está envolvido" em tudo por definição, o que
+  // nunca ajuda a escolher um projeto por omissão sensato para ele — aqui, um Administrador só
+  // conta como diretamente envolvido se for mesmo Gestor ou Consultor desse projeto específico,
+  // tal como qualquer outra pessoa. Devolve sempre uma lista (nunca sozinho) porque quem chama
+  // decide o que fazer quando está vazia (ex.: cair para meusProjetosEnvolvidos()).
+  estouDiretamenteEnvolvidoEm(projetoId) {
+    return this.souGestorDe(projetoId) || this.souConsultorDe(projetoId);
+  },
+  meusProjetosDiretamente() {
+    return Object.values(this.state.projetos).filter(p => this.estouDiretamenteEnvolvidoEm(p.id));
+  },
+  // Filtros por omissão de várias vistas (Gantt, Alocações, Registo de Horas, Calendário de
+  // Registos, Capacidade) em função de quem está autenticado — mesmo o Administrador deve ver
+  // primeiro o que lhe diz respeito (o seu próprio registo/equipa/projetos), não tudo misturado
+  // logo à partida; muda-se à vontade depois, isto só decide o que aparece à primeira vista.
+  // Chamado uma vez, ao autenticar (ver aoMudarSessao) — nunca mais depois, para não apagar uma
+  // escolha feita a meio da sessão.
+  aplicarFiltrosPorDefeito() {
+    const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
+    if (!meuRecurso) return;
+    this.filtrosAlocacoes.pessoa = meuRecurso.id;
+    this.filtrosRegisto.pessoa = meuRecurso.nome;
+    this.filtrosCalendarioRegisto.pessoa = meuRecurso.nome;
+    if (meuRecurso.equipaId) this.filtroEquipaCap = meuRecurso.equipaId;
+    // Só faz sentido para o Administrador (é o único que vê este filtro — ver renderProjetoSelect)
+    // e só se ele próprio gerir algum projeto; senão fica "Todos os gestores", como já era.
+    if (this.souAdmin() && Object.values(this.state.projetos).some(p => p.gestorId === meuRecurso.id)) {
+      this.filtroGestorGantt = meuRecurso.id;
+    }
   },
   // Resolve o projeto real a que um registo pertence — por "projetoId" (uuid, registos recentes)
   // ou, em registos anteriores a esse campo, por "projetoIdInterno" (mesmo padrão de fallback de
@@ -2051,7 +2086,14 @@ const App = {
     const selGestor = this.els.selGestorFiltroGantt;
     let projetos = this.meusProjetosEnvolvidos();
     if (this.souAdmin() && selGestor) {
-      const valorAtual = selGestor.value;
+      // Esta função é ao mesmo tempo o render E o "handler" do próprio <select> (não há um
+      // aplicarFiltroGestorGantt à parte) — por isso um simples "||" com this.filtroGestorGantt
+      // ficaria preso para sempre no valor por omissão (mesmo depois de o Administrador escolher
+      // "Todos os gestores", o valor ficava "" só até este render seguinte, que o repunha). Semeia-
+      // se o valor por omissão (de aplicarFiltrosPorDefeito) só UMA VEZ, no primeiro render desta
+      // sessão; depois disso, o <select> é sempre a única fonte de verdade.
+      const valorAtual = this._filtroGestorGanttSemeado ? selGestor.value : (this.filtroGestorGantt || '');
+      this._filtroGestorGanttSemeado = true;
       selGestor.innerHTML = '<option value="">Todos os gestores</option>' +
         this.state.utilizadores.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}</option>`).join('');
       selGestor.value = valorAtual;
@@ -2810,7 +2852,11 @@ const App = {
     e.fRegProjeto.innerHTML = filtrosProjetos;
     e.fRegProjeto.value = valorFiltroProjeto;
     const filtrosPessoas = '<option value="">Todas</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.nome)}">${escapeHtml(r.nome)}</option>`).join('');
-    const valorFiltroPessoa = e.fRegPessoa.value;
+    // "|| this.filtrosRegisto.pessoa": ao primeiro render depois de entrar, o <select> ainda não
+    // tem nada escolhido — cai no valor por omissão de aplicarFiltrosPorDefeito() (a própria
+    // pessoa). Depois disso, qualquer mudança do utilizador já fica em filtrosRegisto.pessoa (ver
+    // aplicarFiltrosRegisto), por isso nunca volta a reimpor o valor por omissão por cima.
+    const valorFiltroPessoa = e.fRegPessoa.value || this.filtrosRegisto.pessoa;
     e.fRegPessoa.innerHTML = filtrosPessoas;
     e.fRegPessoa.value = valorFiltroPessoa;
   },
@@ -3218,10 +3264,15 @@ const App = {
       e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
       e.fCalProjeto.value = projetosDisponiveis.some(p => p.idInterno === valorProjeto) ? valorProjeto : '';
     }
-    this.filtrosCalendarioRegisto = { pessoa: e.fCalPessoa ? e.fCalPessoa.value : '', projeto: e.fCalProjeto ? e.fCalProjeto.value : '' };
-
-    const f = this.filtrosCalendarioRegisto;
-    const registosFiltrados = registosPermitidos.filter(r => (!f.pessoa || r.pessoa === f.pessoa) && (!f.projeto || r.projetoIdInterno === f.projeto));
+    // Nunca reatribui this.filtrosCalendarioRegisto a partir do <select> aqui (ao contrário de
+    // aplicarFiltrosCalendarioRegisto, que o faz mesmo, ao reagir a uma mudança real do
+    // utilizador) — fazê-lo apagava para sempre uma preferência válida (ex.: "eu próprio", posto
+    // por aplicarFiltrosPorDefeito) só por ainda não haver nenhum registo dessa pessoa NESTE
+    // render específico; assim que ela registar a primeira hora, o próximo render volta a
+    // encontrá-la sozinho. O filtro real usa antes os valores já mostrados no ecrã.
+    const pessoaFiltro = e.fCalPessoa ? e.fCalPessoa.value : '';
+    const projetoFiltro = e.fCalProjeto ? e.fCalProjeto.value : '';
+    const registosFiltrados = registosPermitidos.filter(r => (!pessoaFiltro || r.pessoa === pessoaFiltro) && (!projetoFiltro || r.projetoIdInterno === projetoFiltro));
 
     const { ano, mes } = this.calMesAtual;
     const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -3239,7 +3290,7 @@ const App = {
     Object.values(porDia).forEach(lista => lista.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt')));
 
     const hojeISO = DateUtil.todayISO();
-    const mostrarPessoaNaBarra = !f.pessoa && pessoasDisponiveis.length > 1;
+    const mostrarPessoaNaBarra = !pessoaFiltro && pessoasDisponiveis.length > 1;
     const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
     let cursor = new Date(inicioGrelha);
