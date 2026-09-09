@@ -197,6 +197,7 @@ const App = {
       modalTitulo: document.getElementById('modalTitulo'),
       modalCorpo: document.getElementById('modalCorpo'),
       toast: document.getElementById('toast'),
+      relatorioHorasContainer: document.getElementById('relatorioHorasContainer'),
       resizerSidebar: document.getElementById('resizerSidebar'),
       resizerTabela: document.getElementById('resizerTabela'),
       resizerPortGantt: document.getElementById('resizerPortGantt'),
@@ -3400,6 +3401,85 @@ const App = {
     ]));
     this.descarregarBlob(this.csvParaBlob(linhas), `Faturacao_${DateUtil.todayISO()}.csv`);
   },
+  // Relatório de horas de UM projeto, pronto a entregar a um cliente para suportar uma fatura —
+  // usa o Projeto e o período (De/Até) já escolhidos nos filtros de Faturação, exatamente o corte
+  // de tempo de uma fatura. Só horas (sem valores monetários — quem define o valor faturado
+  // continua a ser a própria Faturação, %/valor fixo, não este relatório). Agrupado por tarefa,
+  // com subtotal de cada uma, e um resumo por consultor no fim. Entrega-se por impressão do
+  // browser (mesmo mecanismo do "PDF" do Gantt) — ver a regra @media print em css/style.css.
+  abrirRelatorioHoras() {
+    const e = this.els;
+    const projetoId = e.fFatProjeto.value;
+    if (!projetoId) { this.toast('Escolhe um projeto no filtro para gerar o relatório.'); return; }
+    const p = this.state.projetos[projetoId];
+    if (!p) return;
+    const de = e.fFatDe.value || null;
+    const ate = e.fFatAte.value || null;
+    const registos = this.state.registos.filter(r => {
+      const bateProjeto = r.projetoId ? r.projetoId === p.id : r.projetoIdInterno === p.idInterno;
+      if (!bateProjeto) return false;
+      if (de && r.data < de) return false;
+      if (ate && r.data > ate) return false;
+      return true;
+    }).sort((a, b) => a.data.localeCompare(b.data));
+    if (!registos.length) { this.toast('Sem registos de horas neste projeto para o período escolhido.'); return; }
+
+    const porTarefa = new Map();
+    registos.forEach(r => {
+      const chave = r.tarefaNome || '(sem tarefa)';
+      if (!porTarefa.has(chave)) porTarefa.set(chave, []);
+      porTarefa.get(chave).push(r);
+    });
+    const fmtHoras = (h) => h.toLocaleString('pt-PT', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+    const totalHoras = registos.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+    const porPessoa = new Map();
+    registos.forEach(r => porPessoa.set(r.pessoa, (porPessoa.get(r.pessoa) || 0) + (parseFloat(r.horas) || 0)));
+
+    const periodoTexto = de && ate ? `${DateUtil.parseISO(de).toLocaleDateString('pt-PT')} a ${DateUtil.parseISO(ate).toLocaleDateString('pt-PT')}`
+      : de ? `a partir de ${DateUtil.parseISO(de).toLocaleDateString('pt-PT')}`
+      : ate ? `até ${DateUtil.parseISO(ate).toLocaleDateString('pt-PT')}`
+      : 'todo o histórico';
+
+    const linhasTarefas = [...porTarefa.entries()].map(([nomeTarefa, regs]) => {
+      const subtotal = regs.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+      const linhas = regs.map(r => `
+        <tr>
+          <td>${DateUtil.parseISO(r.data).toLocaleDateString('pt-PT')}</td>
+          <td>${escapeHtml(r.pessoa)}</td>
+          <td style="text-align:right;">${fmtHoras(parseFloat(r.horas) || 0)}</td>
+          <td>${escapeHtml(r.notas || '')}</td>
+        </tr>`).join('');
+      return `
+        <tr class="rh-tarefa"><td colspan="4">${escapeHtml(nomeTarefa)}</td></tr>
+        ${linhas}
+        <tr class="rh-subtotal"><td colspan="2">Subtotal</td><td style="text-align:right;">${fmtHoras(subtotal)}</td><td></td></tr>`;
+    }).join('');
+
+    const linhasPessoas = [...porPessoa.entries()].sort((a, b) => b[1] - a[1]).map(([nome, horas]) => `
+      <tr><td>${escapeHtml(nome)}</td><td style="text-align:right;">${fmtHoras(horas)}h</td></tr>`).join('');
+
+    this.els.relatorioHorasContainer.innerHTML = `
+      <div class="rh-cabecalho">
+        <h1>Relatório de Horas</h1>
+        <table class="rh-info">
+          <tr><td>Cliente</td><td>${escapeHtml(p.cliente || '—')}</td></tr>
+          <tr><td>Projeto</td><td>${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</td></tr>
+          <tr><td>Período</td><td>${periodoTexto}</td></tr>
+          <tr><td>Emitido em</td><td>${new Date().toLocaleDateString('pt-PT')}</td></tr>
+        </table>
+      </div>
+      <table class="rh-tabela">
+        <thead><tr><th>Data</th><th>Consultor</th><th style="text-align:right;">Horas</th><th>Notas</th></tr></thead>
+        <tbody>${linhasTarefas}</tbody>
+        <tfoot><tr class="rh-total"><td colspan="2">Total do período</td><td style="text-align:right;">${fmtHoras(totalHoras)}h</td><td></td></tr></tfoot>
+      </table>
+      <h3>Horas por consultor</h3>
+      <table class="rh-tabela rh-resumo">
+        <tbody>${linhasPessoas}</tbody>
+      </table>`;
+    document.body.classList.add('imprimindo-relatorio');
+    window.print();
+  },
 
   // ---------- Tab: Viaturas ----------
   // Requisitante é sempre quem está autenticado (pedido pessoal, sem "pedir em nome de outro").
@@ -4880,6 +4960,11 @@ const App = {
       this.aplicarFiltrosFaturacao();
     });
     document.getElementById('btnExportFaturasCsv').addEventListener('click', () => this.exportarFaturasCsv());
+    document.getElementById('btnRelatorioHoras').addEventListener('click', () => this.abrirRelatorioHoras());
+    // Repõe a vista normal depois de imprimir (ou de cancelar a impressão) — "afterprint" dispara
+    // em ambos os casos, ao contrário de só ouvir o clique num botão "Imprimir" que nem existe
+    // (é o próprio diálogo do browser a fechar-se).
+    window.addEventListener('afterprint', () => document.body.classList.remove('imprimindo-relatorio'));
     if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
