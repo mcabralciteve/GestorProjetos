@@ -3412,7 +3412,10 @@ const App = {
     const projetoId = e.fFatProjeto.value;
     if (!projetoId) { this.toast('Escolhe um projeto no filtro para gerar o relatório.'); return; }
     const p = this.state.projetos[projetoId];
-    if (!p) return;
+    // Só Administrador, ou o Gestor DESTE projeto — nunca um Gestor de outro projeto, mesmo que
+    // consiga chamar isto diretamente (a lista de projetos do filtro já só mostra os dele, isto é
+    // só a defesa a mais, como em todo o Acompanhamento/Faturação).
+    if (!p || !this.possoEditarProjeto(p.id)) return;
     const de = e.fFatDe.value || null;
     const ate = e.fFatAte.value || null;
     const registos = this.state.registos.filter(r => {
