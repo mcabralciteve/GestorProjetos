@@ -3450,6 +3450,19 @@ const App = {
   // Calendário (separador vizinho) para ter o mesmo aspeto — só a barra fina dentro de cada dia é
   // nova (.dia-mes-barra), porque aqui cada dia tem de ficar clicável para adicionar/editar.
   CAPACIDADE_DIA_REGISTO: 8,
+  // Motivo por que não se pode registar horas neste dia para este recurso — fim de semana, feriado,
+  // ou uma ausência (férias, baixa, etc., já geridas em Feriados & Ausências) que o cubra — ou ''
+  // se o dia estiver livre. Usado tanto para desenhar a grelha (esconde o "+ Adicionar") como para
+  // validar, ao gravar, que a data escolhida/movida no popover não cai nesses dias.
+  diaBloqueadoRegisto(iso, recurso) {
+    const diaSemana = DateUtil.parseISO(iso).getDay();
+    if (diaSemana === 0 || diaSemana === 6) return 'Fim de semana';
+    const feriado = this.state.feriados.find(f => f.data === iso);
+    if (feriado) return feriado.descricao || 'Feriado';
+    const ausencia = recurso && this.state.ausencias.find(a => a.recursoId === recurso.id && iso >= a.dataInicio && iso <= a.dataFim);
+    if (ausencia) return ausencia.tipo || 'Ausência';
+    return '';
+  },
   navegarMesRegistoDia(delta) {
     if (!this.mesRegistoDiaAtual) { const hoje = new Date(); this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
     let { ano, mes } = this.mesRegistoDiaAtual;
@@ -3494,6 +3507,7 @@ const App = {
       return;
     }
 
+    const recurso = this.state.recursos.find(r => r.nome === pessoa);
     const mesISO = `${ano}-${String(mes + 1).padStart(2, '0')}`;
     const registosDoMes = this.state.registos.filter(r => r.pessoa === pessoa && (r.data || '').startsWith(mesISO));
     const porDia = {};
@@ -3533,11 +3547,13 @@ const App = {
         const titulo = `${r.projetoNome ? r.projetoNome + ' — ' : ''}${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
         return `<div class="dia-bloco-mini" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}"></div>`;
       }).join('');
+      const motivoBloqueio = this.diaBloqueadoRegisto(iso, recurso);
       const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
-      const vazioHtml = restante > 0 ? `<div class="dia-bloco-vazio-mini" style="width:${restante}%" data-novo-bloco="${iso}" title="Adicionar a ${DateUtil.formatShort(cursor)}">+</div>` : '';
-      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
+      const vazioHtml = (!motivoBloqueio && restante > 0) ? `<div class="dia-bloco-vazio-mini" style="width:${restante}%" data-novo-bloco="${iso}" title="Adicionar a ${DateUtil.formatShort(cursor)}">+</div>` : '';
+      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}${motivoBloqueio ? ' dia-bloqueado' : ''}">
         <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras}h</span>` : ''}</div>
         <div class="dia-mes-barra">${blocosHtml}${vazioHtml}</div>
+        ${motivoBloqueio ? `<span class="dia-motivo-bloqueio" title="${escapeAttr(motivoBloqueio)}">${escapeHtml(motivoBloqueio)}</span>` : ''}
       </div>`;
       cursor = DateUtil.addDays(cursor, 1);
     }
@@ -3640,6 +3656,13 @@ const App = {
     m.querySelector('#blocoGuardar').addEventListener('click', () => {
       const data = inpData.value;
       if (!this.anoDataPlausivel(data)) { this.toast('Indica uma data válida.'); return; }
+      // Só valida contra fim de semana/feriado/ausência quando a data é mesmo nova ou mudou — um
+      // registo antigo que por alguma razão já lá estivesse (dados de antes desta regra, ou uma
+      // exceção lançada de outra forma) continua editável nos outros campos sem ficar bloqueado.
+      if (!registoExistente || data !== registoExistente.data) {
+        const motivo = this.diaBloqueadoRegisto(data, recurso);
+        if (motivo) { this.toast(`Não é possível registar horas em ${DateUtil.formatShort(DateUtil.parseISO(data))} — ${motivo}.`); return; }
+      }
       const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
       const horas = parseFloat(m.querySelector('#blocoHoras').value);
       if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
