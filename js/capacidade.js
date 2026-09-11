@@ -56,6 +56,7 @@ const Capacidade = {
     const iso = DateUtil.toISO(date);
     const out = [];
     Object.values(App.state.projetos).forEach(p => {
+      if (p.ativo === false) return; // suspenso/fechado: nunca ocupa capacidade de ninguém
       p.tarefas.forEach(t => {
         if (!t.recursoIds.includes(recursoId)) return;
         if (App.temFilhos(p, t.id)) return;
@@ -212,6 +213,7 @@ const Capacidade = {
     });
     const tarefas = [];
     Object.values(App.state.projetos).forEach(p => {
+      if (p.ativo === false) return; // suspenso/fechado: nunca entra em conflito com nada
       p.tarefas.forEach(t => {
         if (!t.recursoIds.includes(recurso.id)) return;
         if (App.temFilhos(p, t.id)) return;
@@ -322,6 +324,7 @@ const Capacidade = {
   projetosDoRecurso(recursoId) {
     const out = [];
     Object.values(App.state.projetos).forEach(p => {
+      if (p.ativo === false) return; // suspenso/fechado: não aparece nos cartões de Capacidade
       const tarefas = p.tarefas.filter(t => t.recursoIds.includes(recursoId) && !App.temFilhos(p, t.id));
       if (tarefas.length === 0) return;
       const inicio = tarefas.reduce((min, t) => t.inicio < min ? t.inicio : min, tarefas[0].inicio);

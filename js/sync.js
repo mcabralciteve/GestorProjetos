@@ -127,7 +127,7 @@ const Sync = {
       id: projeto.id, id_interno: projeto.idInterno, nome: projeto.nome, cliente: projeto.cliente,
       descricao: projeto.descricao, data_inicio: projeto.dataInicio || null, data_fim: projeto.dataFim || null,
       horas_vendidas: projeto.horasVendidas, valor_vendido: projeto.valorVendido, estado: projeto.estado,
-      gestor_id: projeto.gestorId || null, atualizado_em: new Date().toISOString()
+      gestor_id: projeto.gestorId || null, ativo: projeto.ativo !== false, atualizado_em: new Date().toISOString()
     };
     let r = await supabaseClient.from('projetos').upsert(linhaProjeto);
     if (r.error) throw r.error;
@@ -261,7 +261,7 @@ const Sync = {
       projetos[p.id] = {
         id: p.id, idInterno: p.id_interno, nome: p.nome, cliente: p.cliente, descricao: p.descricao,
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
-        valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id,
+        valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, ativo: p.ativo !== false,
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],
         pontosSituacao: [], proximosPassos: []
       };

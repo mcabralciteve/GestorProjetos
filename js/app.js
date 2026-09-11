@@ -89,6 +89,7 @@ const App = {
     { key: 'valorVendido', label: 'Valor vendido (€)' },
     { key: 'valorHoraMedio', label: '€/h médio' },
     { key: 'estado', label: 'Estado' },
+    { key: 'ativo', label: 'Ativo' },
     { key: 'real', label: 'Real (h)' },
     { key: 'eac', label: 'Reprevisão / EAC (h)' },
     { key: 'saldo', label: 'Saldo (h)' },
@@ -127,6 +128,8 @@ const App = {
       selProjeto: document.getElementById('selProjeto'),
       projIdInterno: document.getElementById('projIdInterno'),
       projEstado: document.getElementById('projEstado'),
+      projAtivo: document.getElementById('projAtivo'),
+      projSuspensoAviso: document.getElementById('projSuspensoAviso'),
       projNome: document.getElementById('projNome'),
       projCliente: document.getElementById('projCliente'),
       projDescricao: document.getElementById('projDescricao'),
@@ -527,6 +530,7 @@ const App = {
     // Compatibilidade com projetos guardados antes da introdução do Gestor de Projeto.
     Object.values(this.state.projetos).forEach(p => {
       if (p.gestorId === undefined) p.gestorId = null;
+      if (p.ativo === undefined) p.ativo = true;
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
       if (!p.pontosSituacao) p.pontosSituacao = [];
       if (!p.proximosPassos) p.proximosPassos = [];
@@ -656,11 +660,35 @@ const App = {
   estouEnvolvidoEm(projetoId) {
     return this.souAdmin() || this.souGestorDe(projetoId) || this.souConsultorDe(projetoId);
   },
+  // Um projeto suspenso/fechado (ativo === false — ver botão "Ativo"/"Suspenso" na tabela de
+  // Projetos e no Gantt) fica congelado para toda a gente EXCETO o Administrador: nem o próprio
+  // Gestor consegue voltar a editar tarefas/faturas/next steps enquanto estiver assim — é
+  // exatamente esse o ponto de suspender, e é por isso que só o Administrador pode ativar/desativar
+  // (ver atualizarCampoProjeto). Reativar devolve o acesso normal ao Gestor, sem mais nada a fazer.
   possoEditarProjeto(projetoId) {
+    const p = this.state.projetos[projetoId];
+    if (p && p.ativo === false) return this.souAdmin();
     return this.souAdmin() || this.souGestorDe(projetoId);
   },
   possoEliminarProjeto(projetoId) {
     return this.souAdmin();
+  },
+  // Único ponto de entrada para suspender/reativar (ver checkbox "Ativo" na tabela de Projetos e no
+  // Gantt) — sempre Administrador, mesmo que quem estiver a ver seja o Gestor desse projeto (que,
+  // já suspenso, nem sequer teria a caixa disponível — ver possoEditarProjeto). Confirma antes de
+  // suspender (efeito amplo, silencioso à primeira vista); reativar não precisa de confirmação.
+  atualizarProjetoAtivo(projetoId, ativo) {
+    if (!this.souAdmin()) return;
+    const p = this.state.projetos[projetoId];
+    if (!p) return;
+    if (!ativo && !confirm(`Suspender "${p.nome}"? Ninguém (nem o Gestor) vai conseguir editar tarefas, faturas ou next steps, nem registar horas neste projeto enquanto estiver suspenso, e as suas tarefas deixam de contar na Capacidade/Alocações de quem lá está. Só tu, como Administrador, poderás reativá-lo depois.`)) {
+      this.renderTabelaProjetos();
+      this.renderInfoProjeto();
+      return;
+    }
+    p.ativo = ativo;
+    this.persist();
+    this.renderTudo();
   },
   souGestorDeAlgumProjeto() {
     return this.souAdmin() || Object.keys(this.state.projetos).some(id => this.souGestorDe(id));
@@ -773,6 +801,7 @@ const App = {
       horasVendidas: 0,
       valorVendido: 0,
       estado: 'Por iniciar',
+      ativo: true,
       gestorId: gestorId || null,
       versao: new Date().toISOString(),
       tarefas: [],
@@ -909,6 +938,7 @@ const App = {
     copia.id = this.novoIdProjeto();
     copia.nome = atual.nome + ' (cópia)';
     copia.idInterno = '';
+    copia.ativo = true; // uma cópia nova nunca nasce suspensa, mesmo que o original esteja
     copia.versao = new Date().toISOString();
     // Tarefas e faturas precisam de IDs novos e globalmente únicos — copiar os do original
     // criaria duas linhas com a mesma chave primária assim que isto for gravado numa base de
@@ -1207,6 +1237,28 @@ const App = {
     const alvosOrdenados = ids.slice().sort((a, b) => ordemIds.indexOf(a) - ordemIds.indexOf(b));
     if (direcao > 0) alvosOrdenados.reverse();
     alvosOrdenados.forEach(id => this._moverUmaTarefa(p, id, direcao));
+    this.persist();
+    this.renderTudo();
+  },
+  // Reordena TODAS as tarefas do projeto ativo pela data de início — cada grupo de irmãs (mesmo
+  // parentId) é ordenado entre si, sem mudar a estrutura pai/filho nem sair do seu grupo; útil
+  // depois de ires acrescentando tarefas fora de ordem (ex.: marcos "Gestão Comercial" a meio de
+  // Fases já existentes) e a tabela deixa de bater certo com as datas. Reaproveita a mesma técnica
+  // de _moverUmaTarefa — troca os OBJETOS nas posições que já ocupavam no array, nunca a estrutura
+  // em si — por isso mexe só na ordem relativa dentro de cada grupo de irmãs, preservando tudo o
+  // resto (isto é histórico normal, desfaz-se com Ctrl+Z como qualquer outra alteração).
+  ordenarTarefasPorData() {
+    const p = this.projetoAtivo();
+    if (!p || !this.possoEditarProjeto(p.id)) return;
+    const grupos = new Map();
+    p.tarefas.forEach((t, indice) => {
+      if (!grupos.has(t.parentId)) grupos.set(t.parentId, []);
+      grupos.get(t.parentId).push(indice);
+    });
+    grupos.forEach((indices) => {
+      const ordenados = indices.map(i => p.tarefas[i]).sort((a, b) => (a.inicio || '').localeCompare(b.inicio || ''));
+      indices.forEach((indice, i) => { p.tarefas[indice] = ordenados[i]; });
+    });
     this.persist();
     this.renderTudo();
   },
@@ -1682,7 +1734,11 @@ const App = {
     const p = idFiltro ? this.state.projetos[idFiltro] : this.projetoAtivo();
     if (!p) { this.toast('Escolhe primeiro um projeto (no filtro acima ou no separador "Gantt do Projeto").'); return; }
     if (!this.possoEditarProjeto(p.id)) { this.toast('Não tens permissão para faturar este projeto.'); return; }
-    p.faturas.push(this.novaFaturaObj());
+    const nova = this.novaFaturaObj();
+    // Ao início do array (não ao fim) para ficar em primeiro em caso de empate na ordenação por
+    // omissão (Data prevista ascendente — uma fatura nova tende a nascer com a data de hoje, igual
+    // a outras já existentes) — ver renderTabelaFaturas/faturasFiltradasOrdenadas, sort estável.
+    p.faturas.unshift(nova);
     this.persist();
     this.renderFaturacao();
     // Garante que a fatura acabada de criar fica sempre visível de imediato — fixa o filtro de
@@ -1691,6 +1747,14 @@ const App = {
     this.els.fFatDe.value = ''; this.els.fFatAte.value = ''; this.els.fFatNumRegisto.value = '';
     this.aplicarFiltrosFaturacao();
     this.renderGanttAtual();
+    // Mesmo que o utilizador tenha a tabela ordenada por outra coluna (onde "unshift" sozinho não
+    // garante topo nenhum), a linha nova continua sempre fácil de encontrar: sobe até ela e pisca.
+    const trNova = this.els.corpoTabelaFaturas.querySelector(`[data-fatura-id="${nova.id}"]`);
+    if (trNova) {
+      trNova.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      trNova.classList.add('linha-nova');
+      setTimeout(() => trNova.classList.remove('linha-nova'), 2000);
+    }
     this.toast(`Fatura adicionada a "${p.nome}".`);
   },
   eliminarFatura(projetoId, faturaId) {
@@ -1946,7 +2010,7 @@ const App = {
         <div class="card-portfolio">
           <div class="port-head">
             <div>
-              <div class="port-titulo">${escapeHtml(p.idInterno || '—')} — ${escapeHtml(p.nome)}</div>
+              <div class="port-titulo">${escapeHtml(p.idInterno || '—')} — ${escapeHtml(p.nome)}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</div>
               <div class="port-sub">${escapeHtml(p.cliente || 'Sem cliente')} · ${escapeHtml(p.estado)}</div>
             </div>
             <div class="port-badges">
@@ -2166,7 +2230,7 @@ const App = {
     projetos.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ' (' + p.cliente + ')' : '');
+      opt.textContent = (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ' (' + p.cliente + ')' : '') + (p.ativo === false ? ' ⏸ Suspenso' : '');
       if (p.id === this.state.projetoAtivoId) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -2230,6 +2294,8 @@ const App = {
     this.renderGestorConsultores(p);
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
+      if (e.projAtivo) { e.projAtivo.checked = false; e.projAtivo.disabled = true; }
+      if (e.projSuspensoAviso) e.projSuspensoAviso.style.display = 'none';
       e.projValorHoraMedio.textContent = '—';
       e.projVersao.textContent = '—';
       e.projFaturacaoResumo.textContent = '—';
@@ -2241,6 +2307,10 @@ const App = {
     }
     const podeEditar = this.possoEditarProjeto(p.id);
     campos.forEach(c => { c.disabled = !podeEditar; });
+    // "Ativo" é sempre só do Administrador, independentemente de podeEditar — um Gestor nunca se
+    // suspende a si próprio, mesmo enquanto o projeto ainda está ativo (ver atualizarProjetoAtivo).
+    if (e.projAtivo) { e.projAtivo.checked = p.ativo !== false; e.projAtivo.disabled = !this.souAdmin(); }
+    if (e.projSuspensoAviso) e.projSuspensoAviso.style.display = (p.ativo === false) ? '' : 'none';
     e.projIdInterno.value = p.idInterno || '';
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
@@ -2341,6 +2411,7 @@ const App = {
         case 'valorVendido': return p.valorVendido || 0;
         case 'valorHoraMedio': return p.horasVendidas ? (p.valorVendido || 0) / p.horasVendidas : 0;
         case 'estado': return p.estado || '';
+        case 'ativo': return p.ativo === false ? 0 : 1;
         case 'real': return orc.totalReal;
         case 'eac': return orc.eac;
         case 'saldo': return orc.saldoDisponivel === null ? -Infinity : orc.saldoDisponivel;
@@ -2371,6 +2442,10 @@ const App = {
             ${['Adjudicado', 'Por iniciar', 'Em curso', 'Concluído', 'Cancelado'].map(op => `<option ${p.estado === op ? 'selected' : ''}>${op}</option>`).join('')}
           </select>
         </td>
+        <td style="text-align:center;">
+          <input type="checkbox" data-campo="ativo" ${p.ativo !== false ? 'checked' : ''} ${admin ? '' : 'disabled'} title="${admin ? 'Ativar/suspender este projeto' : 'Só o Administrador pode ativar/suspender um projeto.'}">
+          ${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}
+        </td>
         <td>${orc.totalReal.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}</td>
         <td>${orc.eac.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}</td>
         <td style="color:${orc.saldoDisponivel !== null && orc.saldoDisponivel < 0 ? 'var(--vermelho)' : 'inherit'}">${orc.saldoDisponivel === null ? '—' : orc.saldoDisponivel.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}</td>
@@ -2387,11 +2462,12 @@ const App = {
           this.persist();
           this.renderTudo();
         });
+        tr.querySelector('[data-campo="ativo"]').addEventListener('change', (ev) => this.atualizarProjetoAtivo(p.id, ev.target.checked));
       }
       const inpIdInterno = tr.querySelector('[data-campo="idInterno"]');
       inpIdInterno.addEventListener('focus', (ev) => ev.target.removeAttribute('readonly'), { once: true });
       this.bloquearPreenchimentoAutomatico(inpIdInterno);
-      tr.querySelectorAll('input[data-campo],select[data-campo="estado"]').forEach(inp => {
+      tr.querySelectorAll('input[data-campo]:not([data-campo="ativo"]),select[data-campo="estado"]').forEach(inp => {
         inp.addEventListener('change', () => {
           p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value.trim();
           this.persist();
@@ -2902,8 +2978,10 @@ const App = {
   },
   // Projetos em que o utilizador pode registar horas: Admin todos; Gestor só os que gere;
   // Consultor só os em que está envolvido.
+  // Um projeto suspenso/fechado nunca aparece aqui, nem para o Administrador — deixa mesmo de se
+  // poder registar horas nele, o próprio ponto de o suspender (ver possoEditarProjeto).
   projetosRegistoPermitidos() {
-    const comId = Object.values(this.state.projetos).filter(p => p.idInterno);
+    const comId = Object.values(this.state.projetos).filter(p => p.idInterno && p.ativo !== false);
     if (this.souAdmin()) return comId;
     return comId.filter(p => this.estouEnvolvidoEm(p.id));
   },
@@ -3890,6 +3968,7 @@ const App = {
       const sobreFaturado = this.projetoSobreFaturado(p);
       const tr = document.createElement('tr');
       tr.className = sobreFaturado ? 'linha-sobre-faturado' : '';
+      tr.dataset.faturaId = fat.id;
       tr.innerHTML = `
         <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
         <td><input type="date" value="${fat.dataPrevista}" data-campo="dataPrevista"></td>
@@ -3906,7 +3985,7 @@ const App = {
         <td style="text-align:center"><input type="checkbox" data-campo="emitida" ${fat.emitida ? 'checked' : ''}></td>
         <td><input type="date" value="${fat.dataEmissao || ''}" data-campo="dataEmissao" ${!fat.emitida ? 'disabled' : ''}></td>
         <td><input type="text" value="${escapeAttr(fat.emitidoPor)}" data-campo="emitidoPor" ${!fat.emitida ? 'disabled' : ''} style="width:110px"></td>
-        <td><input type="text" value="${escapeAttr(fat.numeroRegisto)}" data-campo="numeroRegisto" ${!fat.emitida ? 'disabled' : ''} style="width:110px"></td>
+        <td><input type="text" value="${escapeAttr(fat.numeroRegisto)}" data-campo="numeroRegisto" placeholder="ex.: FT 2026/123" title="Nº atribuído pelo GIAF quando a fatura é emitida" ${!fat.emitida ? 'disabled' : ''} style="width:110px"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => {
@@ -3921,7 +4000,7 @@ const App = {
   exportarFaturasCsv() {
     const filtradas = this.faturasFiltradasOrdenadas(this.linhasFaturas());
     if (!filtradas.length) { this.toast('Sem faturas para exportar — revê os filtros.'); return; }
-    const linhas = [['Projeto', 'Cliente', 'Data Prevista', 'Tipo', '%', 'Valor (€)', 'Emitida', 'Data Emissão', 'Emitido Por', 'Nº Registo']];
+    const linhas = [['Projeto', 'Cliente', 'Data Prevista', 'Tipo', '%', 'Valor (€)', 'Emitida', 'Data Emissão', 'Emitido Por', 'Nº Fatura (GIAF)']];
     filtradas.forEach(({ projeto: p, fatura: fat }) => linhas.push([
       p.idInterno || p.nome, p.cliente || '', fat.dataPrevista, fat.tipo === 'percentagem' ? '%' : 'Valor',
       fat.tipo === 'percentagem' ? fat.percentagem : '', this.valorFatura(fat, p).toFixed(2),
@@ -4043,7 +4122,9 @@ const App = {
     const perfil = this.perfilAtual();
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
     const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
-    const projetos = this.meusProjetosEnvolvidos();
+    // Um projeto suspenso/fechado não aceita novos pedidos de viatura — o próprio ponto de o
+    // suspender (ver possoEditarProjeto/projetosRegistoPermitidos, a mesma regra).
+    const projetos = this.meusProjetosEnvolvidos().filter(p => p.ativo !== false);
     if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
     // "Área/Unidade" impressa = Departamento da equipa (não o nome da equipa/área em si); "Chefia"
     // = Diretor dessa mesma equipa. Ambos só leitura, tal como o Gestor de Projeto abaixo.
@@ -4723,7 +4804,7 @@ const App = {
     Capacidade.limparCaches();
     this.limparCacheDiasUteisEntre();
     const podeEditar = !!p && this.possoEditarProjeto(p.id);
-    ['btnAddTarefa', 'btnAddSubtarefa', 'btnAddRecorrente', 'btnSubir', 'btnDescer', 'btnIndent', 'btnOutdent', 'btnAssociarLote', 'btnDelTarefa'].forEach(id => {
+    ['btnAddTarefa', 'btnAddSubtarefa', 'btnAddRecorrente', 'btnSubir', 'btnDescer', 'btnOrdenarData', 'btnIndent', 'btnOutdent', 'btnAssociarLote', 'btnDelTarefa'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = podeEditar ? '' : 'none';
     });
@@ -5497,6 +5578,7 @@ const App = {
     this.bloquearPreenchimentoAutomatico(e.projIdInterno);
     e.projIdInterno.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().idInterno = e.projIdInterno.value.trim(); e.projIdInterno.value = this.projetoAtivo().idInterno; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projEstado.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().estado = e.projEstado.value; this.persist(); this.renderTabelaProjetos(); });
+    if (e.projAtivo) e.projAtivo.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.atualizarProjetoAtivo(this.projetoAtivo().id, e.projAtivo.checked); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projCliente.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().cliente = e.projCliente.value; this.persist(); this.renderTabelaProjetos(); });
     e.projDescricao.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().descricao = e.projDescricao.value; this.persist(); });
@@ -5511,6 +5593,7 @@ const App = {
     document.getElementById('btnAddRecorrente').addEventListener('click', () => this.abrirModalTarefaRecorrente());
     document.getElementById('btnSubir').addEventListener('click', () => this.moverOrdemSelecionada(-1));
     document.getElementById('btnDescer').addEventListener('click', () => this.moverOrdemSelecionada(1));
+    document.getElementById('btnOrdenarData').addEventListener('click', () => this.ordenarTarefasPorData());
     document.getElementById('btnIndent').addEventListener('click', () => this.indentarSelecionada());
     document.getElementById('btnOutdent').addEventListener('click', () => this.promoverSelecionada());
     document.getElementById('btnAssociarLote').addEventListener('click', () => this.abrirModalAssociarRecursoLote());

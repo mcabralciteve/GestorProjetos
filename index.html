@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260911e">
+<link rel="stylesheet" href="css/style.css?v=20260911h">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -120,6 +120,10 @@
       <button id="btnToggleSidebar" class="sidebar-toggle" title="Fechar painel lateral">⟨</button>
       <section class="card">
         <h3>Dados do Projeto</h3>
+        <label class="check-ativo-projeto">
+          <input type="checkbox" id="projAtivo"> Projeto ativo
+        </label>
+        <div class="card-aviso-suspenso" id="projSuspensoAviso" style="display:none;">⏸ Suspenso — ninguém (nem o Gestor) edita ou regista horas aqui enquanto estiver assim. Só o Administrador pode reativar.</div>
         <div class="row-2">
           <label>ID interno
             <input type="text" id="projIdInterno" placeholder="ex.: PRJ-2026-014" autocomplete="new-password" spellcheck="false" readonly>
@@ -203,6 +207,7 @@
         <button id="btnAddRecorrente" class="btn btn-sm" title="Cria várias tarefas/subtarefas iguais, repetidas ao longo do projeto">🔁 Recorrente</button>
         <button id="btnSubir" class="btn btn-sm" title="Mover para cima entre as tarefas irmãs">↑ Subir</button>
         <button id="btnDescer" class="btn btn-sm" title="Mover para baixo entre as tarefas irmãs">↓ Descer</button>
+        <button id="btnOrdenarData" class="btn btn-sm" title="Reordena todas as tarefas do projeto (e as sub-tarefas dentro de cada grupo) pela data de início">⇅ Ordenar por data</button>
         <button id="btnIndent" class="btn btn-sm" title="Tornar subtarefa da tarefa acima">→ Indentar</button>
         <button id="btnOutdent" class="btn btn-sm" title="Promover a tarefa de topo">← Promover</button>
         <button id="btnAssociarLote" class="btn btn-sm" title="Associa um consultor (e as horas) a todas as tarefas selecionadas de uma vez">👤 Associar</button>
@@ -292,6 +297,7 @@
             <th data-col="valorVendido" data-sort="valorVendido">Valor vendido (€)<span class="col-resizer"></span></th>
             <th data-col="valorHoraMedio" data-sort="valorHoraMedio">€/h médio<span class="col-resizer"></span></th>
             <th data-col="estado" data-sort="estado">Estado<span class="col-resizer"></span></th>
+            <th data-col="ativo" data-sort="ativo" title="Só o Administrador pode ativar/suspender">Ativo<span class="col-resizer"></span></th>
             <th data-col="real" data-sort="real">Real (h)<span class="col-resizer"></span></th>
             <th data-col="eac" data-sort="eac">Reprevisão / EAC (h)<span class="col-resizer"></span></th>
             <th data-col="saldo" data-sort="saldo">Saldo (h)<span class="col-resizer"></span></th>
@@ -734,7 +740,7 @@
       <h2>Faturação</h2>
       <button id="btnAddFatura" class="btn btn-primary btn-sm" title="Adiciona ao projeto selecionado no filtro abaixo (ou ao projeto ativo no Gantt, se o filtro estiver em 'Todos')">+ Fatura</button>
     </div>
-    <p class="pagina-sub">Plano de faturação de cada projeto — quantas faturas, montante ou percentagem de cada uma, e data prevista. Regista aqui também a emissão (data, responsável e nº de registo). As faturas previstas aparecem identificadas no Gantt do respetivo projeto.</p>
+    <p class="pagina-sub">Plano de faturação de cada projeto — quantas faturas, montante ou percentagem de cada uma, e data prevista. Regista aqui também a emissão (data, responsável e o nº da fatura emitida no GIAF). As faturas previstas aparecem identificadas no Gantt do respetivo projeto.</p>
 
     <div class="legend-row" id="statsFaturacao"></div>
 
@@ -742,7 +748,7 @@
       <label class="zoom-label">Projeto <select id="fFatProjeto"><option value="">Todos</option></select></label>
       <label class="zoom-label">De <input type="date" id="fFatDe"></label>
       <label class="zoom-label">Até <input type="date" id="fFatAte"></label>
-      <label class="zoom-label">Nº de registo <input type="text" id="fFatNumRegisto" placeholder="ex.: FT 2026/123"></label>
+      <label class="zoom-label">Nº Fatura (GIAF) <input type="text" id="fFatNumRegisto" placeholder="ex.: FT 2026/123"></label>
       <button id="btnLimparFiltrosFaturacao" class="btn btn-sm">Limpar filtros</button>
       <button id="btnExportFaturasCsv" class="btn btn-sm" title="Exportar as faturas filtradas para CSV (abre no Excel)">⬇ CSV</button>
       <button id="btnRelatorioHoras" class="btn btn-sm" title="Escolhe um projeto (e opcionalmente De/Até) para gerar um relatório de horas pronto a entregar ao cliente">📄 Relatório de Horas</button>
@@ -760,7 +766,7 @@
             <th data-sort="emitida">Emitida</th>
             <th data-sort="dataEmissao">Data emissão</th>
             <th data-sort="emitidoPor">Emitido por</th>
-            <th data-sort="numeroRegisto">Nº registo</th>
+            <th data-sort="numeroRegisto" title="Nº atribuído pelo GIAF quando a fatura é emitida">Nº Fatura (GIAF)</th>
             <th></th>
           </tr>
         </thead>
@@ -915,14 +921,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260911e"></script>
-<script src="js/auth.js?v=20260911e"></script>
-<script src="js/sync.js?v=20260911e"></script>
-<script src="js/gantt.js?v=20260911e"></script>
-<script src="js/capacidade.js?v=20260911e"></script>
-<script src="js/portfolio-gantt.js?v=20260911e"></script>
-<script src="js/reserva-viatura.js?v=20260911e"></script>
-<script src="js/backup.js?v=20260911e"></script>
-<script src="js/app.js?v=20260911e"></script>
+<script src="js/supabase-config.js?v=20260911h"></script>
+<script src="js/auth.js?v=20260911h"></script>
+<script src="js/sync.js?v=20260911h"></script>
+<script src="js/gantt.js?v=20260911h"></script>
+<script src="js/capacidade.js?v=20260911h"></script>
+<script src="js/portfolio-gantt.js?v=20260911h"></script>
+<script src="js/reserva-viatura.js?v=20260911h"></script>
+<script src="js/backup.js?v=20260911h"></script>
+<script src="js/app.js?v=20260911h"></script>
 </body>
 </html>

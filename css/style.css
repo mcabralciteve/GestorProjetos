@@ -506,6 +506,25 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .dia-motivo-clicavel{cursor:pointer;text-decoration:underline dotted;}
 .dia-motivo-clicavel:hover{color:var(--azul);}
 
+/* Projeto suspenso/fechado */
+.badge-suspenso{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--radius-pill);background:var(--cinza-200);color:var(--cinza-700);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;}
+.check-ativo-projeto{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:8px;cursor:pointer;}
+.card-aviso-suspenso{background:#fdf3d6;border:1px solid #e8c766;border-radius:var(--radius);padding:8px 10px;font-size:11.5px;color:var(--cinza-700);margin-bottom:10px;}
+:root[data-tema="escuro"] .card-aviso-suspenso{background:#4a3a15;border-color:#7a5f20;color:var(--cinza-300);}
+
+/* Linha de tabela recém-criada (ex.: nova fatura) — pisca para ser fácil de encontrar mesmo que a
+   ordenação/filtro ativos não a ponham mesmo no topo visível. */
+.linha-nova{animation:realce-linha-nova 2s ease-out;}
+@keyframes realce-linha-nova{
+  0%,30%{background:#fff3b0;}
+  100%{background:transparent;}
+}
+:root[data-tema="escuro"] .linha-nova{animation-name:realce-linha-nova-escuro;}
+@keyframes realce-linha-nova-escuro{
+  0%,30%{background:#5a4a12;}
+  100%{background:transparent;}
+}
+
 .toast{
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
   background:var(--azul-esc);color:#fff;padding:9px 18px;border-radius:var(--radius-pill);font-size:12px;font-weight:600;

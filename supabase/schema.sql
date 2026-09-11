@@ -97,6 +97,11 @@ create table if not exists public.projetos (
 );
 
 alter table public.projetos add column if not exists gestor_id uuid references public.recursos(id) on delete set null;
+-- Suspender/fechar um projeto (só o Administrador — ver App.possoEditarProjeto/atualizarProjetoAtivo):
+-- congela-o para toda a gente (ninguém edita tarefas/faturas/next steps nem regista horas nele, e
+-- as suas tarefas deixam de contar para a Capacidade/Alocações de quem lá está), sem o eliminar nem
+-- mexer no campo "estado" (que continua a descrever a fase do projeto, coisas diferentes).
+alter table public.projetos add column if not exists ativo boolean not null default true;
 
 -- Consultor de um projeto não é uma lista à parte: é quem já tem o recurso ligado ao seu login
 -- atribuído a alguma tarefa desse projeto (tabela "tarefa_recursos" já cobre isso).
