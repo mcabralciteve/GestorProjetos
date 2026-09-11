@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260911k">
+<link rel="stylesheet" href="css/style.css?v=20260911l">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -61,7 +61,8 @@
 </header>
 
 <nav class="grupos-nav" id="gruposNav">
-  <button class="grupo-btn active" data-grupo="planeamento">📅 Planeamento</button>
+  <button class="grupo-btn active" data-grupo="inicio">🏠 Início</button>
+  <button class="grupo-btn" data-grupo="planeamento">📅 Planeamento</button>
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
   <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Faturação</button>
@@ -69,8 +70,8 @@
   <button class="grupo-btn" data-grupo="configuracoes" id="grupoBtnConfiguracoes">⚙ Configurações</button>
 </nav>
 <nav class="tabs" id="tabsNav">
-  <div class="tabs-grupo active" data-grupo="planeamento">
-    <button class="tab-btn active" data-tab="gantt">Gantt do Projeto</button>
+  <div class="tabs-grupo" data-grupo="planeamento">
+    <button class="tab-btn" data-tab="gantt">Gantt do Projeto</button>
     <button class="tab-btn" data-tab="projetos">Projetos</button>
     <button class="tab-btn" data-tab="portefolio">Portefólio</button>
     <button class="tab-btn" data-tab="acompanhamento" id="tabBtnAcompanhamento">Acompanhamento</button>
@@ -99,8 +100,23 @@
   </div>
 </nav>
 
+<!-- ===================== TAB: DASHBOARD (INÍCIO) ===================== -->
+<section class="tab-panel active" id="tab-dashboard">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>🏠 Início</h2>
+      <div class="conta-menu-wrap">
+        <button id="btnPersonalizarDashboard" class="btn btn-sm">⚙ Personalizar</button>
+        <div class="conta-menu" id="painelPersonalizarDashboard" style="min-width:260px;padding:6px 0;"></div>
+      </div>
+    </div>
+    <p class="pagina-sub" id="dashboardSaudacao"></p>
+    <div id="dashboardGrelha" class="dashboard-grelha"></div>
+  </div>
+</section>
+
 <!-- ===================== TAB: GANTT ===================== -->
-<section class="tab-panel active" id="tab-gantt">
+<section class="tab-panel" id="tab-gantt">
   <div class="gantt-topbar">
     <select id="selGestorFiltroGantt" title="Filtrar a lista de projetos por gestor" style="display:none;">
       <option value="">Todos os gestores</option>
@@ -923,14 +939,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260911k"></script>
-<script src="js/auth.js?v=20260911k"></script>
-<script src="js/sync.js?v=20260911k"></script>
-<script src="js/gantt.js?v=20260911k"></script>
-<script src="js/capacidade.js?v=20260911k"></script>
-<script src="js/portfolio-gantt.js?v=20260911k"></script>
-<script src="js/reserva-viatura.js?v=20260911k"></script>
-<script src="js/backup.js?v=20260911k"></script>
-<script src="js/app.js?v=20260911k"></script>
+<script src="js/supabase-config.js?v=20260911l"></script>
+<script src="js/auth.js?v=20260911l"></script>
+<script src="js/sync.js?v=20260911l"></script>
+<script src="js/gantt.js?v=20260911l"></script>
+<script src="js/capacidade.js?v=20260911l"></script>
+<script src="js/portfolio-gantt.js?v=20260911l"></script>
+<script src="js/reserva-viatura.js?v=20260911l"></script>
+<script src="js/backup.js?v=20260911l"></script>
+<script src="js/app.js?v=20260911l"></script>
 </body>
 </html>

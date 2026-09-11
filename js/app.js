@@ -50,7 +50,7 @@ const App = {
   undoStack: [],
   redoStack: [],
   LIMITE_HISTORICO: 5,
-  abaAtiva: 'gantt',
+  abaAtiva: 'dashboard',
   filtroGestorGantt: '',
   filtroEquipaCap: '',
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
@@ -181,6 +181,9 @@ const App = {
       fProjEstadoOrc: document.getElementById('fProjEstadoOrc'),
       btnColunasProjetos: document.getElementById('btnColunasProjetos'),
       painelColunasProjetos: document.getElementById('painelColunasProjetos'),
+      dashboardGrelha: document.getElementById('dashboardGrelha'),
+      dashboardSaudacao: document.getElementById('dashboardSaudacao'),
+      painelPersonalizarDashboard: document.getElementById('painelPersonalizarDashboard'),
       selHorizonteCap: document.getElementById('selHorizonteCap'),
       selMesInicioCap: document.getElementById('selMesInicioCap'),
       heatmapCapHead: document.getElementById('heatmapCapHead'),
@@ -2238,6 +2241,7 @@ const App = {
 
   renderTudo() {
     this.aplicarPermissoesUI();
+    this.renderDashboard();
     this.renderInfoProjeto();
     this.renderTabelaTarefas();
     this.renderGanttAtual();
@@ -2283,8 +2287,200 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('gantt');
-    if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+  },
+
+  // ---------- Tab: Início (Dashboard pessoal) ----------
+  // Cartões de "o que preciso de saber hoje" — cada um só lê dados que já existem noutro lado
+  // (tarefas, next steps, faturas, ausências); nada aqui é gravado, é tudo derivado no momento do
+  // render. Os dois últimos (Faturação a vencer / Ausências da equipa) só fazem sentido para quem
+  // gere alguma coisa — para um Consultor simples ficam sempre de fora, mesmo que os "ligasse" no
+  // painel de personalizar (esse painel nem lhos oferece — ver renderPainelPersonalizarDashboard).
+  DASHBOARD_WIDGETS: [
+    { key: 'agendaHoje', label: 'A minha agenda de hoje' },
+    { key: 'proximos7dias', label: 'Próximos 7 dias' },
+    { key: 'meusPassos', label: 'Os meus Next Steps' },
+    { key: 'meusProjetos', label: 'Os meus projetos' },
+    { key: 'registoRapido', label: 'Registar horas de hoje' },
+    { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
+    { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' }
+  ],
+  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa'],
+  // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
+  // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
+  dashboardWidgetsOcultosSet() {
+    return new Set(this.lerPrefsUI().dashboardWidgetsOcultos || []);
+  },
+  alternarWidgetDashboard(key) {
+    const ocultos = this.dashboardWidgetsOcultosSet();
+    if (ocultos.has(key)) ocultos.delete(key); else ocultos.add(key);
+    this.gravarPrefUI('dashboardWidgetsOcultos', [...ocultos]);
+    this.renderDashboard();
+  },
+  renderPainelPersonalizarDashboard() {
+    if (!this.els.painelPersonalizarDashboard) return;
+    const ocultos = this.dashboardWidgetsOcultosSet();
+    const gestorOuAdmin = this.souAdmin() || this.souGestorDeAlgumProjeto();
+    const widgets = this.DASHBOARD_WIDGETS.filter(w => gestorOuAdmin || !this.WIDGETS_GESTOR_ADMIN.includes(w.key));
+    this.els.painelPersonalizarDashboard.innerHTML = widgets.map(w => `
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" data-widget="${w.key}" ${ocultos.has(w.key) ? '' : 'checked'}> ${escapeHtml(w.label)}
+      </label>`).join('');
+    this.els.painelPersonalizarDashboard.querySelectorAll('input[data-widget]').forEach(chk => {
+      chk.addEventListener('change', () => this.alternarWidgetDashboard(chk.dataset.widget));
+    });
+  },
+  alternarPainelPersonalizarDashboard() {
+    const aberto = this.els.painelPersonalizarDashboard.classList.toggle('aberto');
+    if (aberto) this.renderPainelPersonalizarDashboard();
+  },
+  cartaoDashboard(titulo, corpoHtml, extraHead) {
+    return `<div class="dash-cartao">
+      <div class="dash-cartao-head"><h3>${titulo}</h3>${extraHead || ''}</div>
+      <div class="dash-cartao-corpo">${corpoHtml}</div>
+    </div>`;
+  },
+  renderDashboard() {
+    const e = this.els;
+    if (!e.dashboardGrelha) return;
+    const perfil = this.perfilAtual();
+    const meuRecurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    const admin = this.souAdmin();
+    const gestorOuAdmin = admin || this.souGestorDeAlgumProjeto();
+    const ocultos = this.dashboardWidgetsOcultosSet();
+    const hojeISO = DateUtil.todayISO();
+    const hojeObj = DateUtil.parseISO(hojeISO);
+    const daqui7ISO = DateUtil.toISO(DateUtil.addDays(hojeObj, 7));
+    const daqui30ISO = DateUtil.toISO(DateUtil.addDays(hojeObj, 30));
+    const NOMES_DIA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    if (e.dashboardSaudacao) {
+      e.dashboardSaudacao.textContent = `Olá${perfil ? ', ' + perfil.nome.split(' ')[0] : ''} — hoje é ${NOMES_DIA[hojeObj.getDay()].toLowerCase()}, ${DateUtil.formatShort(hojeObj)}.`;
+    }
+    const projetosAtivos = Object.values(this.state.projetos).filter(p => p.ativo !== false);
+    const semRecurso = '<p class="hint">A tua conta ainda não está associada a um consultor — contacta o administrador.</p>';
+
+    let html = '';
+
+    if (!ocultos.has('agendaHoje')) {
+      let corpo = semRecurso;
+      if (meuRecurso) {
+        const feriadoHoje = this.state.feriados.find(f => f.data === hojeISO);
+        const ausenciaHoje = this.state.ausencias.find(a => a.recursoId === meuRecurso.id && hojeISO >= a.dataInicio && hojeISO <= a.dataFim);
+        if (feriadoHoje) corpo = `<p class="hint">🎉 ${escapeHtml(feriadoHoje.descricao || 'Feriado')} — hoje não é dia útil.</p>`;
+        else if (ausenciaHoje) corpo = `<p class="hint">🌴 ${escapeHtml(ausenciaHoje.tipo || 'Ausência')} — não estás disponível hoje.</p>`;
+        else {
+          const tarefasHoje = [];
+          projetosAtivos.forEach(p => p.tarefas.forEach(t => {
+            if (!t.recursoIds.includes(meuRecurso.id) || this.temFilhos(p, t.id)) return;
+            if (hojeISO >= t.inicio && hojeISO <= t.fim) tarefasHoje.push({ p, t });
+          }));
+          corpo = tarefasHoje.length ? tarefasHoje.map(({ p, t }) => `
+            <div class="dash-linha">
+              <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
+              <span class="dash-linha-sub">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)} · ${t.progresso || 0}%</span>
+            </div>`).join('') : '<p class="hint">Sem tarefas previstas para hoje.</p>';
+        }
+      }
+      html += this.cartaoDashboard('🗓 A minha agenda de hoje', corpo);
+    }
+
+    if (!ocultos.has('proximos7dias')) {
+      let corpo = semRecurso;
+      if (meuRecurso) {
+        const proximas = [];
+        projetosAtivos.forEach(p => p.tarefas.forEach(t => {
+          if (!t.recursoIds.includes(meuRecurso.id) || this.temFilhos(p, t.id)) return;
+          if (t.inicio > hojeISO && t.inicio <= daqui7ISO) proximas.push({ p, t });
+        }));
+        proximas.sort((a, b) => a.t.inicio.localeCompare(b.t.inicio));
+        corpo = proximas.length ? proximas.map(({ p, t }) => `
+          <div class="dash-linha">
+            <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
+            <span class="dash-linha-sub">${escapeHtml(p.nome)} · começa ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))}</span>
+          </div>`).join('') : '<p class="hint">Nada a começar nos próximos 7 dias.</p>';
+      }
+      html += this.cartaoDashboard('📅 Próximos 7 dias', corpo);
+    }
+
+    if (!ocultos.has('meusPassos')) {
+      let corpo = semRecurso;
+      if (meuRecurso) {
+        const passos = [];
+        Object.values(this.state.projetos).forEach(p => (p.proximosPassos || []).forEach(pp => {
+          if (pp.responsavelId === meuRecurso.id && !pp.fechado) passos.push({ p, pp });
+        }));
+        passos.sort((a, b) => (a.pp.dataPrevista || '9999').localeCompare(b.pp.dataPrevista || '9999'));
+        corpo = passos.length ? passos.map(({ p, pp }) => `
+          <div class="dash-linha">
+            <span class="dash-linha-principal">${this.proximoPassoAtrasado(pp) ? '⚠ ' : ''}${escapeHtml(pp.descricao)}</span>
+            <span class="dash-linha-sub">${escapeHtml(p.nome)}${pp.dataPrevista ? ' · ' + DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : ''}</span>
+          </div>`).join('') : '<p class="hint">Sem next steps atribuídos.</p>';
+      }
+      html += this.cartaoDashboard('✅ Os meus Next Steps', corpo);
+    }
+
+    if (!ocultos.has('meusProjetos')) {
+      const meus = this.meusProjetosDiretamente();
+      const corpo = meus.length ? meus.map(p => `
+        <div class="dash-linha">
+          <span class="dash-linha-principal">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</span>
+          <span class="dash-linha-sub">${escapeHtml(p.cliente || 'Sem cliente')} · ${escapeHtml(p.estado)}</span>
+        </div>`).join('') : '<p class="hint">Ainda não és gestor nem consultor de nenhum projeto.</p>';
+      html += this.cartaoDashboard('📁 Os meus projetos', corpo);
+    }
+
+    if (!ocultos.has('registoRapido')) {
+      html += this.cartaoDashboard('🕒 Registar horas de hoje', `<button type="button" class="btn btn-primary" id="btnDashRegistoRapido">Abrir Registo do Dia</button>`);
+    }
+
+    if (gestorOuAdmin && !ocultos.has('faturacaoAVencer')) {
+      const linhas = [];
+      this.meusProjetosEnvolvidos().filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
+        (p.faturas || []).forEach(f => {
+          if (!f.emitida && f.dataPrevista && f.dataPrevista <= daqui30ISO) linhas.push({ p, f });
+        });
+      });
+      linhas.sort((a, b) => a.f.dataPrevista.localeCompare(b.f.dataPrevista));
+      const corpo = linhas.length ? linhas.map(({ p, f }) => `
+        <div class="dash-linha">
+          <span class="dash-linha-principal">${escapeHtml(p.nome)} — ${this.valorFatura(f, p).toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</span>
+          <span class="dash-linha-sub">Prevista ${DateUtil.formatShort(DateUtil.parseISO(f.dataPrevista))}</span>
+        </div>`).join('') : '<p class="hint">Sem faturas por emitir nos próximos 30 dias.</p>';
+      html += this.cartaoDashboard('💶 Faturação a vencer', corpo);
+    }
+
+    if (gestorOuAdmin && !ocultos.has('ausenciasEquipa')) {
+      let recursosEquipa;
+      if (admin) {
+        recursosEquipa = this.state.recursos;
+      } else {
+        const ids = new Set();
+        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
+        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
+      }
+      const proximas = [];
+      this.state.ausencias.forEach(a => {
+        if (a.dataFim < hojeISO || a.dataInicio > daqui7ISO) return;
+        const r = recursosEquipa.find(x => x.id === a.recursoId);
+        if (r) proximas.push({ r, a });
+      });
+      proximas.sort((a, b) => a.a.dataInicio.localeCompare(b.a.dataInicio));
+      const corpo = proximas.length ? proximas.map(({ r, a }) => `
+        <div class="dash-linha">
+          <span class="dash-linha-principal">${escapeHtml(r.nome)} — ${escapeHtml(a.tipo)}</span>
+          <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
+        </div>`).join('') : '<p class="hint">Sem ausências nos próximos 7 dias.</p>';
+      html += this.cartaoDashboard('🌴 Ausências da equipa (próx. 7 dias)', corpo);
+    }
+
+    e.dashboardGrelha.innerHTML = html || '<p class="hint">Sem cartões para mostrar — liga alguns em "⚙ Personalizar".</p>';
+    const btnRegisto = document.getElementById('btnDashRegistoRapido');
+    if (btnRegisto) btnRegisto.addEventListener('click', () => {
+      this.irParaGrupo('horas');
+      this.irParaAba('dia');
+      this.irParaHojeDiaRegisto();
+    });
   },
 
   renderInfoProjeto() {
@@ -5051,8 +5247,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -5060,6 +5256,7 @@ const App = {
     const grupo = this.gruposAbas[nome];
     document.querySelectorAll('.grupo-btn').forEach(b => b.classList.toggle('active', b.dataset.grupo === grupo));
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
+    if (nome === 'dashboard') this.renderDashboard();
     if (nome === 'gantt') this.renderGanttAtual();
     if (nome === 'dia') this.renderRegistoDia();
     if (nome === 'calendario') this.renderCalendarioRegisto();
@@ -5678,6 +5875,12 @@ const App = {
     e.btnColunasProjetos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelColunasProjetos(); });
     e.painelColunasProjetos.addEventListener('click', (ev) => ev.stopPropagation()); // não fecha ao marcar várias colunas seguidas
     document.addEventListener('click', () => this.els.painelColunasProjetos.classList.remove('aberto'));
+    const btnPersonalizarDashboard = document.getElementById('btnPersonalizarDashboard');
+    if (btnPersonalizarDashboard) btnPersonalizarDashboard.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelPersonalizarDashboard(); });
+    if (e.painelPersonalizarDashboard) {
+      e.painelPersonalizarDashboard.addEventListener('click', (ev) => ev.stopPropagation());
+      document.addEventListener('click', () => e.painelPersonalizarDashboard.classList.remove('aberto'));
+    }
     [e.fPassoGestor, e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
     document.getElementById('btnLimparFiltrosPassos').addEventListener('click', () => {
       e.fPassoGestor.value = ''; e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
