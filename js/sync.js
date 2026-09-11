@@ -220,7 +220,11 @@ const Sync = {
       supabaseClient.from('feriados').select('*'),
       supabaseClient.from('ausencias').select('*'),
       supabaseClient.from('registos').select('*'),
-      supabaseClient.from('projetos').select('*'),
+      // Ordenado por criação (mais antigo primeiro) — sem isto, a ordem que a Supabase devolve não
+      // é garantida nem previsível, e "o meu primeiro projeto" (usado como omissão ao entrar — ver
+      // App.aoMudarSessao/meusProjetosDiretamente — e a ordem natural do seletor do Gantt) acabava
+      // a mostrar um projeto qualquer, não necessariamente o mais antigo do utilizador.
+      supabaseClient.from('projetos').select('*').order('criado_em', { ascending: true }),
       supabaseClient.from('tarefas').select('*').order('ordem', { ascending: true }),
       supabaseClient.from('tarefa_recursos').select('*'),
       supabaseClient.from('faturas').select('*'),

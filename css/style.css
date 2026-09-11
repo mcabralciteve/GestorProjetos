@@ -508,7 +508,8 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 
 /* Projeto suspenso/fechado */
 .badge-suspenso{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--radius-pill);background:var(--cinza-200);color:var(--cinza-700);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;}
-.check-ativo-projeto{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:8px;cursor:pointer;}
+.check-ativo-projeto{display:flex;flex-direction:row;align-items:center;flex-shrink:0;gap:4px;font-size:11px;font-weight:600;color:var(--cinza-500);cursor:pointer;white-space:nowrap;}
+.card-header h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .card-aviso-suspenso{background:#fdf3d6;border:1px solid #e8c766;border-radius:var(--radius);padding:8px 10px;font-size:11.5px;color:var(--cinza-700);margin-bottom:10px;}
 :root[data-tema="escuro"] .card-aviso-suspenso{background:#4a3a15;border-color:#7a5f20;color:var(--cinza-300);}
 
