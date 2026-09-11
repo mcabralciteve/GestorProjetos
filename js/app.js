@@ -513,6 +513,7 @@ const App = {
     if (!this.state.registos) this.state.registos = [];
     this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
     if (!this.state.tiposTrabalho) this.state.tiposTrabalho = [];
+    this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; });
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
     if (!this.state.configuracoes) this.state.configuracoes = {};
@@ -1578,7 +1579,7 @@ const App = {
   // "Projeto" não é uma linha desta lista — é um pseudo-tipo fixo (id null), sempre disponível e
   // sempre a exigir projeto/tarefa; ver tipoTrabalhoPorId/tiposTrabalhoAtivos. Esta tabela só guarda
   // as outras categorias (Ausência justificada, Formação interna, etc.), geridas pelo Administrador.
-  TIPO_TRABALHO_PROJETO: { id: null, nome: 'Projeto', cor: '#2563eb', requerProjeto: true, ativo: true },
+  TIPO_TRABALHO_PROJETO: { id: null, nome: 'Projeto', cor: '#2563eb', requerProjeto: true, ativo: true, criaAusencia: false },
   tipoTrabalhoPorId(id) {
     if (!id) return this.TIPO_TRABALHO_PROJETO;
     return this.state.tiposTrabalho.find(tt => tt.id === id) || this.TIPO_TRABALHO_PROJETO;
@@ -1590,7 +1591,7 @@ const App = {
     return [this.TIPO_TRABALHO_PROJETO, ...this.state.tiposTrabalho.filter(tt => tt.ativo).sort((a, b) => (a.ordem || 0) - (b.ordem || 0))];
   },
   novoTipoTrabalhoObj(nome) {
-    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, ordem: this.state.tiposTrabalho.length };
+    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, criaAusencia: false, ordem: this.state.tiposTrabalho.length };
   },
   adicionarTipoTrabalho() {
     this.state.tiposTrabalho.push(this.novoTipoTrabalhoObj('Novo tipo'));
@@ -1608,7 +1609,7 @@ const App = {
   atualizarTipoTrabalho(id, campo, valor) {
     const tt = this.state.tiposTrabalho.find(x => x.id === id);
     if (!tt) return;
-    tt[campo] = campo === 'ativo' ? !!valor : valor;
+    tt[campo] = (campo === 'ativo' || campo === 'criaAusencia') ? !!valor : valor;
     this.persist();
     this.renderTabelaTiposTrabalho();
     this.renderRegistoDia();
@@ -2556,10 +2557,12 @@ const App = {
         <td><input type="text" value="${escapeAttr(tt.nome)}" data-campo="nome"></td>
         <td><input type="color" value="${escapeAttr(tt.cor || '#64748b')}" data-campo="cor" style="width:44px;padding:2px;"></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.ativo ? 'checked' : ''} data-campo="ativo"></td>
+        <td style="text-align:center;"><input type="checkbox" ${tt.criaAusencia ? 'checked' : ''} data-campo="criaAusencia" title="Em vez de pedir horas/projeto, o Registo do Dia passa a pedir um período (data início/fim) e cria uma Ausência (a mesma coisa que Feriados &amp; Ausências, que a Capacidade já usa)."></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="nome"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'nome', e.target.value));
       tr.querySelector('[data-campo="cor"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'cor', e.target.value));
       tr.querySelector('[data-campo="ativo"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'ativo', e.target.checked));
+      tr.querySelector('[data-campo="criaAusencia"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'criaAusencia', e.target.checked));
       tr.querySelector('button').addEventListener('click', () => this.eliminarTipoTrabalho(tt.id));
       tbody.appendChild(tr);
     });
@@ -3459,9 +3462,16 @@ const App = {
     if (diaSemana === 0 || diaSemana === 6) return 'Fim de semana';
     const feriado = this.state.feriados.find(f => f.data === iso);
     if (feriado) return feriado.descricao || 'Feriado';
-    const ausencia = recurso && this.state.ausencias.find(a => a.recursoId === recurso.id && iso >= a.dataInicio && iso <= a.dataFim);
+    const ausencia = this.ausenciaNoDia(iso, recurso);
     if (ausencia) return ausencia.tipo || 'Ausência';
     return '';
+  },
+  // Ausência (férias, baixa, etc.) que cobre este dia para este recurso, ou null — usado tanto por
+  // diaBloqueadoRegisto (motivo do bloqueio) como para saber, na grelha, se o motivo mostrado
+  // corresponde a uma ausência de verdade (e por isso clicável para editar/eliminar) em vez de um
+  // feriado/fim de semana (globais, não editáveis a partir daqui).
+  ausenciaNoDia(iso, recurso) {
+    return recurso ? this.state.ausencias.find(a => a.recursoId === recurso.id && iso >= a.dataInicio && iso <= a.dataFim) : null;
   },
   navegarMesRegistoDia(delta) {
     if (!this.mesRegistoDiaAtual) { const hoje = new Date(); this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
@@ -3547,13 +3557,19 @@ const App = {
         const titulo = `${r.projetoNome ? r.projetoNome + ' — ' : ''}${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
         return `<div class="dia-bloco-mini" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}"></div>`;
       }).join('');
+      const ausenciaDoDia = this.ausenciaNoDia(iso, recurso);
       const motivoBloqueio = this.diaBloqueadoRegisto(iso, recurso);
       const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
       const vazioHtml = (!motivoBloqueio && restante > 0) ? `<div class="dia-bloco-vazio-mini" style="width:${restante}%" data-novo-bloco="${iso}" title="Adicionar a ${DateUtil.formatShort(cursor)}">+</div>` : '';
+      // O motivo só é clicável quando vem de uma Ausência de verdade (editável/eliminável aqui) —
+      // um feriado ou um simples fim de semana não têm nada para editar nesta página.
+      const motivoHtml = !motivoBloqueio ? '' : ausenciaDoDia
+        ? `<span class="dia-motivo-bloqueio dia-motivo-clicavel" data-editar-ausencia="${ausenciaDoDia.id}" title="${escapeAttr(motivoBloqueio + ' — clica para editar')}">${escapeHtml(motivoBloqueio)}</span>`
+        : `<span class="dia-motivo-bloqueio" title="${escapeAttr(motivoBloqueio)}">${escapeHtml(motivoBloqueio)}</span>`;
       html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}${motivoBloqueio ? ' dia-bloqueado' : ''}">
         <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras}h</span>` : ''}</div>
         <div class="dia-mes-barra">${blocosHtml}${vazioHtml}</div>
-        ${motivoBloqueio ? `<span class="dia-motivo-bloqueio" title="${escapeAttr(motivoBloqueio)}">${escapeHtml(motivoBloqueio)}</span>` : ''}
+        ${motivoHtml}
       </div>`;
       cursor = DateUtil.addDays(cursor, 1);
     }
@@ -3565,6 +3581,8 @@ const App = {
     // usado no modal "Associar consultores", só que aqui nem precisa de reatribuir a cada render:
     // basta substituir o handler uma vez, já que .onclick aceita ser reatribuído sem se acumular).
     e.diaGrelha.onclick = (ev) => {
+      const elAusencia = ev.target.closest('[data-editar-ausencia]');
+      if (elAusencia) { this.abrirModalAusenciaDia(elAusencia.dataset.editarAusencia); return; }
       const elBloco = ev.target.closest('[data-editar-bloco]');
       if (elBloco) { this.abrirModalBlocoDia(elBloco.dataset.editarBloco); return; }
       const elVazio = ev.target.closest('[data-novo-bloco]');
@@ -3598,7 +3616,10 @@ const App = {
       return;
     }
 
-    const tipos = this.tiposTrabalhoAtivos();
+    // Um registo já existente nunca é de um tipo "cria ausência" (esses nunca chegam a virar
+    // registos — ver ramo abaixo, que cria antes uma Ausência); por isso só se oferece esses tipos
+    // como opção quando se está mesmo a criar um bloco novo.
+    const tipos = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia || !registoExistente);
     const tipoInicialId = registoExistente ? (registoExistente.tipoTrabalhoId || '') : (tipoPreSelecionadoId || '');
     const outrasHorasDoDia = this.state.registos
       .filter(r => r.pessoa === pessoa && r.data === dataAlvo && r.id !== registoId)
@@ -3606,7 +3627,10 @@ const App = {
     const horasDefeito = registoExistente ? (parseFloat(registoExistente.horas) || 1) : Math.min(1, Math.max(0.25, this.CAPACIDADE_DIA_REGISTO - outrasHorasDoDia));
 
     const html = `
-      <label>Data <input type="date" id="blocoData" value="${dataAlvo}"></label>
+      <div class="row-2">
+        <label><span id="blocoDataLabelTxt">Data</span> <input type="date" id="blocoData" value="${dataAlvo}"></label>
+        <label id="blocoDataFimWrap" style="display:none;">Data fim <input type="date" id="blocoDataFim" value="${dataAlvo}"></label>
+      </div>
       <label>Tipo de trabalho
         <select id="blocoTipo">
           ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(tipoInicialId) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
@@ -3616,7 +3640,7 @@ const App = {
         <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
       </div>
-      <label>Horas <input type="number" id="blocoHoras" min="0.25" step="0.25" value="${horasDefeito}"></label>
+      <div id="blocoHorasWrap"><label>Horas <input type="number" id="blocoHoras" min="0.25" step="0.25" value="${horasDefeito}"></label></div>
       <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
         <textarea id="blocoNotas" rows="2">${escapeHtml(registoExistente ? registoExistente.notas : '')}</textarea>
       </label>
@@ -3628,8 +3652,12 @@ const App = {
 
     const m = this.els.modalCorpo;
     const inpData = m.querySelector('#blocoData');
+    const lblData = m.querySelector('#blocoDataLabelTxt');
+    const wrapDataFim = m.querySelector('#blocoDataFimWrap');
+    const inpDataFim = m.querySelector('#blocoDataFim');
     const selTipo = m.querySelector('#blocoTipo');
     const wrapProjeto = m.querySelector('#blocoProjetoWrap');
+    const wrapHoras = m.querySelector('#blocoHorasWrap');
     const selProjeto = m.querySelector('#blocoProjeto');
     const selTarefa = m.querySelector('#blocoTarefa');
 
@@ -3644,18 +3672,42 @@ const App = {
       if (registoExistente && projetosDaPessoa.some(p => p.idInterno === registoExistente.projetoIdInterno)) selProjeto.value = registoExistente.projetoIdInterno;
       preencherTarefas();
     };
-    const atualizarVisibilidadeProjeto = () => {
+    // Um tipo "cria ausência" (Férias, Baixa, etc. — ver App.state.tiposTrabalho / coluna "Cria
+    // Ausência" no separador Tipos de Trabalho) não pede horas nem projeto: pede antes um período
+    // (Data até Data fim) e, ao guardar, cria/atualiza uma linha em Ausências em vez de um registo
+    // — ver o "if (tipo.criaAusencia)" no botão Guardar, mais abaixo.
+    const atualizarCamposPorTipo = () => {
       const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
       wrapProjeto.style.display = tipo.requerProjeto ? '' : 'none';
       if (tipo.requerProjeto) preencherProjetos();
+      wrapDataFim.style.display = tipo.criaAusencia ? '' : 'none';
+      wrapHoras.style.display = tipo.criaAusencia ? 'none' : '';
+      lblData.textContent = tipo.criaAusencia ? 'Data início' : 'Data';
     };
-    atualizarVisibilidadeProjeto();
-    selTipo.addEventListener('change', atualizarVisibilidadeProjeto);
+    atualizarCamposPorTipo();
+    selTipo.addEventListener('change', atualizarCamposPorTipo);
     selProjeto.addEventListener('change', preencherTarefas);
 
     m.querySelector('#blocoGuardar').addEventListener('click', () => {
       const data = inpData.value;
       if (!this.anoDataPlausivel(data)) { this.toast('Indica uma data válida.'); return; }
+      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
+      const notas = m.querySelector('#blocoNotas').value.trim();
+
+      if (tipo.criaAusencia) {
+        const dataFim = inpDataFim.value;
+        if (!this.anoDataPlausivel(dataFim)) { this.toast('Indica uma data de fim válida.'); return; }
+        if (DateUtil.parseISO(dataFim) < DateUtil.parseISO(data)) { this.toast('A data de fim não pode ser anterior à de início.'); return; }
+        this.state.ausencias.push(this.novoAusenciaObj(recurso.id, data, dataFim, tipo.nome, notas));
+        this.persist();
+        this.renderTabelaAusencias();
+        this.renderTabelaTarefas();
+        this.renderCapacidade();
+        this.renderRegistoDia();
+        this.fecharModal();
+        return;
+      }
+
       // Só valida contra fim de semana/feriado/ausência quando a data é mesmo nova ou mudou — um
       // registo antigo que por alguma razão já lá estivesse (dados de antes desta regra, ou uma
       // exceção lançada de outra forma) continua editável nos outros campos sem ficar bloqueado.
@@ -3663,10 +3715,8 @@ const App = {
         const motivo = this.diaBloqueadoRegisto(data, recurso);
         if (motivo) { this.toast(`Não é possível registar horas em ${DateUtil.formatShort(DateUtil.parseISO(data))} — ${motivo}.`); return; }
       }
-      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
       const horas = parseFloat(m.querySelector('#blocoHoras').value);
       if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
-      const notas = m.querySelector('#blocoNotas').value.trim();
       let projetoIdInterno = '', tarefaNome = '';
       if (tipo.requerProjeto) {
         projetoIdInterno = selProjeto.value;
@@ -3693,6 +3743,58 @@ const App = {
     });
     const btnEliminar = m.querySelector('#blocoEliminar');
     if (btnEliminar) btnEliminar.addEventListener('click', () => { this.fecharModal(); this.eliminarRegisto(registoExistente.id); });
+  },
+  // Editar/eliminar uma Ausência já existente, a partir do motivo mostrado num dia bloqueado do
+  // Registo do Dia (ver renderRegistoDia) — reaproveita as mesmas Ausências do separador Feriados &
+  // Ausências, só que aqui a pessoa gere as suas próprias (ou as de quem já podia gerir antes — ver
+  // recursosPermitidosRegisto, a mesma lista que já limita quem aparece no seletor "Pessoa" desta
+  // página).
+  abrirModalAusenciaDia(ausenciaId) {
+    const ausencia = this.state.ausencias.find(a => a.id === ausenciaId);
+    if (!ausencia) return;
+    if (!this.recursosPermitidosRegisto().some(r => r.id === ausencia.recursoId)) return;
+
+    const tiposAusencia = this.state.tiposTrabalho.filter(tt => tt.criaAusencia);
+    const nomesTipos = tiposAusencia.map(tt => tt.nome);
+    if (!nomesTipos.includes(ausencia.tipo)) nomesTipos.push(ausencia.tipo); // preserva um tipo antigo/manual (ex.: vindo do separador Feriados & Ausências)
+
+    const html = `
+      <div class="row-2">
+        <label>Data início <input type="date" id="ausDataInicio" value="${ausencia.dataInicio}"></label>
+        <label>Data fim <input type="date" id="ausDataFim" value="${ausencia.dataFim}"></label>
+      </div>
+      <label>Tipo <select id="ausTipo">${nomesTipos.map(n => `<option ${n === ausencia.tipo ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('')}</select></label>
+      <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
+        <textarea id="ausNotas" rows="2">${escapeHtml(ausencia.notas)}</textarea>
+      </label>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+        <button type="button" class="btn btn-sm" id="ausEliminar" style="color:var(--vermelho)">🗑 Eliminar</button>
+        <button type="button" class="btn btn-primary" id="ausGuardar">Guardar</button>
+      </div>`;
+    this.abrirModal('Editar ausência', html);
+
+    const m = this.els.modalCorpo;
+    m.querySelector('#ausGuardar').addEventListener('click', () => {
+      const dataInicio = m.querySelector('#ausDataInicio').value;
+      const dataFim = m.querySelector('#ausDataFim').value;
+      if (!this.anoDataPlausivel(dataInicio) || !this.anoDataPlausivel(dataFim)) { this.toast('Indica datas válidas.'); return; }
+      if (DateUtil.parseISO(dataFim) < DateUtil.parseISO(dataInicio)) { this.toast('A data de fim não pode ser anterior à de início.'); return; }
+      ausencia.dataInicio = dataInicio;
+      ausencia.dataFim = dataFim;
+      ausencia.tipo = m.querySelector('#ausTipo').value;
+      ausencia.notas = m.querySelector('#ausNotas').value.trim();
+      this.persist();
+      this.renderTabelaAusencias();
+      this.renderTabelaTarefas();
+      this.renderCapacidade();
+      this.renderRegistoDia();
+      this.fecharModal();
+    });
+    m.querySelector('#ausEliminar').addEventListener('click', () => {
+      this.fecharModal();
+      this.eliminarAusencia(ausencia.id);
+      this.renderRegistoDia();
+    });
   },
 
   // ---------- Tab: Faturação ----------

@@ -503,6 +503,8 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .dia-bloco-vazio-mini:hover{background:var(--cinza-200);color:var(--azul);}
 .cal-dia.dia-bloqueado{background:repeating-linear-gradient(135deg,var(--cinza-100),var(--cinza-100) 6px,var(--branco) 6px,var(--branco) 12px);}
 .dia-motivo-bloqueio{display:block;font-size:9.5px;color:var(--cinza-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.dia-motivo-clicavel{cursor:pointer;text-decoration:underline dotted;}
+.dia-motivo-clicavel:hover{color:var(--azul);}
 
 .toast{
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);

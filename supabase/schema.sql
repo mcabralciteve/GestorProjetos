@@ -202,6 +202,13 @@ select * from (values
   ('Administrativo/Interno', '#64748b', 3)
 ) as seed(nome, cor, ordem)
 where not exists (select 1 from public.tipos_trabalho);
+-- Um tipo com cria_ausencia=true não gera uma linha em "registos" (nunca pede horas/projeto): o
+-- Registo do Dia cria/atualiza, por baixo, uma linha em "ausencias" (a mesma tabela que a
+-- Capacidade já lê) com um período de dias em vez de uma duração — ver App.abrirModalBlocoDia
+-- (campo tipo.criaAusencia) e App.abrirModalAusenciaDia. Nenhum tipo vem com isto ligado por
+-- omissão — o Administrador ativa-o nos que fizerem sentido (ex.: "Ausência justificada", ou um
+-- tipo novo "Férias"/"Baixa").
+alter table public.tipos_trabalho add column if not exists cria_ausencia boolean not null default false;
 
 -- Nulo = "Projeto" (ver nota acima). Preenchido = uma das linhas de tipos_trabalho.
 alter table public.registos add column if not exists tipo_trabalho_id uuid references public.tipos_trabalho(id) on delete set null;
