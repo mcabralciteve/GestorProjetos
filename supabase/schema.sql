@@ -178,6 +178,34 @@ alter table public.registos add column if not exists cliente text not null defau
 -- Nula em registos anteriores a este campo — para esses, o cálculo cai para trás no nome + projeto.
 alter table public.registos add column if not exists tarefa_id uuid references public.tarefas(id) on delete set null;
 
+-- ---------- Tipos de Trabalho (Registo do Dia) ----------
+-- Categorias de como uma pessoa gasta o seu tempo, além de "Projeto" — que NÃO é uma linha desta
+-- tabela: é um tipo especial tratado só no lado do cliente (App.TIPO_TRABALHO_PROJETO), sempre
+-- disponível, correspondendo a tipo_trabalho_id = null em "registos" (o mesmo que já significava
+-- "registo num projeto" antes desta tabela existir — por isso nenhum registo antigo precisa de
+-- migração). Esta tabela só guarda os OUTROS tipos (Ausência justificada, Formação interna, etc.),
+-- geridos pelo Administrador no separador "Tipos de Trabalho".
+create table if not exists public.tipos_trabalho (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  cor text not null default '#64748b',
+  ativo boolean not null default true,
+  ordem int not null default 0
+);
+-- Semente inicial (só insere se a tabela ainda estiver vazia — não repõe tipos entretanto apagados
+-- ou renomeados pelo Administrador).
+insert into public.tipos_trabalho (nome, cor, ordem)
+select * from (values
+  ('Ausência justificada', '#f59e0b', 0),
+  ('Formação interna', '#10b981', 1),
+  ('Atividade comercial', '#8b5cf6', 2),
+  ('Administrativo/Interno', '#64748b', 3)
+) as seed(nome, cor, ordem)
+where not exists (select 1 from public.tipos_trabalho);
+
+-- Nulo = "Projeto" (ver nota acima). Preenchido = uma das linhas de tipos_trabalho.
+alter table public.registos add column if not exists tipo_trabalho_id uuid references public.tipos_trabalho(id) on delete set null;
+
 -- ---------- Acompanhamento: pontos de situação e next steps por projeto ----------
 -- Pontos de situação: só o Administrador cria/edita/apaga (registados numa reunião com o Gestor).
 -- Next steps: Administrador e Gestor do projeto podem criar (sempre associados a uma sessão de
@@ -351,7 +379,7 @@ begin
   for t in select unnest(array[
     'equipas','recursos','feriados','ausencias',
     'projetos','tarefas','tarefa_recursos','faturas','registos',
-    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes'
+    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho'
   ])
   loop
     execute format('alter table public.%I enable row level security;', t);

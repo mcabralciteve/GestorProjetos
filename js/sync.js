@@ -11,11 +11,14 @@ const Sync = {
     const depois = JSON.parse(atualStr);
 
     // Equipas antes de recursos, recursos antes do resto — "recursos.equipa_id" e
-    // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem.
+    // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem. "tipos_trabalho"
+    // antes de "registos" pela mesma razão (registos.tipo_trabalho_id).
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
       eq => ({ id: eq.id, nome: eq.nome, departamento: eq.departamento || '', team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
     await this.sincronizarListaSimples('recursos', antes.recursos, depois.recursos,
       r => ({ id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipa_id: r.equipaId || null, preco_custo: r.precoCusto, preco_venda: r.precoVenda }));
+    await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
+      tt => ({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0 }));
 
     await Promise.all([
       this.sincronizarListaSimples('feriados', antes.feriados, depois.feriados,
@@ -65,7 +68,8 @@ const Sync = {
       const linhas = novos.map(r => ({
         id: r.id, data: r.data, pessoa: r.pessoa, projeto_id: r.projetoId || null,
         projeto_id_interno: r.projetoIdInterno, projeto_nome: r.projetoNome, cliente: r.cliente || '', tarefa_nome: r.tarefaNome,
-        tarefa_id: r.tarefaId || null, horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm
+        tarefa_id: r.tarefaId || null, tipo_trabalho_id: r.tipoTrabalhoId || null,
+        horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm
       }));
       const { error } = await supabaseClient.from('registos').insert(linhas);
       if (error) throw error;
@@ -210,7 +214,7 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg] = await Promise.all([
+    const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
       supabaseClient.from('recursos').select('*'),
       supabaseClient.from('feriados').select('*'),
@@ -223,11 +227,13 @@ const Sync = {
       supabaseClient.from('pontos_situacao').select('*'),
       supabaseClient.from('proximos_passos').select('*'),
       supabaseClient.from('reservas_viatura').select('*'),
-      supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle()
+      supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle(),
+      supabaseClient.from('tipos_trabalho').select('*')
     ]);
-    [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg].forEach(r => { if (r.error) throw r.error; });
+    [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
 
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, departamento: r.departamento || '', teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
+    const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0 }));
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
@@ -246,6 +252,7 @@ const Sync = {
     const registos = reg.data.map(r => ({
       id: r.id, data: r.data, pessoa: r.pessoa, projetoIdInterno: r.projeto_id_interno, projetoId: r.projeto_id,
       projetoNome: r.projeto_nome, cliente: r.cliente || '', tarefaNome: r.tarefa_nome, tarefaId: r.tarefa_id || null,
+      tipoTrabalhoId: r.tipo_trabalho_id || null,
       horas: Number(r.horas) || 0, notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em
     }));
 
@@ -315,7 +322,7 @@ const Sync = {
     };
 
     App.state = {
-      equipas, recursos, feriados, ausencias, registos, projetos, utilizadores,
+      equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, tiposTrabalho,
       reservasViatura, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
     };
   },

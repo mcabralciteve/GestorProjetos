@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
+  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -58,6 +58,10 @@ const App = {
   TAMANHO_PAGINA_REGISTOS: 20,
   filtrosCalendarioRegisto: { pessoa: '', projeto: '' },
   calMesAtual: null,
+  // Estado do Registo do Dia — só do lado do cliente, tal como filtrosCalendarioRegisto/calMesAtual
+  // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
+  diaRegistoPessoa: '',
+  diaRegistoData: '',
   filtrosAlocacoes: { pessoa: '', projeto: '', cliente: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
@@ -267,6 +271,13 @@ const App = {
       btnCalHoje: document.getElementById('btnCalHoje'),
       calMesLabel: document.getElementById('calMesLabel'),
       calendarioRegistos: document.getElementById('calendarioRegistos'),
+      diaPessoa: document.getElementById('diaPessoa'),
+      diaMsg: document.getElementById('diaMsg'),
+      diaDataLabel: document.getElementById('diaDataLabel'),
+      diaResumo: document.getElementById('diaResumo'),
+      diaGrelha: document.getElementById('diaGrelha'),
+      diaTipos: document.getElementById('diaTipos'),
+      corpoTabelaTiposTrabalho: document.getElementById('corpoTabelaTiposTrabalho'),
       statsFaturacao: document.getElementById('statsFaturacao'),
       fFatProjeto: document.getElementById('fFatProjeto'),
       fFatDe: document.getElementById('fFatDe'),
@@ -488,7 +499,7 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
+    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
@@ -501,6 +512,8 @@ const App = {
     });
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
+    this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
+    if (!this.state.tiposTrabalho) this.state.tiposTrabalho = [];
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
     if (!this.state.configuracoes) this.state.configuracoes = {};
@@ -676,6 +689,7 @@ const App = {
     this.filtrosAlocacoes.pessoa = meuRecurso.id;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
     this.filtrosCalendarioRegisto.pessoa = meuRecurso.nome;
+    this.diaRegistoPessoa = meuRecurso.nome;
     if (meuRecurso.equipaId) this.filtroEquipaCap = meuRecurso.equipaId;
     // Só faz sentido para o Administrador (é o único que vê este filtro — ver renderProjetoSelect)
     // e só se ele próprio gerir algum projeto; senão fica "Todos os gestores", como já era.
@@ -696,6 +710,11 @@ const App = {
   // (projeto entretanto eliminado, ou nunca resolvido) só o Administrador consegue tocar.
   possoEditarRegisto(r) {
     if (this.souAdmin()) return true;
+    // Registo sem projeto (Ausência justificada, Formação, etc. — ver Registo do Dia): quem podia
+    // tê-lo criado para esta pessoa também o pode editar/apagar depois, sem precisar do
+    // Administrador — ao contrário de um registo de projeto órfão (projeto entretanto eliminado,
+    // "!r.projetoIdInterno" é falso nesse caso), que continua só para o Administrador.
+    if (!r.projetoIdInterno) return this.recursosPermitidosRegisto().some(rec => rec.nome === r.pessoa);
     const p = this.projetoDoRegisto(r);
     return !!p && this.souGestorDe(p.id);
   },
@@ -1556,6 +1575,46 @@ const App = {
     this.renderFiltroEquipaCap();
   },
 
+  // ---------- Tipos de Trabalho (Registo do Dia) ----------
+  // "Projeto" não é uma linha desta lista — é um pseudo-tipo fixo (id null), sempre disponível e
+  // sempre a exigir projeto/tarefa; ver tipoTrabalhoPorId/tiposTrabalhoAtivos. Esta tabela só guarda
+  // as outras categorias (Ausência justificada, Formação interna, etc.), geridas pelo Administrador.
+  TIPO_TRABALHO_PROJETO: { id: null, nome: 'Projeto', cor: '#2563eb', requerProjeto: true, ativo: true },
+  tipoTrabalhoPorId(id) {
+    if (!id) return this.TIPO_TRABALHO_PROJETO;
+    return this.state.tiposTrabalho.find(tt => tt.id === id) || this.TIPO_TRABALHO_PROJETO;
+  },
+  // "Projeto" sempre primeiro, seguido dos tipos ativos (os desativados deixam de poder ser
+  // escolhidos em registos novos, mas continuam a mostrar-se corretamente nos já existentes — ver
+  // tipoTrabalhoPorId, que não filtra por "ativo").
+  tiposTrabalhoAtivos() {
+    return [this.TIPO_TRABALHO_PROJETO, ...this.state.tiposTrabalho.filter(tt => tt.ativo).sort((a, b) => (a.ordem || 0) - (b.ordem || 0))];
+  },
+  novoTipoTrabalhoObj(nome) {
+    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, ordem: this.state.tiposTrabalho.length };
+  },
+  adicionarTipoTrabalho() {
+    this.state.tiposTrabalho.push(this.novoTipoTrabalhoObj('Novo tipo'));
+    this.persist();
+    this.renderTabelaTiposTrabalho();
+    this.renderRegistoDia();
+  },
+  eliminarTipoTrabalho(id) {
+    if (!confirm('Eliminar este tipo de trabalho? Os registos já feitos com este tipo mantêm-se tal como estão, só deixam de o poder escolher para registos novos.')) return;
+    this.state.tiposTrabalho = this.state.tiposTrabalho.filter(tt => tt.id !== id);
+    this.persist();
+    this.renderTabelaTiposTrabalho();
+    this.renderRegistoDia();
+  },
+  atualizarTipoTrabalho(id, campo, valor) {
+    const tt = this.state.tiposTrabalho.find(x => x.id === id);
+    if (!tt) return;
+    tt[campo] = campo === 'ativo' ? !!valor : valor;
+    this.persist();
+    this.renderTabelaTiposTrabalho();
+    this.renderRegistoDia();
+  },
+
   // ---------- Feriados ----------
   adicionarFeriado() {
     this.state.feriados.push(this.novoFeriadoObj(DateUtil.todayISO(), 'Novo feriado'));
@@ -1675,12 +1734,13 @@ const App = {
       id: crypto.randomUUID(),
       data: dados.data,
       pessoa: dados.pessoa,
-      projetoIdInterno: dados.projetoIdInterno,
-      projetoNome: dados.projetoNome,
+      projetoIdInterno: dados.projetoIdInterno || '',
+      projetoNome: dados.projetoNome || '',
       projetoId: dados.projetoId || null,
       cliente: dados.cliente || '',
       tarefaNome: dados.tarefaNome || '',
       tarefaId: dados.tarefaId || null,
+      tipoTrabalhoId: dados.tipoTrabalhoId || null,
       horas: dados.horas,
       notas: dados.notas || '',
       origem: dados.origem || 'app',
@@ -1701,6 +1761,7 @@ const App = {
     this.renderTabelaProjetos();
     this.renderInfoProjeto();
     this.renderPortefolio();
+    this.renderRegistoDia();
     return registo;
   },
   eliminarRegisto(id) {
@@ -1714,6 +1775,7 @@ const App = {
     this.renderTabelaProjetos();
     this.renderInfoProjeto();
     this.renderPortefolio();
+    this.renderRegistoDia();
   },
   // Soma as horas reais desta tarefa. Casa por nome (sem sensibilidade a maiúsculas/espaços, para
   // não perder registos por diferenças triviais de escrita). Registos cuja "Tarefa" não corresponde
@@ -2119,6 +2181,7 @@ const App = {
     this.renderPortefolio();
     this.renderTabelaRecursosCentral();
     this.renderTabelaEquipas();
+    this.renderTabelaTiposTrabalho();
     this.renderTabelaFeriados();
     this.renderTabelaAusencias();
     this.renderFiltroEquipaCap();
@@ -2126,6 +2189,7 @@ const App = {
     this.renderCalendarioAlocacoes();
     this.renderFormRegisto();
     this.renderTabelaRegistos();
+    this.renderRegistoDia();
     this.renderFaturacao();
     this.renderFormReservaViatura();
     this.renderTabelaReservasViatura();
@@ -2155,7 +2219,7 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes'].includes(this.abaAtiva)) this.irParaAba('gantt');
+    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('gantt');
     if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('gantt');
   },
 
@@ -2478,6 +2542,26 @@ const App = {
         inp.addEventListener('change', (e) => this.atualizarEquipa(eq.id, inp.dataset.campo, e.target.value));
       });
       tr.querySelector('button').addEventListener('click', () => this.eliminarEquipa(eq.id));
+      tbody.appendChild(tr);
+    });
+  },
+
+  renderTabelaTiposTrabalho() {
+    const tbody = this.els.corpoTabelaTiposTrabalho;
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const tipos = [...this.state.tiposTrabalho].sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+    tipos.forEach(tt => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" value="${escapeAttr(tt.nome)}" data-campo="nome"></td>
+        <td><input type="color" value="${escapeAttr(tt.cor || '#64748b')}" data-campo="cor" style="width:44px;padding:2px;"></td>
+        <td style="text-align:center;"><input type="checkbox" ${tt.ativo ? 'checked' : ''} data-campo="ativo"></td>
+        <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="nome"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'nome', e.target.value));
+      tr.querySelector('[data-campo="cor"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'cor', e.target.value));
+      tr.querySelector('[data-campo="ativo"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'ativo', e.target.checked));
+      tr.querySelector('button').addEventListener('click', () => this.eliminarTipoTrabalho(tt.id));
       tbody.appendChild(tr);
     });
   },
@@ -2927,11 +3011,15 @@ const App = {
       this.toast('Erro ao atualizar registo: ' + err.message);
     }
     this.renderTabelaRegistos();
+    this.renderRegistoDia();
   },
   // Pessoa/Projeto/Tarefa mudam sempre em conjunto (ver as chamadas em renderTabelaRegistos) —
   // um registo nunca pode ficar sem tarefa associada, por isso as três só se gravam juntas, já
   // com a combinação final validada (a tarefa escolhida tem mesmo de pertencer ao projeto e a
   // pessoa indicados).
+  // Também usado pelo popover de edição do Registo do Dia (ver abrirModalBlocoDia) — daí aceitar,
+  // além de pessoa/projeto/tarefa, também tipoTrabalhoId/horas/notas (a Tabela nunca muda estes
+  // dois últimos por aqui, continua a usar atualizarCampoRegisto campo a campo).
   async gravarLinhaRegisto(id, alteracoes) {
     const r = this.state.registos.find(x => x.id === id);
     if (!r || !this.possoEditarRegisto(r)) return;
@@ -2939,16 +3027,19 @@ const App = {
     // gira — nunca "emprestar" um registo a um projeto alheio. A interface já só lhe oferece essas
     // opções (ver renderTabelaRegistos); isto é só a defesa a mais, verificada ANTES de mexer em
     // qualquer coisa, para nunca deixar `r` a meio de uma alteração parcial.
-    if ('projetoIdInterno' in alteracoes && !this.souAdmin()) {
+    if ('projetoIdInterno' in alteracoes && alteracoes.projetoIdInterno && !this.souAdmin()) {
       const projAlvo = Object.values(this.state.projetos).find(p => p.idInterno === alteracoes.projetoIdInterno);
       if (!projAlvo || !this.souGestorDe(projAlvo.id)) return;
     }
     const campos = {};
     if ('pessoa' in alteracoes) { r.pessoa = alteracoes.pessoa; campos.pessoa = r.pessoa; }
+    if ('tipoTrabalhoId' in alteracoes) { r.tipoTrabalhoId = alteracoes.tipoTrabalhoId; campos.tipo_trabalho_id = r.tipoTrabalhoId; }
+    if ('horas' in alteracoes) { r.horas = alteracoes.horas; campos.horas = r.horas; }
+    if ('notas' in alteracoes) { r.notas = alteracoes.notas; campos.notas = r.notas; }
     if ('projetoIdInterno' in alteracoes) {
       const proj = Object.values(this.state.projetos).find(p => p.idInterno === alteracoes.projetoIdInterno);
-      r.projetoIdInterno = alteracoes.projetoIdInterno;
-      r.projetoNome = proj ? proj.nome : alteracoes.projetoIdInterno;
+      r.projetoIdInterno = alteracoes.projetoIdInterno || '';
+      r.projetoNome = proj ? proj.nome : (alteracoes.projetoIdInterno || '');
       r.projetoId = proj ? proj.id : null;
       r.cliente = proj ? (proj.cliente || '') : '';
       campos.projeto_id_interno = r.projetoIdInterno;
@@ -2956,22 +3047,24 @@ const App = {
       campos.projeto_id = r.projetoId;
       campos.cliente = r.cliente;
     }
-    if ('tarefaNome' in alteracoes) { r.tarefaNome = alteracoes.tarefaNome; campos.tarefa_nome = r.tarefaNome; }
+    if ('tarefaNome' in alteracoes) { r.tarefaNome = alteracoes.tarefaNome || ''; campos.tarefa_nome = r.tarefaNome; }
     // Sempre que pessoa/projeto/tarefa mudam, tenta re-resolver a referência direta à tarefa (só
     // usada para saber quanto já foi feito dela — ver App.horasJaRegistadasTarefa); fica null se a
-    // combinação final não corresponder a nenhuma tarefa real (não deve acontecer, mas não bloqueia).
+    // combinação final não corresponder a nenhuma tarefa real (não deve acontecer, nem para um
+    // registo sem projeto, que nunca corresponde a nenhuma, mas não bloqueia).
     if ('pessoa' in alteracoes || 'projetoIdInterno' in alteracoes || 'tarefaNome' in alteracoes) {
       const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(r.projetoIdInterno, r.pessoa).find(t => t.nome === r.tarefaNome);
       r.tarefaId = tarefaReal ? tarefaReal.id : null;
       campos.tarefa_id = r.tarefaId;
-      this.invalidarIndiceRegistos();
     }
+    this.invalidarIndiceRegistos();
     try {
       await Sync.atualizarRegisto(id, campos);
     } catch (err) {
       this.toast('Erro ao atualizar registo: ' + err.message);
     }
     this.renderTabelaRegistos();
+    this.renderRegistoDia();
   },
   submeterFormRegisto() {
     const e = this.els;
@@ -3029,6 +3122,7 @@ const App = {
   // Extrai de um registo o valor comparável para a coluna de ordenação atual.
   valorOrdenacaoRegisto(r, campo) {
     switch (campo) {
+      case 'tipo': return this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome.toLowerCase();
       case 'projeto': return `${r.projetoIdInterno || ''} ${r.projetoNome || ''}`.toLowerCase();
       case 'tarefaNome': return (r.tarefaNome || '').toLowerCase();
       case 'horas': return parseFloat(r.horas) || 0;
@@ -3088,16 +3182,19 @@ const App = {
 
     e.corpoTabelaRegistos.innerHTML = '';
     if (!pagina.length) {
-      e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="9" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
+      e.corpoTabelaRegistos.innerHTML = '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:20px">Sem registos para os filtros selecionados.</td></tr>';
     }
     pagina.forEach(r => {
       const tr = document.createElement('tr');
       const podeEditar = this.possoEditarRegisto(r);
+      const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
+      const tipoHtml = `<span class="tipo-dot" style="background:${tipo.cor}"></span>${escapeHtml(tipo.nome)}`;
       if (!podeEditar) {
         tr.innerHTML = `
           <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
           <td>${escapeHtml(r.pessoa)}</td>
-          <td>${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}</td>
+          <td>${tipoHtml}</td>
+          <td>${r.projetoIdInterno ? `${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}` : '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
@@ -3118,17 +3215,33 @@ const App = {
       const admin = this.souAdmin();
       const pessoasPermitidas = admin ? this.state.recursos : this.recursosPermitidosRegisto();
       const opcoesPessoa = pessoasPermitidas.map(rec => `<option value="${escapeAttr(rec.nome)}">${escapeHtml(rec.nome)}</option>`).join('');
+      // O Tipo de trabalho não se edita aqui (só no popover do Registo do Dia, ou por troca
+      // completa apagar+recriar) — para um tipo sem projeto (Ausência, Formação, etc.), as células
+      // de Projeto/Tarefa nem fazem sentido, por isso ficam estáticas em vez do <select> em cascata.
+      const semProjeto = !tipo.requerProjeto;
       tr.innerHTML = `
         <td><input type="date" value="${r.data}" data-campo="data" style="min-width:120px"></td>
         <td><select data-campo="pessoa">${opcoesPessoa}</select></td>
-        <td><select data-campo="projetoIdInterno" style="min-width:200px"></select></td>
+        <td>${tipoHtml}</td>
+        <td>${semProjeto ? '<span style="color:var(--cinza-500)">—</span>' : '<select data-campo="projetoIdInterno" style="min-width:200px"></select>'}</td>
         <td class="cel-cliente">${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
-        <td><select data-campo="tarefaNome" style="min-width:160px"></select></td>
+        <td>${semProjeto ? '<span style="color:var(--cinza-500)">—</span>' : '<select data-campo="tarefaNome" style="min-width:160px"></select>'}</td>
         <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
         <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="pessoa"]').value = r.pessoa;
+      tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
+      tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
+      tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
+      tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+      if (semProjeto) {
+        // Sem projeto, só a Pessoa é reatribuível — mantém o resto do registo (tipo/horas/notas)
+        // como está, sem a cascata Projeto/Tarefa que só faz sentido para o tipo "Projeto".
+        tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => this.gravarLinhaRegisto(r.id, { pessoa: ev.target.value }));
+        e.corpoTabelaRegistos.appendChild(tr);
+        return;
+      }
       // Projeto e Tarefa nunca podem ficar por preencher — um registo sem tarefa associada não é
       // permitido (nem na criação, nem aqui). Sempre que a Pessoa ou o Projeto mudam de forma a
       // invalidar a escolha atual, escolhe-se automaticamente a primeira opção válida em vez de
@@ -3182,10 +3295,8 @@ const App = {
         if (!ev.target.value) { this.toast('Tem de escolher uma tarefa.'); this.renderTabelaRegistos(); return; }
         this.gravarLinhaRegisto(r.id, { tarefaNome: ev.target.value });
       });
-      tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
-      tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
-      tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
-      tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+      // data/horas/notas/eliminar já ficaram ligados mais acima (comuns aos dois casos, com/sem
+      // projeto) — nada a repetir aqui.
       e.corpoTabelaRegistos.appendChild(tr);
     });
 
@@ -3212,11 +3323,13 @@ const App = {
     return cores[hash % cores.length];
   },
   // Mesma regra de permissão do Registo de Horas (Admin vê tudo; Gestor só os projetos que gere;
-  // Consultor só os seus próprios registos), aplicada aos registos já existentes.
+  // Consultor só os seus próprios registos), aplicada aos registos já existentes. Um registo sem
+  // projeto (Ausência justificada, Formação, etc. — ver Registo do Dia) passa só pelo filtro de
+  // pessoa: não tem projeto nenhum a verificar contra projetosPermitidosIds.
   registosCalendarioPermitidos() {
     const pessoasPermitidas = new Set(this.recursosPermitidosRegisto().map(r => r.nome));
     const projetosPermitidosIds = new Set(this.projetosRegistoPermitidos().map(p => p.idInterno));
-    return this.state.registos.filter(r => pessoasPermitidas.has(r.pessoa) && projetosPermitidosIds.has(r.projetoIdInterno));
+    return this.state.registos.filter(r => pessoasPermitidas.has(r.pessoa) && (!r.projetoIdInterno || projetosPermitidosIds.has(r.projetoIdInterno)));
   },
   navegarMesCalendario(delta) {
     if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
@@ -3248,7 +3361,9 @@ const App = {
     const projetosDisponiveis = [];
     const idsProjetoVistos = new Set();
     registosPermitidos.forEach(r => {
-      if (idsProjetoVistos.has(r.projetoIdInterno)) return;
+      // Registos sem projeto (Ausência justificada, Formação, etc.) não entram no filtro de
+      // Projeto — não há nada de útil para filtrar por aí, sempre aparecem independentemente dele.
+      if (!r.projetoIdInterno || idsProjetoVistos.has(r.projetoIdInterno)) return;
       idsProjetoVistos.add(r.projetoIdInterno);
       projetosDisponiveis.push({ idInterno: r.projetoIdInterno, nome: r.projetoNome });
     });
@@ -3303,8 +3418,11 @@ const App = {
         const horas = parseFloat(r.horas) || 0;
         const altura = Math.max(20, Math.min(horas * 12, 96));
         const cor = this.corPessoaCalendario(r.pessoa);
-        const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(r.projetoNome)}` : escapeHtml(r.projetoNome);
-        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(r.projetoNome)}${r.tarefaNome ? ' · ' + escapeAttr(r.tarefaNome) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
+        // Um registo sem projeto (Ausência justificada, Formação, etc.) não tem "projetoNome" — usa
+        // o nome do Tipo de Trabalho no lugar, para nunca mostrar uma barra em branco.
+        const rotulo = r.projetoNome || this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome;
+        const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(rotulo)}` : escapeHtml(rotulo);
+        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${r.tarefaNome ? ' · ' + escapeAttr(r.tarefaNome) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
         return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
           <span class="cal-bloco-linha1">${linha1}</span>
           <span class="cal-bloco-linha2">${escapeHtml(r.tarefaNome || '')} · ${horas}h</span>
@@ -3318,6 +3436,209 @@ const App = {
     }
     html += '</div>';
     e.calendarioRegistos.innerHTML = html;
+  },
+
+  // ---------- Tab: Registo do Dia ----------
+  // Um único ecrã para lançar tudo o que preencheu o dia de uma pessoa — projeto ou qualquer outro
+  // Tipo de Trabalho (Ausência, Formação, Comercial, etc.) — em vez de repetir o formulário do
+  // separador "Registo" uma vez por cada bloco. Cada bloco da barra é, por baixo, o mesmo "registo"
+  // de sempre (só que aqui organizados por dia); a posição/largura na barra é só visual — a app não
+  // guarda a que hora do dia cada bloco pertence, só a duração (ver supabase/schema.sql, tabela
+  // "registos": nunca teve colunas de hora).
+  CAPACIDADE_DIA_REGISTO: 8,
+  navegarDiaRegisto(delta) {
+    this.diaRegistoData = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(this.diaRegistoData || DateUtil.todayISO()), delta));
+    this.renderRegistoDia();
+  },
+  irParaHojeDiaRegisto() {
+    this.diaRegistoData = DateUtil.todayISO();
+    this.renderRegistoDia();
+  },
+  renderRegistoDia() {
+    const e = this.els;
+    if (!e.diaPessoa) return;
+    const recursosPermitidos = this.recursosPermitidosRegisto();
+    const somenteEuProprio = !this.souAdmin() && !this.souGestorDeAlgumProjeto();
+    const nomesPermitidos = new Set(recursosPermitidos.map(r => r.nome));
+    e.diaPessoa.innerHTML = '<option value="">Seleciona…</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.nome)}">${escapeHtml(r.nome)}</option>`).join('');
+    // Ao contrário de renderProjetoSelect (que É o seu próprio change-handler, daí a necessidade de
+    // uma "semente única" — ver _filtroGestorGanttSemeado), aqui o change do <select> tem um
+    // handler à parte (ver wireEvents) que já escreve em this.diaRegistoPessoa ANTES de chamar este
+    // render — por isso este é sempre a fonte de verdade, nunca se lê e.diaPessoa.value de volta
+    // (que aliás já foi apagado pela troca de innerHTML acima).
+    if (!nomesPermitidos.has(this.diaRegistoPessoa)) {
+      this.diaRegistoPessoa = (somenteEuProprio && recursosPermitidos[0]) ? recursosPermitidos[0].nome : '';
+    }
+    e.diaPessoa.value = this.diaRegistoPessoa;
+    e.diaPessoa.disabled = somenteEuProprio;
+    if (e.diaMsg) e.diaMsg.textContent = (somenteEuProprio && !recursosPermitidos.length) ? 'A tua conta ainda não está associada a um consultor — contacta o administrador.' : '';
+
+    if (!this.diaRegistoData) this.diaRegistoData = DateUtil.todayISO();
+    const dataObj = DateUtil.parseISO(this.diaRegistoData);
+    const NOMES_DIA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    if (e.diaDataLabel) e.diaDataLabel.textContent = `${NOMES_DIA[dataObj.getDay()]}, ${DateUtil.formatShort(dataObj)}`;
+
+    const pessoa = this.diaRegistoPessoa;
+    if (!pessoa) {
+      if (e.diaResumo) e.diaResumo.innerHTML = '';
+      if (e.diaGrelha) e.diaGrelha.innerHTML = '<p class="hint">Escolhe uma pessoa para ver e lançar o registo do dia.</p>';
+      if (e.diaTipos) e.diaTipos.innerHTML = '';
+      return;
+    }
+    const registosDoDia = this.state.registos
+      .filter(r => r.pessoa === pessoa && r.data === this.diaRegistoData)
+      .sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || ''));
+    const CAP = this.CAPACIDADE_DIA_REGISTO;
+    const totalHoras = registosDoDia.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+    if (e.diaResumo) {
+      const fmt = (n) => n.toLocaleString('pt-PT', { maximumFractionDigits: 2 });
+      let extra;
+      if (totalHoras < CAP) extra = `faltam <b>${fmt(CAP - totalHoras)}h</b> para ${CAP}h`;
+      else if (totalHoras > CAP) extra = `<span style="color:var(--vermelho)"><b>${fmt(totalHoras - CAP)}h</b> acima das ${CAP}h</span>`;
+      else extra = `dia completo`;
+      e.diaResumo.innerHTML = `<b>${fmt(totalHoras)}h</b> registadas · ${extra}`;
+    }
+
+    const denom = Math.max(CAP, totalHoras);
+    const blocosHtml = registosDoDia.map(r => {
+      const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
+      const horas = parseFloat(r.horas) || 0;
+      const largura = denom > 0 ? (horas / denom * 100) : 0;
+      const rotulo = r.projetoNome || tipo.nome;
+      const titulo = `${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
+      return `<div class="dia-bloco" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}">
+        <span class="dia-bloco-nome">${escapeHtml(rotulo)}</span>
+        <span class="dia-bloco-horas">${horas}h</span>
+      </div>`;
+    }).join('');
+    const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
+    const vazioHtml = restante > 0 ? `<button type="button" class="dia-bloco-vazio" style="width:${restante}%" data-novo-bloco="1">+ Adicionar</button>` : '';
+    if (e.diaGrelha) {
+      e.diaGrelha.innerHTML = `
+        <div class="dia-marcas">${Array.from({ length: CAP }, (_, i) => `<span>${i + 1}h</span>`).join('')}</div>
+        <div class="dia-barra">${blocosHtml}${vazioHtml}</div>`;
+      e.diaGrelha.querySelectorAll('[data-editar-bloco]').forEach(el => {
+        el.addEventListener('click', () => this.abrirModalBlocoDia(el.dataset.editarBloco));
+      });
+      const btnNovo = e.diaGrelha.querySelector('[data-novo-bloco]');
+      if (btnNovo) btnNovo.addEventListener('click', () => this.abrirModalBlocoDia(null));
+    }
+
+    if (e.diaTipos) {
+      e.diaTipos.innerHTML = this.tiposTrabalhoAtivos().map(tt => `
+        <button type="button" class="dia-tipo-chip" style="border-color:${tt.cor}" data-tipo="${tt.id || ''}">
+          <span class="tipo-dot" style="background:${tt.cor}"></span>${escapeHtml(tt.nome)}
+        </button>`).join('');
+      e.diaTipos.querySelectorAll('[data-tipo]').forEach(el => {
+        el.addEventListener('click', () => this.abrirModalBlocoDia(null, el.dataset.tipo || null));
+      });
+    }
+  },
+  // registoId: null para criar um bloco novo; id de um registo existente para o editar/consultar.
+  // tipoPreSelecionadoId: só usado ao criar (clicou-se diretamente num chip de Tipo) — "" (Projeto)
+  // ou o id de um tipo em state.tiposTrabalho.
+  abrirModalBlocoDia(registoId, tipoPreSelecionadoId) {
+    const pessoa = this.diaRegistoPessoa;
+    if (!pessoa) return;
+    const recurso = this.state.recursos.find(r => r.nome === pessoa);
+    const registoExistente = registoId ? this.state.registos.find(r => r.id === registoId) : null;
+    if (registoId && !registoExistente) return;
+
+    if (registoExistente && !this.possoEditarRegisto(registoExistente)) {
+      const tipoRO = this.tipoTrabalhoPorId(registoExistente.tipoTrabalhoId);
+      this.abrirModal('Bloco de trabalho', `
+        <p><b>Tipo:</b> ${escapeHtml(tipoRO.nome)}</p>
+        ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(registoExistente.tarefaNome || '—')}</p>` : ''}
+        <p><b>Horas:</b> ${registoExistente.horas}h</p>
+        ${registoExistente.notas ? `<p><b>Notas:</b> ${escapeHtml(registoExistente.notas)}</p>` : ''}
+        <p class="hint">Só o Administrador (ou o Gestor do projeto, quando aplicável) pode editar este registo.</p>`);
+      return;
+    }
+
+    const tipos = this.tiposTrabalhoAtivos();
+    const tipoInicialId = registoExistente ? (registoExistente.tipoTrabalhoId || '') : (tipoPreSelecionadoId || '');
+    const outrasHorasDoDia = this.state.registos
+      .filter(r => r.pessoa === pessoa && r.data === this.diaRegistoData && r.id !== registoId)
+      .reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+    const horasDefeito = registoExistente ? (parseFloat(registoExistente.horas) || 1) : Math.min(1, Math.max(0.25, this.CAPACIDADE_DIA_REGISTO - outrasHorasDoDia));
+
+    const html = `
+      <label>Tipo de trabalho
+        <select id="blocoTipo">
+          ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(tipoInicialId) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
+        </select>
+      </label>
+      <div id="blocoProjetoWrap" class="row-2">
+        <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
+        <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
+      </div>
+      <label>Horas <input type="number" id="blocoHoras" min="0.25" step="0.25" value="${horasDefeito}"></label>
+      <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
+        <textarea id="blocoNotas" rows="2">${escapeHtml(registoExistente ? registoExistente.notas : '')}</textarea>
+      </label>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+        ${registoExistente ? '<button type="button" class="btn btn-sm" id="blocoEliminar" style="color:var(--vermelho)">🗑 Eliminar</button>' : '<span></span>'}
+        <button type="button" class="btn btn-primary" id="blocoGuardar">Guardar</button>
+      </div>`;
+    this.abrirModal(registoExistente ? 'Editar bloco de trabalho' : 'Novo bloco de trabalho', html);
+
+    const m = this.els.modalCorpo;
+    const selTipo = m.querySelector('#blocoTipo');
+    const wrapProjeto = m.querySelector('#blocoProjetoWrap');
+    const selProjeto = m.querySelector('#blocoProjeto');
+    const selTarefa = m.querySelector('#blocoTarefa');
+
+    const preencherTarefas = () => {
+      const tarefas = recurso ? this.tarefasDoProjetoParaPessoaRegisto(selProjeto.value, pessoa) : [];
+      selTarefa.innerHTML = '<option value="">Seleciona…</option>' + tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
+      if (registoExistente && tarefas.some(t => t.nome === registoExistente.tarefaNome)) selTarefa.value = registoExistente.tarefaNome;
+    };
+    const preencherProjetos = () => {
+      const projetosDaPessoa = recurso ? this.projetosRegistoPermitidos().filter(p => p.tarefas.some(t => t.recursoIds.includes(recurso.id))) : [];
+      selProjeto.innerHTML = '<option value="">Seleciona…</option>' + projetosDaPessoa.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+      if (registoExistente && projetosDaPessoa.some(p => p.idInterno === registoExistente.projetoIdInterno)) selProjeto.value = registoExistente.projetoIdInterno;
+      preencherTarefas();
+    };
+    const atualizarVisibilidadeProjeto = () => {
+      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
+      wrapProjeto.style.display = tipo.requerProjeto ? '' : 'none';
+      if (tipo.requerProjeto) preencherProjetos();
+    };
+    atualizarVisibilidadeProjeto();
+    selTipo.addEventListener('change', atualizarVisibilidadeProjeto);
+    selProjeto.addEventListener('change', preencherTarefas);
+
+    m.querySelector('#blocoGuardar').addEventListener('click', () => {
+      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
+      const horas = parseFloat(m.querySelector('#blocoHoras').value);
+      if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
+      const notas = m.querySelector('#blocoNotas').value.trim();
+      let projetoIdInterno = '', tarefaNome = '';
+      if (tipo.requerProjeto) {
+        projetoIdInterno = selProjeto.value;
+        tarefaNome = selTarefa.value;
+        if (!projetoIdInterno || !tarefaNome) { this.toast('Escolhe projeto e tarefa.'); return; }
+      }
+      const proj = projetoIdInterno ? Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno) : null;
+      const tarefaReal = proj ? this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.nome === tarefaNome) : null;
+      if (tarefaReal && tarefaReal.progresso >= 100 && !confirm(`A tarefa "${tarefaReal.nome}" já está marcada como concluída (100%). Registar horas nela na mesma?`)) return;
+
+      if (registoExistente) {
+        this.gravarLinhaRegisto(registoExistente.id, {
+          tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, tarefaNome: projetoIdInterno ? tarefaNome : ''
+        });
+      } else {
+        this.submeterRegisto({
+          data: this.diaRegistoData, pessoa, tipoTrabalhoId: tipo.id,
+          projetoIdInterno, projetoNome: proj ? proj.nome : '', projetoId: proj ? proj.id : null,
+          cliente: proj ? (proj.cliente || '') : '', tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null,
+          horas, notas, origem: 'app-gestor-projetos-dia', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
+        });
+      }
+      this.fecharModal();
+    });
+    const btnEliminar = m.querySelector('#blocoEliminar');
+    if (btnEliminar) btnEliminar.addEventListener('click', () => { this.fecharModal(); this.eliminarRegisto(registoExistente.id); });
   },
 
   // ---------- Tab: Faturação ----------
@@ -4422,9 +4743,9 @@ const App = {
   exportarRegistosCsv() {
     const filtrados = this.registosFiltradosOrdenados();
     if (!filtrados.length) { this.toast('Sem registos para exportar — revê os filtros.'); return; }
-    const linhas = [['Data', 'Pessoa', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
+    const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
     filtrados.forEach(r => linhas.push([
-      r.data, r.pessoa, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
+      r.data, r.pessoa, this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
       r.tarefaNome || '', parseFloat(r.horas) || 0, r.notas || '', r.origem || ''
     ]));
     this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${DateUtil.todayISO()}.csv`);
@@ -4493,8 +4814,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'alocacoes', horas: 'registo', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -4503,6 +4824,7 @@ const App = {
     document.querySelectorAll('.grupo-btn').forEach(b => b.classList.toggle('active', b.dataset.grupo === grupo));
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'gantt') this.renderGanttAtual();
+    if (nome === 'dia') this.renderRegistoDia();
     if (nome === 'calendario') this.renderCalendarioRegisto();
     if (nome === 'alocacoes') this.renderCalendarioAlocacoes();
   },
@@ -5074,6 +5396,16 @@ const App = {
     if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
     if (e.btnCalMesSeg) e.btnCalMesSeg.addEventListener('click', () => this.navegarMesCalendario(1));
     if (e.btnCalHoje) e.btnCalHoje.addEventListener('click', () => this.irParaHojeCalendario());
+
+    if (e.diaPessoa) e.diaPessoa.addEventListener('change', () => { this.diaRegistoPessoa = e.diaPessoa.value; this.renderRegistoDia(); });
+    const btnDiaAnt = document.getElementById('btnDiaAnt');
+    const btnDiaSeg = document.getElementById('btnDiaSeg');
+    const btnDiaHoje = document.getElementById('btnDiaHoje');
+    if (btnDiaAnt) btnDiaAnt.addEventListener('click', () => this.navegarDiaRegisto(-1));
+    if (btnDiaSeg) btnDiaSeg.addEventListener('click', () => this.navegarDiaRegisto(1));
+    if (btnDiaHoje) btnDiaHoje.addEventListener('click', () => this.irParaHojeDiaRegisto());
+    const btnAddTipoTrabalho = document.getElementById('btnAddTipoTrabalho');
+    if (btnAddTipoTrabalho) btnAddTipoTrabalho.addEventListener('click', () => this.adicionarTipoTrabalho());
 
     document.getElementById('btnAddFatura').addEventListener('click', () => this.adicionarFatura());
     [e.fFatProjeto, e.fFatDe, e.fFatAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosFaturacao()));

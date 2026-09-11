@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260909d">
+<link rel="stylesheet" href="css/style.css?v=20260911a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -81,6 +81,7 @@
     <button class="tab-btn" data-tab="capacidade" id="tabBtnCapacidade">Capacidade</button>
   </div>
   <div class="tabs-grupo" data-grupo="horas">
+    <button class="tab-btn" data-tab="dia">Dia</button>
     <button class="tab-btn" data-tab="registo">Registo</button>
     <button class="tab-btn" data-tab="calendario">Calendário</button>
   </div>
@@ -93,6 +94,7 @@
   <div class="tabs-grupo" data-grupo="configuracoes">
     <button class="tab-btn" data-tab="recursos">Pessoas</button>
     <button class="tab-btn" data-tab="feriados">Feriados &amp; Ausências</button>
+    <button class="tab-btn" data-tab="tiposTrabalho">Tipos de Trabalho</button>
     <button class="tab-btn" data-tab="definicoes">Definições</button>
   </div>
 </nav>
@@ -550,6 +552,28 @@
   </div>
 </section>
 
+<!-- ===================== TAB: TIPOS DE TRABALHO ===================== -->
+<section class="tab-panel" id="tab-tiposTrabalho">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Tipos de Trabalho</h2>
+      <button id="btnAddTipoTrabalho" class="btn btn-primary btn-sm">+ Tipo de Trabalho</button>
+    </div>
+    <p class="pagina-sub">Categorias disponíveis no Registo do Dia, além de "Projeto" (que já existe sempre e não se edita aqui — cada bloco de projeto continua a exigir escolher o projeto/tarefa, como sempre). Desativar um tipo tira-o das opções para registos novos, sem apagar os que já existem.</p>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaTiposTrabalho">
+        <thead><tr>
+          <th>Nome</th>
+          <th>Cor</th>
+          <th>Ativo</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="corpoTabelaTiposTrabalho"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <!-- ===================== TAB: DEFINIÇÕES ===================== -->
 <section class="tab-panel" id="tab-definicoes">
   <div class="pagina">
@@ -584,6 +608,31 @@
       <button class="btn btn-primary" id="btnExportarBackup">Exportar Backup (.sql + .xlsx)</button>
       <span id="backupMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: REGISTO DO DIA ===================== -->
+<section class="tab-panel" id="tab-dia">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>🕒 Registo do Dia</h2>
+    </div>
+    <p class="pagina-sub">Regista aqui, num único ecrã, tudo o que preencheu o teu dia — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
+      <label class="zoom-label">Pessoa <select id="diaPessoa"><option value="">Seleciona…</option></select></label>
+    </div>
+    <span id="diaMsg" class="hint" style="color:var(--vermelho);display:block;margin-bottom:8px;"></span>
+    <div class="cal-topbar">
+      <button type="button" class="btn btn-sm" id="btnDiaAnt">‹</button>
+      <button type="button" class="btn btn-sm" id="btnDiaHoje">Hoje</button>
+      <button type="button" class="btn btn-sm" id="btnDiaSeg">›</button>
+      <strong id="diaDataLabel"></strong>
+      <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
+    </div>
+    <div id="diaGrelha" class="dia-grelha"></div>
+    <h3 style="margin-top:22px;margin-bottom:2px;">Tipos de trabalho</h3>
+    <p class="hint" style="margin-top:0;">Clica num tipo para adicionar já um bloco desse tipo, ou clica em "+ Adicionar" na barra acima.</p>
+    <div id="diaTipos" class="dia-tipos"></div>
   </div>
 </section>
 
@@ -642,6 +691,7 @@
           <tr>
             <th data-sort="data">Data</th>
             <th data-sort="pessoa">Pessoa</th>
+            <th data-sort="tipo">Tipo</th>
             <th data-sort="projeto">Projeto</th>
             <th data-sort="cliente">Cliente</th>
             <th data-sort="tarefaNome">Tarefa</th>
@@ -867,14 +917,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260909d"></script>
-<script src="js/auth.js?v=20260909d"></script>
-<script src="js/sync.js?v=20260909d"></script>
-<script src="js/gantt.js?v=20260909d"></script>
-<script src="js/capacidade.js?v=20260909d"></script>
-<script src="js/portfolio-gantt.js?v=20260909d"></script>
-<script src="js/reserva-viatura.js?v=20260909d"></script>
-<script src="js/backup.js?v=20260909d"></script>
-<script src="js/app.js?v=20260909d"></script>
+<script src="js/supabase-config.js?v=20260911a"></script>
+<script src="js/auth.js?v=20260911a"></script>
+<script src="js/sync.js?v=20260911a"></script>
+<script src="js/gantt.js?v=20260911a"></script>
+<script src="js/capacidade.js?v=20260911a"></script>
+<script src="js/portfolio-gantt.js?v=20260911a"></script>
+<script src="js/reserva-viatura.js?v=20260911a"></script>
+<script src="js/backup.js?v=20260911a"></script>
+<script src="js/app.js?v=20260911a"></script>
 </body>
 </html>
