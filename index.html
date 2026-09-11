@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260911a">
+<link rel="stylesheet" href="css/style.css?v=20260911b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -617,7 +617,7 @@
     <div class="pagina-head">
       <h2>🕒 Registo do Dia</h2>
     </div>
-    <p class="pagina-sub">Regista aqui, num único ecrã, tudo o que preencheu o teu dia — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho.</p>
+    <p class="pagina-sub">Regista aqui, num único ecrã e mês a mês, tudo o que preencheu os dias de uma pessoa — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho. Clica em qualquer dia do mês para adicionar ou editar um bloco.</p>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
       <label class="zoom-label">Pessoa <select id="diaPessoa"><option value="">Seleciona…</option></select></label>
     </div>
@@ -629,10 +629,7 @@
       <strong id="diaDataLabel"></strong>
       <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
     </div>
-    <div id="diaGrelha" class="dia-grelha"></div>
-    <h3 style="margin-top:22px;margin-bottom:2px;">Tipos de trabalho</h3>
-    <p class="hint" style="margin-top:0;">Clica num tipo para adicionar já um bloco desse tipo, ou clica em "+ Adicionar" na barra acima.</p>
-    <div id="diaTipos" class="dia-tipos"></div>
+    <div id="diaGrelha" class="calendario-registos"></div>
   </div>
 </section>
 
@@ -917,14 +914,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260911a"></script>
-<script src="js/auth.js?v=20260911a"></script>
-<script src="js/sync.js?v=20260911a"></script>
-<script src="js/gantt.js?v=20260911a"></script>
-<script src="js/capacidade.js?v=20260911a"></script>
-<script src="js/portfolio-gantt.js?v=20260911a"></script>
-<script src="js/reserva-viatura.js?v=20260911a"></script>
-<script src="js/backup.js?v=20260911a"></script>
-<script src="js/app.js?v=20260911a"></script>
+<script src="js/supabase-config.js?v=20260911b"></script>
+<script src="js/auth.js?v=20260911b"></script>
+<script src="js/sync.js?v=20260911b"></script>
+<script src="js/gantt.js?v=20260911b"></script>
+<script src="js/capacidade.js?v=20260911b"></script>
+<script src="js/portfolio-gantt.js?v=20260911b"></script>
+<script src="js/reserva-viatura.js?v=20260911b"></script>
+<script src="js/backup.js?v=20260911b"></script>
+<script src="js/app.js?v=20260911b"></script>
 </body>
 </html>

@@ -61,7 +61,7 @@ const App = {
   // Estado do Registo do Dia — só do lado do cliente, tal como filtrosCalendarioRegisto/calMesAtual
   // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
   diaRegistoPessoa: '',
-  diaRegistoData: '',
+  mesRegistoDiaAtual: null,
   filtrosAlocacoes: { pessoa: '', projeto: '', cliente: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
@@ -276,7 +276,6 @@ const App = {
       diaDataLabel: document.getElementById('diaDataLabel'),
       diaResumo: document.getElementById('diaResumo'),
       diaGrelha: document.getElementById('diaGrelha'),
-      diaTipos: document.getElementById('diaTipos'),
       corpoTabelaTiposTrabalho: document.getElementById('corpoTabelaTiposTrabalho'),
       statsFaturacao: document.getElementById('statsFaturacao'),
       fFatProjeto: document.getElementById('fFatProjeto'),
@@ -3032,6 +3031,10 @@ const App = {
       if (!projAlvo || !this.souGestorDe(projAlvo.id)) return;
     }
     const campos = {};
+    if ('data' in alteracoes) {
+      if (!this.anoDataPlausivel(alteracoes.data)) return;
+      r.data = alteracoes.data; campos.data = r.data;
+    }
     if ('pessoa' in alteracoes) { r.pessoa = alteracoes.pessoa; campos.pessoa = r.pessoa; }
     if ('tipoTrabalhoId' in alteracoes) { r.tipoTrabalhoId = alteracoes.tipoTrabalhoId; campos.tipo_trabalho_id = r.tipoTrabalhoId; }
     if ('horas' in alteracoes) { r.horas = alteracoes.horas; campos.horas = r.horas; }
@@ -3438,20 +3441,26 @@ const App = {
     e.calendarioRegistos.innerHTML = html;
   },
 
-  // ---------- Tab: Registo do Dia ----------
-  // Um único ecrã para lançar tudo o que preencheu o dia de uma pessoa — projeto ou qualquer outro
-  // Tipo de Trabalho (Ausência, Formação, Comercial, etc.) — em vez de repetir o formulário do
-  // separador "Registo" uma vez por cada bloco. Cada bloco da barra é, por baixo, o mesmo "registo"
-  // de sempre (só que aqui organizados por dia); a posição/largura na barra é só visual — a app não
+  // ---------- Tab: Registo do Dia (vista mensal) ----------
+  // Um único ecrã para lançar tudo o que preencheu cada dia de uma pessoa, num mês inteiro — projeto
+  // ou qualquer outro Tipo de Trabalho (Ausência, Formação, Comercial, etc.). Cada segmento colorido
+  // do dia é, por baixo, o mesmo "registo" de sempre; a posição/largura é só visual — a app não
   // guarda a que hora do dia cada bloco pertence, só a duração (ver supabase/schema.sql, tabela
-  // "registos": nunca teve colunas de hora).
+  // "registos": nunca teve colunas de hora). A grelha reaproveita as classes .cal-* já usadas no
+  // Calendário (separador vizinho) para ter o mesmo aspeto — só a barra fina dentro de cada dia é
+  // nova (.dia-mes-barra), porque aqui cada dia tem de ficar clicável para adicionar/editar.
   CAPACIDADE_DIA_REGISTO: 8,
-  navegarDiaRegisto(delta) {
-    this.diaRegistoData = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(this.diaRegistoData || DateUtil.todayISO()), delta));
+  navegarMesRegistoDia(delta) {
+    if (!this.mesRegistoDiaAtual) { const hoje = new Date(); this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+    let { ano, mes } = this.mesRegistoDiaAtual;
+    mes += delta;
+    if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
+    this.mesRegistoDiaAtual = { ano, mes };
     this.renderRegistoDia();
   },
   irParaHojeDiaRegisto() {
-    this.diaRegistoData = DateUtil.todayISO();
+    const hoje = new Date();
+    this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
     this.renderRegistoDia();
   },
   renderRegistoDia() {
@@ -3473,80 +3482,98 @@ const App = {
     e.diaPessoa.disabled = somenteEuProprio;
     if (e.diaMsg) e.diaMsg.textContent = (somenteEuProprio && !recursosPermitidos.length) ? 'A tua conta ainda não está associada a um consultor — contacta o administrador.' : '';
 
-    if (!this.diaRegistoData) this.diaRegistoData = DateUtil.todayISO();
-    const dataObj = DateUtil.parseISO(this.diaRegistoData);
-    const NOMES_DIA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-    if (e.diaDataLabel) e.diaDataLabel.textContent = `${NOMES_DIA[dataObj.getDay()]}, ${DateUtil.formatShort(dataObj)}`;
+    if (!this.mesRegistoDiaAtual) { const hoje = new Date(); this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
+    const { ano, mes } = this.mesRegistoDiaAtual;
+    const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    if (e.diaDataLabel) e.diaDataLabel.textContent = `${NOMES_MES[mes]} ${ano}`;
 
     const pessoa = this.diaRegistoPessoa;
     if (!pessoa) {
       if (e.diaResumo) e.diaResumo.innerHTML = '';
-      if (e.diaGrelha) e.diaGrelha.innerHTML = '<p class="hint">Escolhe uma pessoa para ver e lançar o registo do dia.</p>';
-      if (e.diaTipos) e.diaTipos.innerHTML = '';
+      if (e.diaGrelha) e.diaGrelha.innerHTML = '<p class="hint">Escolhe uma pessoa para ver e lançar o registo do mês.</p>';
       return;
     }
-    const registosDoDia = this.state.registos
-      .filter(r => r.pessoa === pessoa && r.data === this.diaRegistoData)
-      .sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || ''));
-    const CAP = this.CAPACIDADE_DIA_REGISTO;
-    const totalHoras = registosDoDia.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+
+    const mesISO = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+    const registosDoMes = this.state.registos.filter(r => r.pessoa === pessoa && (r.data || '').startsWith(mesISO));
+    const porDia = {};
+    registosDoMes.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
+    Object.values(porDia).forEach(lista => lista.sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || '')));
+
     if (e.diaResumo) {
-      const fmt = (n) => n.toLocaleString('pt-PT', { maximumFractionDigits: 2 });
-      let extra;
-      if (totalHoras < CAP) extra = `faltam <b>${fmt(CAP - totalHoras)}h</b> para ${CAP}h`;
-      else if (totalHoras > CAP) extra = `<span style="color:var(--vermelho)"><b>${fmt(totalHoras - CAP)}h</b> acima das ${CAP}h</span>`;
-      else extra = `dia completo`;
-      e.diaResumo.innerHTML = `<b>${fmt(totalHoras)}h</b> registadas · ${extra}`;
+      const totalMes = registosDoMes.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+      e.diaResumo.innerHTML = `<b>${totalMes.toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</b> registadas em ${NOMES_MES[mes].toLowerCase()}`;
     }
+    if (!e.diaGrelha) return;
 
-    const denom = Math.max(CAP, totalHoras);
-    const blocosHtml = registosDoDia.map(r => {
-      const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
-      const horas = parseFloat(r.horas) || 0;
-      const largura = denom > 0 ? (horas / denom * 100) : 0;
-      const rotulo = r.projetoNome || tipo.nome;
-      const titulo = `${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
-      return `<div class="dia-bloco" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}">
-        <span class="dia-bloco-nome">${escapeHtml(rotulo)}</span>
-        <span class="dia-bloco-horas">${horas}h</span>
+    const CAP = this.CAPACIDADE_DIA_REGISTO;
+    const primeiroDiaMes = new Date(ano, mes, 1);
+    const ultimoDiaMes = new Date(ano, mes + 1, 0);
+    const inicioGrelha = new Date(primeiroDiaMes);
+    inicioGrelha.setDate(inicioGrelha.getDate() - inicioGrelha.getDay());
+    const fimGrelha = new Date(ultimoDiaMes);
+    fimGrelha.setDate(fimGrelha.getDate() + (6 - fimGrelha.getDay()));
+    const hojeISO = DateUtil.todayISO();
+    const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
+    let cursor = new Date(inicioGrelha);
+    while (cursor <= fimGrelha) {
+      const iso = DateUtil.toISO(cursor);
+      const foraDoMes = cursor.getMonth() !== mes;
+      const registosDoDia = porDia[iso] || [];
+      const totalHoras = registosDoDia.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+      const denom = Math.max(CAP, totalHoras);
+      const blocosHtml = registosDoDia.map(r => {
+        const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
+        const horas = parseFloat(r.horas) || 0;
+        const largura = denom > 0 ? (horas / denom * 100) : 0;
+        // Só junta "Projeto — " ao título quando há mesmo um projeto (senão repete o nome do tipo
+        // duas vezes seguidas, já que sem projeto o rótulo do bloco É o nome do tipo).
+        const titulo = `${r.projetoNome ? r.projetoNome + ' — ' : ''}${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
+        return `<div class="dia-bloco-mini" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}"></div>`;
+      }).join('');
+      const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
+      const vazioHtml = restante > 0 ? `<div class="dia-bloco-vazio-mini" style="width:${restante}%" data-novo-bloco="${iso}" title="Adicionar a ${DateUtil.formatShort(cursor)}">+</div>` : '';
+      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
+        <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras}h</span>` : ''}</div>
+        <div class="dia-mes-barra">${blocosHtml}${vazioHtml}</div>
       </div>`;
-    }).join('');
-    const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
-    const vazioHtml = restante > 0 ? `<button type="button" class="dia-bloco-vazio" style="width:${restante}%" data-novo-bloco="1">+ Adicionar</button>` : '';
-    if (e.diaGrelha) {
-      e.diaGrelha.innerHTML = `
-        <div class="dia-marcas">${Array.from({ length: CAP }, (_, i) => `<span>${i + 1}h</span>`).join('')}</div>
-        <div class="dia-barra">${blocosHtml}${vazioHtml}</div>`;
-      e.diaGrelha.querySelectorAll('[data-editar-bloco]').forEach(el => {
-        el.addEventListener('click', () => this.abrirModalBlocoDia(el.dataset.editarBloco));
-      });
-      const btnNovo = e.diaGrelha.querySelector('[data-novo-bloco]');
-      if (btnNovo) btnNovo.addEventListener('click', () => this.abrirModalBlocoDia(null));
+      cursor = DateUtil.addDays(cursor, 1);
     }
+    html += '</div>';
+    e.diaGrelha.innerHTML = html;
 
-    if (e.diaTipos) {
-      e.diaTipos.innerHTML = this.tiposTrabalhoAtivos().map(tt => `
-        <button type="button" class="dia-tipo-chip" style="border-color:${tt.cor}" data-tipo="${tt.id || ''}">
-          <span class="tipo-dot" style="background:${tt.cor}"></span>${escapeHtml(tt.nome)}
-        </button>`).join('');
-      e.diaTipos.querySelectorAll('[data-tipo]').forEach(el => {
-        el.addEventListener('click', () => this.abrirModalBlocoDia(null, el.dataset.tipo || null));
-      });
-    }
+    // Delegação de eventos num único listener no contentor — mais simples e barato do que ligar um
+    // listener a cada uma das ~35-42 células/segmentos do mês (mesmo espírito do "ligarEventosLinha"
+    // usado no modal "Associar consultores", só que aqui nem precisa de reatribuir a cada render:
+    // basta substituir o handler uma vez, já que .onclick aceita ser reatribuído sem se acumular).
+    e.diaGrelha.onclick = (ev) => {
+      const elBloco = ev.target.closest('[data-editar-bloco]');
+      if (elBloco) { this.abrirModalBlocoDia(elBloco.dataset.editarBloco); return; }
+      const elVazio = ev.target.closest('[data-novo-bloco]');
+      if (elVazio) this.abrirModalBlocoDia(null, null, elVazio.dataset.novoBloco);
+    };
   },
   // registoId: null para criar um bloco novo; id de um registo existente para o editar/consultar.
-  // tipoPreSelecionadoId: só usado ao criar (clicou-se diretamente num chip de Tipo) — "" (Projeto)
-  // ou o id de um tipo em state.tiposTrabalho.
-  abrirModalBlocoDia(registoId, tipoPreSelecionadoId) {
+  // tipoPreSelecionadoId: reservado para um atalho futuro por tipo (não usado hoje — a grelha mensal
+  // só abre o modal a partir de um dia concreto, nunca de um tipo).
+  // dataISO: o dia (célula do mês) onde se clicou "+", usado só para um registo novo — a editar um
+  // já existente, a data vem do próprio registo (e é a única coisa que este modal deixa mudar sem
+  // ser através do tipo/projeto/tarefa/horas/notas habituais).
+  abrirModalBlocoDia(registoId, tipoPreSelecionadoId, dataISO) {
     const pessoa = this.diaRegistoPessoa;
     if (!pessoa) return;
     const recurso = this.state.recursos.find(r => r.nome === pessoa);
     const registoExistente = registoId ? this.state.registos.find(r => r.id === registoId) : null;
     if (registoId && !registoExistente) return;
+    const dataAlvo = registoExistente ? registoExistente.data : dataISO;
+    if (!dataAlvo) return;
 
     if (registoExistente && !this.possoEditarRegisto(registoExistente)) {
       const tipoRO = this.tipoTrabalhoPorId(registoExistente.tipoTrabalhoId);
       this.abrirModal('Bloco de trabalho', `
+        <p><b>Data:</b> ${DateUtil.formatShort(DateUtil.parseISO(registoExistente.data))}</p>
         <p><b>Tipo:</b> ${escapeHtml(tipoRO.nome)}</p>
         ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(registoExistente.tarefaNome || '—')}</p>` : ''}
         <p><b>Horas:</b> ${registoExistente.horas}h</p>
@@ -3558,11 +3585,12 @@ const App = {
     const tipos = this.tiposTrabalhoAtivos();
     const tipoInicialId = registoExistente ? (registoExistente.tipoTrabalhoId || '') : (tipoPreSelecionadoId || '');
     const outrasHorasDoDia = this.state.registos
-      .filter(r => r.pessoa === pessoa && r.data === this.diaRegistoData && r.id !== registoId)
+      .filter(r => r.pessoa === pessoa && r.data === dataAlvo && r.id !== registoId)
       .reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
     const horasDefeito = registoExistente ? (parseFloat(registoExistente.horas) || 1) : Math.min(1, Math.max(0.25, this.CAPACIDADE_DIA_REGISTO - outrasHorasDoDia));
 
     const html = `
+      <label>Data <input type="date" id="blocoData" value="${dataAlvo}"></label>
       <label>Tipo de trabalho
         <select id="blocoTipo">
           ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(tipoInicialId) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
@@ -3583,6 +3611,7 @@ const App = {
     this.abrirModal(registoExistente ? 'Editar bloco de trabalho' : 'Novo bloco de trabalho', html);
 
     const m = this.els.modalCorpo;
+    const inpData = m.querySelector('#blocoData');
     const selTipo = m.querySelector('#blocoTipo');
     const wrapProjeto = m.querySelector('#blocoProjetoWrap');
     const selProjeto = m.querySelector('#blocoProjeto');
@@ -3609,6 +3638,8 @@ const App = {
     selProjeto.addEventListener('change', preencherTarefas);
 
     m.querySelector('#blocoGuardar').addEventListener('click', () => {
+      const data = inpData.value;
+      if (!this.anoDataPlausivel(data)) { this.toast('Indica uma data válida.'); return; }
       const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
       const horas = parseFloat(m.querySelector('#blocoHoras').value);
       if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
@@ -3625,11 +3656,11 @@ const App = {
 
       if (registoExistente) {
         this.gravarLinhaRegisto(registoExistente.id, {
-          tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, tarefaNome: projetoIdInterno ? tarefaNome : ''
+          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, tarefaNome: projetoIdInterno ? tarefaNome : ''
         });
       } else {
         this.submeterRegisto({
-          data: this.diaRegistoData, pessoa, tipoTrabalhoId: tipo.id,
+          data, pessoa, tipoTrabalhoId: tipo.id,
           projetoIdInterno, projetoNome: proj ? proj.nome : '', projetoId: proj ? proj.id : null,
           cliente: proj ? (proj.cliente || '') : '', tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null,
           horas, notas, origem: 'app-gestor-projetos-dia', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
@@ -5401,8 +5432,8 @@ const App = {
     const btnDiaAnt = document.getElementById('btnDiaAnt');
     const btnDiaSeg = document.getElementById('btnDiaSeg');
     const btnDiaHoje = document.getElementById('btnDiaHoje');
-    if (btnDiaAnt) btnDiaAnt.addEventListener('click', () => this.navegarDiaRegisto(-1));
-    if (btnDiaSeg) btnDiaSeg.addEventListener('click', () => this.navegarDiaRegisto(1));
+    if (btnDiaAnt) btnDiaAnt.addEventListener('click', () => this.navegarMesRegistoDia(-1));
+    if (btnDiaSeg) btnDiaSeg.addEventListener('click', () => this.navegarMesRegistoDia(1));
     if (btnDiaHoje) btnDiaHoje.addEventListener('click', () => this.irParaHojeDiaRegisto());
     const btnAddTipoTrabalho = document.getElementById('btnAddTipoTrabalho');
     if (btnAddTipoTrabalho) btnAddTipoTrabalho.addEventListener('click', () => this.adicionarTipoTrabalho());
