@@ -2683,7 +2683,7 @@ const App = {
     }
     if (e.fAlocProjeto) {
       const valorProjeto = this.filtrosAlocacoes.projeto;
-      e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+      e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
       e.fAlocProjeto.value = projetosPermitidos.some(p => p.id === valorProjeto) ? valorProjeto : '';
     }
     if (e.fAlocCliente) {
@@ -3265,7 +3265,7 @@ const App = {
           return;
         }
         selProjeto.disabled = false;
-        selProjeto.innerHTML = projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+        selProjeto.innerHTML = projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
         selProjeto.value = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno) ? r.projetoIdInterno : projetos[0].idInterno;
         preencherTarefas();
       };
@@ -3371,7 +3371,7 @@ const App = {
       // Projeto — não há nada de útil para filtrar por aí, sempre aparecem independentemente dele.
       if (!r.projetoIdInterno || idsProjetoVistos.has(r.projetoIdInterno)) return;
       idsProjetoVistos.add(r.projetoIdInterno);
-      projetosDisponiveis.push({ idInterno: r.projetoIdInterno, nome: r.projetoNome });
+      projetosDisponiveis.push({ idInterno: r.projetoIdInterno, nome: r.projetoNome, cliente: r.cliente });
     });
     projetosDisponiveis.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
 
@@ -3382,7 +3382,7 @@ const App = {
     }
     if (e.fCalProjeto) {
       const valorProjeto = this.filtrosCalendarioRegisto.projeto;
-      e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+      e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
       e.fCalProjeto.value = projetosDisponiveis.some(p => p.idInterno === valorProjeto) ? valorProjeto : '';
     }
     // Nunca reatribui this.filtrosCalendarioRegisto a partir do <select> aqui (ao contrário de
@@ -3668,7 +3668,7 @@ const App = {
     };
     const preencherProjetos = () => {
       const projetosDaPessoa = recurso ? this.projetosRegistoPermitidos().filter(p => p.tarefas.some(t => t.recursoIds.includes(recurso.id))) : [];
-      selProjeto.innerHTML = '<option value="">Seleciona…</option>' + projetosDaPessoa.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}</option>`).join('');
+      selProjeto.innerHTML = '<option value="">Seleciona…</option>' + projetosDaPessoa.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
       if (registoExistente && projetosDaPessoa.some(p => p.idInterno === registoExistente.projetoIdInterno)) selProjeto.value = registoExistente.projetoIdInterno;
       preencherTarefas();
     };
@@ -4051,7 +4051,7 @@ const App = {
     e.reservaChefia.value = equipa ? equipa.diretor : '';
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
-      projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+      projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
     e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
     this.atualizarGestorReservaViatura();
 
@@ -4476,7 +4476,7 @@ const App = {
     const projetosDoGestor = this.acompanhamentoGestorId
       ? Object.values(this.state.projetos).filter(p => p.gestorId === this.acompanhamentoGestorId)
       : [];
-    e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
     e.acompProjeto.value = this.acompanhamentoProjetoId;
     e.acompProjeto.disabled = !this.acompanhamentoGestorId;
     if (e.acompProjeto.value !== this.acompanhamentoProjetoId) this.acompanhamentoProjetoId = '';
@@ -4635,7 +4635,7 @@ const App = {
 
     const projetosDoGestor = f.gestor ? todosProjetos.filter(p => p.gestorId === f.gestor) : todosProjetos;
     const projAtual = e.fPassoProjeto.value;
-    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</option>`).join('');
+    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
     e.fPassoProjeto.value = projAtual;
     if (e.fPassoProjeto.value !== projAtual) { f.projeto = ''; e.fPassoProjeto.value = ''; }
 
