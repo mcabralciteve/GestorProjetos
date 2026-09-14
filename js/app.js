@@ -2237,6 +2237,15 @@ const App = {
       this.filtroGestorGantt = selGestor.value;
       if (this.filtroGestorGantt) projetos = projetos.filter(p => p.gestorId === this.filtroGestorGantt);
     }
+    // O projeto ativo pode ter ficado de fora deste filtro (ex.: escolher um Gestor cujo projeto
+    // ativo não é nenhum dos dele) — sem isto, o <select> mostrava visualmente o único projeto
+    // desse Gestor (o browser seleciona a primeira opção por omissão, já que nenhuma tinha
+    // "selected"), mas o Gantt continuava a mostrar o projeto anterior: nada chamava
+    // selecionarProjeto/renderTudo só por o filtro ter mudado. Só há um sítio de onde escolher —
+    // o primeiro da lista já filtrada — quando o próprio filtro deixa apenas essa opção.
+    if (projetos.length && !projetos.some(p => p.id === this.state.projetoAtivoId)) {
+      this.selecionarProjeto(projetos[0].id);
+    }
     sel.innerHTML = '';
     projetos.forEach(p => {
       const opt = document.createElement('option');
