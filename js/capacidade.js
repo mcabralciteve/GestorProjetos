@@ -105,10 +105,15 @@ const Capacidade = {
     if (capDia === 0) return 0;
     return horasTotais * (capDia / capacidadeTotal);
   },
-  // Quanto esta tarefa contribui neste dia — distribuída pelos dias disponíveis (ver horasNoDia),
-  // mas com um "hoje" a partir do qual o ritmo passa a ser dinâmico:
-  //  - ANTES de hoje: distribuição original e estática (histórico — o que estava planeado nesse
-  //    dia não muda com o passar do tempo).
+  // Quanto esta tarefa contribui neste dia — com um "hoje" a partir do qual o significado muda por
+  // completo:
+  //  - ANTES de hoje: o que REALMENTE foi registado nesse dia (ver App.horasRegistadasTarefaNoDia),
+  //    não uma distribuição teórica — um dia já passado em que não se trabalhou nesta tarefa (por
+  //    exemplo, por ter sido gasto noutra atividade) mostra 0h, nunca a fatia que "estava prevista"
+  //    e afinal não aconteceu; um dia em que se registou mais ou menos do que a média mostra
+  //    exatamente esse valor. Isto é o que dá a Capacidade.capacidadeDiaria (via
+  //    App.horasNaoProjetoNoDia) a informação real de que precisa para empurrar a distribuição
+  //    FUTURA para os dias que sobram — ver o ramo abaixo.
   //  - A PARTIR de hoje (inclusive): reparte só o que FALTA (ver horasRestantesTarefa) pelos dias
   //    úteis que restam até ao prazo — não o total original pelos dias úteis originais. Uma tarefa
   //    de 90h/45 dias em que passaram 15 dias sem nada feito passa a exigir, dali para a frente,
@@ -117,7 +122,7 @@ const Capacidade = {
   horasTarefaNoDia(projeto, tarefa, recursoId, date) {
     const hoje = DateUtil.parseISO(DateUtil.todayISO());
     if (date < hoje) {
-      return this.horasNoDia(App.horasAlocadas(tarefa, recursoId), tarefa.inicio, tarefa.fim, recursoId, date);
+      return App.horasRegistadasTarefaNoDia(projeto, tarefa, recursoId, DateUtil.toISO(date));
     }
     const horasRestantes = this.horasRestantesTarefa(projeto, tarefa, recursoId);
     if (horasRestantes <= 0) return 0;

@@ -1548,22 +1548,33 @@ const App = {
   // desse cheque é editar um registo já existente SEM trocar o array (atualizarCampoRegisto/
   // gravarLinhaRegisto mutam o objeto no próprio sítio) — por isso essas duas funções chamam
   // invalidarIndiceRegistos() explicitamente a seguir a qualquer mudança que afete a soma.
-  // O mesmo varrimento aproveita para montar um terceiro índice, "porDiaNaoProjeto" (chave
-  // "pessoa|data" -> horas somadas), só com registos de tipos SEM projeto (tipoTrabalhoId
-  // verdadeiro — ver TIPO_TRABALHO_PROJETO, cujo id é null) — usado por horasNaoProjetoNoDia,
-  // que a Capacidade consulta para descontar da capacidade diária de alguém o tempo já registado
-  // nesse dia noutras atividades (comercial, administrativo, etc.), ver Capacidade.capacidadeDiaria.
+  // O mesmo varrimento aproveita para montar mais dois índices:
+  //  - "porDiaNaoProjeto" (chave "pessoa|data" -> horas somadas), só com registos de tipos SEM
+  //    projeto (tipoTrabalhoId verdadeiro — ver TIPO_TRABALHO_PROJETO, cujo id é null) — usado por
+  //    horasNaoProjetoNoDia, que a Capacidade consulta para descontar da capacidade diária de
+  //    alguém o tempo já registado nesse dia noutras atividades (comercial, administrativo, etc.),
+  //    ver Capacidade.capacidadeDiaria.
+  //  - "porTarefaDia"/"legadoDia" (as mesmas chaves de porTarefa/legado, mas com "|data" no fim) —
+  //    usados por horasRegistadasTarefaNoDia, que dá a Capacidade.horasTarefaNoDia o valor REAL
+  //    registado num dia já passado, em vez de continuar a mostrar a distribuição teórica original
+  //    desse dia (ver a nota grande em horasTarefaNoDia — não faz sentido "alocação prevista" num
+  //    dia que já lá vai e nunca aconteceu).
   indiceRegistosPorTarefa() {
     if (this._indiceRegistosRef !== this.state.registos) {
       const porTarefa = new Map(), legado = new Map(), porDiaNaoProjeto = new Map();
+      const porTarefaDia = new Map(), legadoDia = new Map();
       this.state.registos.forEach(r => {
         const horas = parseFloat(r.horas) || 0;
         if (r.tarefaId) {
           porTarefa.set(r.tarefaId, (porTarefa.get(r.tarefaId) || 0) + horas);
+          const chaveDiaTarefa = r.tarefaId + '|' + r.data;
+          porTarefaDia.set(chaveDiaTarefa, (porTarefaDia.get(chaveDiaTarefa) || 0) + horas);
         } else {
           const chaveProjeto = r.projetoId || r.projetoIdInterno;
           const chave = chaveProjeto + '|' + r.pessoa + '|' + r.tarefaNome;
           legado.set(chave, (legado.get(chave) || 0) + horas);
+          const chaveDiaLegado = chave + '|' + r.data;
+          legadoDia.set(chaveDiaLegado, (legadoDia.get(chaveDiaLegado) || 0) + horas);
         }
         if (r.tipoTrabalhoId) {
           const chaveDia = r.pessoa + '|' + r.data;
@@ -1573,12 +1584,31 @@ const App = {
       this._indiceRegistosPorTarefa = porTarefa;
       this._indiceRegistosLegado = legado;
       this._indicePorDiaNaoProjeto = porDiaNaoProjeto;
+      this._indicePorTarefaDia = porTarefaDia;
+      this._indiceLegadoDia = legadoDia;
       this._indiceRegistosRef = this.state.registos;
     }
-    return { porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado, porDiaNaoProjeto: this._indicePorDiaNaoProjeto };
+    return {
+      porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado,
+      porDiaNaoProjeto: this._indicePorDiaNaoProjeto,
+      porTarefaDia: this._indicePorTarefaDia, legadoDia: this._indiceLegadoDia
+    };
   },
   invalidarIndiceRegistos() {
     this._indiceRegistosRef = null;
+  },
+  // Quantas horas foram mesmo registadas, para esta tarefa e este recurso, NUM DIA CONCRETO
+  // ("iso") — ao contrário de horasJaRegistadasTarefa (soma tudo, sem distinguir o dia), esta serve
+  // para desenhar o passado tal como aconteceu (ver Capacidade.horasTarefaNoDia), não uma média.
+  horasRegistadasTarefaNoDia(projeto, tarefa, recursoId, iso) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return 0;
+    const { porTarefaDia, legadoDia } = this.indiceRegistosPorTarefa();
+    const viaId = porTarefaDia.get(tarefa.id + '|' + iso) || 0;
+    const chaveBase = '|' + recurso.nome + '|' + tarefa.nome + '|' + iso;
+    const viaLegadoId = legadoDia.get(projeto.id + chaveBase) || 0;
+    const viaLegadoInterno = legadoDia.get(projeto.idInterno + chaveBase) || 0;
+    return viaId + viaLegadoId + viaLegadoInterno;
   },
   // Quantas horas este recurso já tem registadas neste dia em tipos de trabalho SEM projeto
   // (comercial, administrativo, etc.) — usado por Capacidade.capacidadeDiaria para descontar da
