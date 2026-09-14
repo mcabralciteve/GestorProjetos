@@ -735,6 +735,14 @@ const App = {
     if (r.projetoId && this.state.projetos[r.projetoId]) return this.state.projetos[r.projetoId];
     return Object.values(this.state.projetos).find(p => p.idInterno === r.projetoIdInterno) || null;
   },
+  // Este registo pertence a este projeto? Por "projetoId" (uuid, registos recentes) sempre que
+  // existir — nunca muda, mesmo que o ID interno do projeto seja editado depois (é só um texto
+  // livre, ver o campo na tabela de Projetos). Só cai para comparar "projetoIdInterno" em registos
+  // anteriores a esse campo existir. Sem isto, mudar o ID interno de um projeto "perdia" todo o
+  // histórico de horas reais desses registos mais antigos (Gantt, Portefólio, Reprevisão/EAC).
+  registoPertenceAoProjeto(r, p) {
+    return r.projetoId ? r.projetoId === p.id : (!!p.idInterno && r.projetoIdInterno === p.idInterno);
+  },
   // Quem pode editar/reatribuir ou apagar um registo já existente (tabela de Registos): o
   // Administrador (qualquer registo), ou o Gestor do projeto a que ESSE registo pertence — nunca
   // um Gestor de outro projeto, nem um Consultor comum (mesmo em registos seus). Um registo órfão
@@ -1851,10 +1859,10 @@ const App = {
   // pessoa neste projeto; havendo mais que uma, ficam por atribuir (contam à mesma no total do
   // projeto, só não sabemos a qual tarefa pertencem).
   horasReaisTarefa(p, t) {
-    if (!p || !t || !p.idInterno) return 0;
+    if (!p || !t) return 0;
     const normalizar = (s) => String(s || '').trim().toLowerCase();
     const nomeTarefa = normalizar(t.nome);
-    const registosProjeto = this.state.registos.filter(r => r.projetoIdInterno === p.idInterno);
+    const registosProjeto = this.state.registos.filter(r => this.registoPertenceAoProjeto(r, p));
     // Nomes de TODAS as tarefas do projeto (resumo e folha) — um registo cujo texto bate certo com
     // o nome de qualquer uma delas já tem "casa" definida, mesmo que essa tarefa seja uma fase com
     // sub-tarefas (uma fase pode ter recursos e registos próprios, além dos das suas subtarefas).
@@ -1894,7 +1902,7 @@ const App = {
   },
   horasReaisProjeto(p) {
     return this.state.registos
-      .filter(r => p.idInterno && r.projetoIdInterno === p.idInterno)
+      .filter(r => this.registoPertenceAoProjeto(r, p))
       .reduce((soma, r) => soma + (parseFloat(r.horas) || 0), 0);
   },
   mesmoMes(dataISO, ano, mes) {
@@ -1926,7 +1934,7 @@ const App = {
   },
   realMesProjeto(p, ano, mes) {
     return this.state.registos
-      .filter(r => p.idInterno && r.projetoIdInterno === p.idInterno && this.mesmoMes(r.data, ano, mes))
+      .filter(r => this.registoPertenceAoProjeto(r, p) && this.mesmoMes(r.data, ano, mes))
       .reduce((soma, r) => soma + (parseFloat(r.horas) || 0), 0);
   },
   // Meses a considerar na reprevisão: do início ao fim das tarefas do projeto, alargado para
@@ -1935,7 +1943,7 @@ const App = {
   mesesDoProjeto(p) {
     const datas = [];
     p.tarefas.forEach(t => { if (!this.temFilhos(p, t.id)) datas.push(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim)); });
-    this.state.registos.forEach(r => { if (p.idInterno && r.projetoIdInterno === p.idInterno) datas.push(DateUtil.parseISO(r.data)); });
+    this.state.registos.forEach(r => { if (this.registoPertenceAoProjeto(r, p)) datas.push(DateUtil.parseISO(r.data)); });
     if (!datas.length) return [];
     return Capacidade.mesesEntre(new Date(Math.min(...datas)), new Date(Math.max(...datas)));
   },
@@ -1943,7 +1951,7 @@ const App = {
   // senão usa o Planeado — mês a mês, tal como no ficheiro de controlo de capacidade de origem.
   reprevisaoEAC(p) {
     return this.mesesDoProjeto(p).reduce((soma, m) => {
-      const temRegisto = this.state.registos.some(r => p.idInterno && r.projetoIdInterno === p.idInterno && this.mesmoMes(r.data, m.ano, m.mes));
+      const temRegisto = this.state.registos.some(r => this.registoPertenceAoProjeto(r, p) && this.mesmoMes(r.data, m.ano, m.mes));
       return soma + (temRegisto ? this.realMesProjeto(p, m.ano, m.mes) : this.planeadoMesProjeto(p, m.ano, m.mes));
     }, 0);
   },
@@ -4222,8 +4230,7 @@ const App = {
     const de = e.fFatDe.value || null;
     const ate = e.fFatAte.value || null;
     const registos = this.state.registos.filter(r => {
-      const bateProjeto = r.projetoId ? r.projetoId === p.id : r.projetoIdInterno === p.idInterno;
-      if (!bateProjeto) return false;
+      if (!this.registoPertenceAoProjeto(r, p)) return false;
       if (de && r.data < de) return false;
       if (ate && r.data > ate) return false;
       return true;
