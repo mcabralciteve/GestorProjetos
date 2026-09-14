@@ -4230,12 +4230,6 @@ const App = {
     }).sort((a, b) => a.data.localeCompare(b.data));
     if (!registos.length) { this.toast('Sem registos de horas neste projeto para o período escolhido.'); return; }
 
-    const porTarefa = new Map();
-    registos.forEach(r => {
-      const chave = r.tarefaNome || '(sem tarefa)';
-      if (!porTarefa.has(chave)) porTarefa.set(chave, []);
-      porTarefa.get(chave).push(r);
-    });
     const fmtHoras = (h) => h.toLocaleString('pt-PT', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
     const totalHoras = registos.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
     const porPessoa = new Map();
@@ -4246,20 +4240,16 @@ const App = {
       : ate ? `até ${DateUtil.parseISO(ate).toLocaleDateString('pt-PT')}`
       : 'todo o histórico';
 
-    const linhasTarefas = [...porTarefa.entries()].map(([nomeTarefa, regs]) => {
-      const subtotal = regs.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
-      const linhas = regs.map(r => `
-        <tr>
-          <td>${DateUtil.parseISO(r.data).toLocaleDateString('pt-PT')}</td>
-          <td>${escapeHtml(r.pessoa)}</td>
-          <td style="text-align:right;">${fmtHoras(parseFloat(r.horas) || 0)}</td>
-          <td>${escapeHtml(r.notas || '')}</td>
-        </tr>`).join('');
-      return `
-        <tr class="rh-tarefa"><td colspan="4">${escapeHtml(nomeTarefa)}</td></tr>
-        ${linhas}
-        <tr class="rh-subtotal"><td colspan="2">Subtotal</td><td style="text-align:right;">${fmtHoras(subtotal)}</td><td></td></tr>`;
-    }).join('');
+    // "registos" já vem ordenado por data (ver o .sort acima, ao filtrar) — aqui é só listar linha
+    // a linha, sem agrupar por tarefa como antes; a tarefa passa a ser mais uma coluna.
+    const linhasRegistos = registos.map(r => `
+      <tr>
+        <td>${DateUtil.parseISO(r.data).toLocaleDateString('pt-PT')}</td>
+        <td>${escapeHtml(r.pessoa)}</td>
+        <td>${escapeHtml(r.tarefaNome || '—')}</td>
+        <td style="text-align:right;">${fmtHoras(parseFloat(r.horas) || 0)}</td>
+        <td>${escapeHtml(r.notas || '')}</td>
+      </tr>`).join('');
 
     const linhasPessoas = [...porPessoa.entries()].sort((a, b) => b[1] - a[1]).map(([nome, horas]) => `
       <tr><td>${escapeHtml(nome)}</td><td style="text-align:right;">${fmtHoras(horas)}h</td></tr>`).join('');
@@ -4275,9 +4265,9 @@ const App = {
         </table>
       </div>
       <table class="rh-tabela">
-        <thead><tr><th>Data</th><th>Consultor</th><th style="text-align:right;">Horas</th><th>Notas</th></tr></thead>
-        <tbody>${linhasTarefas}</tbody>
-        <tfoot><tr class="rh-total"><td colspan="2">Total do período</td><td style="text-align:right;">${fmtHoras(totalHoras)}h</td><td></td></tr></tfoot>
+        <thead><tr><th>Data</th><th>Consultor</th><th>Tarefa do projeto</th><th style="text-align:right;">Horas</th><th>Notas</th></tr></thead>
+        <tbody>${linhasRegistos}</tbody>
+        <tfoot><tr class="rh-total"><td colspan="3">Total do período</td><td style="text-align:right;">${fmtHoras(totalHoras)}h</td><td></td></tr></tfoot>
       </table>
       <h3>Horas por consultor</h3>
       <table class="rh-tabela rh-resumo">

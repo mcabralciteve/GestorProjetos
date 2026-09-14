@@ -664,8 +664,6 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .rh-tabela{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:18px;}
 .rh-tabela th{text-align:left;border-bottom:2px solid var(--cinza-700);padding:5px 8px;}
 .rh-tabela td{padding:4px 8px;border-bottom:1px solid var(--cinza-200);}
-.rh-tabela tr.rh-tarefa td{font-weight:700;background:var(--cinza-100);border-bottom:1px solid var(--cinza-300);}
-.rh-tabela tr.rh-subtotal td{font-weight:600;border-bottom:1px solid var(--cinza-300);}
 .rh-tabela tr.rh-total td{font-weight:700;border-top:2px solid var(--cinza-700);border-bottom:none;}
 .rh-resumo{max-width:320px;}
 
