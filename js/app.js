@@ -1548,9 +1548,14 @@ const App = {
   // desse cheque é editar um registo já existente SEM trocar o array (atualizarCampoRegisto/
   // gravarLinhaRegisto mutam o objeto no próprio sítio) — por isso essas duas funções chamam
   // invalidarIndiceRegistos() explicitamente a seguir a qualquer mudança que afete a soma.
+  // O mesmo varrimento aproveita para montar um terceiro índice, "porDiaNaoProjeto" (chave
+  // "pessoa|data" -> horas somadas), só com registos de tipos SEM projeto (tipoTrabalhoId
+  // verdadeiro — ver TIPO_TRABALHO_PROJETO, cujo id é null) — usado por horasNaoProjetoNoDia,
+  // que a Capacidade consulta para descontar da capacidade diária de alguém o tempo já registado
+  // nesse dia noutras atividades (comercial, administrativo, etc.), ver Capacidade.capacidadeDiaria.
   indiceRegistosPorTarefa() {
     if (this._indiceRegistosRef !== this.state.registos) {
-      const porTarefa = new Map(), legado = new Map();
+      const porTarefa = new Map(), legado = new Map(), porDiaNaoProjeto = new Map();
       this.state.registos.forEach(r => {
         const horas = parseFloat(r.horas) || 0;
         if (r.tarefaId) {
@@ -1560,15 +1565,34 @@ const App = {
           const chave = chaveProjeto + '|' + r.pessoa + '|' + r.tarefaNome;
           legado.set(chave, (legado.get(chave) || 0) + horas);
         }
+        if (r.tipoTrabalhoId) {
+          const chaveDia = r.pessoa + '|' + r.data;
+          porDiaNaoProjeto.set(chaveDia, (porDiaNaoProjeto.get(chaveDia) || 0) + horas);
+        }
       });
       this._indiceRegistosPorTarefa = porTarefa;
       this._indiceRegistosLegado = legado;
+      this._indicePorDiaNaoProjeto = porDiaNaoProjeto;
       this._indiceRegistosRef = this.state.registos;
     }
-    return { porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado };
+    return { porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado, porDiaNaoProjeto: this._indicePorDiaNaoProjeto };
   },
   invalidarIndiceRegistos() {
     this._indiceRegistosRef = null;
+  },
+  // Quantas horas este recurso já tem registadas neste dia em tipos de trabalho SEM projeto
+  // (comercial, administrativo, etc.) — usado por Capacidade.capacidadeDiaria para descontar da
+  // capacidade desse dia o que já foi ocupado por outras atividades, antes de repartir o trabalho
+  // de projeto pelos dias que restam (ver o pedido do utilizador: um dia gasto em "atividade
+  // comercial" tem de sobrar menos um dia útil para os projetos, empurrando a carga para a
+  // frente). Ausências (férias/baixas) não entram aqui — essas já zeram o dia inteiro à parte,
+  // ver Capacidade.ehAusente; não há dupla contagem porque tipos "criaAusencia" nunca geram um
+  // registo com horas (ver abrirModalBlocoDia), só uma Ausência.
+  horasNaoProjetoNoDia(iso, recursoId) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return 0;
+    const { porDiaNaoProjeto } = this.indiceRegistosPorTarefa();
+    return porDiaNaoProjeto.get(recurso.nome + '|' + iso) || 0;
   },
   // Soma das horas já registadas (Registo de Horas) para esta tarefa e este recurso — usada só
   // para prever carga FUTURA (ver Capacidade.horasRestantesTarefa), nunca para alterar o que foi
@@ -3260,6 +3284,7 @@ const App = {
     if (campo === 'data') {
       if (!this.anoDataPlausivel(valor)) return;
       r.data = valor; campos.data = valor;
+      this.invalidarIndiceRegistos();
     } else if (campo === 'horas') {
       // Horas é obrigatório e tem de ser maior que zero — nunca se aceita vazio/zero/negativo,
       // nem na criação nem aqui.

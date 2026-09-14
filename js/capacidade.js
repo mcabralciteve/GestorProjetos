@@ -12,23 +12,26 @@ const Capacidade = {
   limparCaches() {
     this._cacheDiasDisponiveis.clear();
   },
-  // Quantos dias úteis e quantos desses estão realmente disponíveis (capacidadeDiaria > 0) numa
-  // janela [inicioISO, fimISO] para um recurso — horasNoDia precisava disto uma vez por CADA dia
-  // pedido da mesma tarefa (uma vez por célula do calendário, por ex.), refazendo o varrimento
-  // inteiro da janela de cada vez; para uma tarefa de largos meses, isso é o mesmo trabalho
-  // repetido dezenas de vezes só para desenhar um único mês. Aqui calcula-se uma vez por janela.
+  // Quantos dias úteis, quantos desses estão realmente disponíveis (capacidadeDiaria > 0) e qual a
+  // soma da capacidade real (em horas, já descontando o que o recurso tenha registado nesses dias
+  // em atividades sem projeto — ver capacidadeDiaria) numa janela [inicioISO, fimISO] — horasNoDia
+  // precisava disto uma vez por CADA dia pedido da mesma tarefa (uma vez por célula do calendário,
+  // por ex.), refazendo o varrimento inteiro da janela de cada vez; para uma tarefa de largos
+  // meses, isso é o mesmo trabalho repetido dezenas de vezes só para desenhar um único mês. Aqui
+  // calcula-se uma vez por janela.
   diasDisponiveisJanela(inicioISO, fimISO, recursoId) {
     const chave = inicioISO + '|' + fimISO + '|' + recursoId;
     const emCache = this._cacheDiasDisponiveis.get(chave);
     if (emCache) return emCache;
     const inicio = DateUtil.parseISO(inicioISO), fim = DateUtil.parseISO(fimISO);
-    let diasUteis = 0, diasDisp = 0;
+    let diasUteis = 0, diasDisp = 0, capacidadeTotal = 0;
     for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
       if (this.ehFimDeSemana(d)) continue;
       diasUteis++;
-      if (this.capacidadeDiaria(d, { id: recursoId }) > 0) diasDisp++;
+      const cap = this.capacidadeDiaria(d, { id: recursoId });
+      if (cap > 0) { diasDisp++; capacidadeTotal += cap; }
     }
-    const resultado = { diasUteis, diasDisp };
+    const resultado = { diasUteis, diasDisp, capacidadeTotal };
     this._cacheDiasDisponiveis.set(chave, resultado);
     return resultado;
   },
@@ -45,10 +48,17 @@ const Capacidade = {
     const iso = DateUtil.toISO(date);
     return App.state.ausencias.some(a => a.recursoId === recursoId && iso >= a.dataInicio && iso <= a.dataFim);
   },
-  // Um dia útil = 8 horas, 100% alocáveis a projetos (sem redução por taxa de utilização).
+  // Um dia útil = 8 horas, 100% alocáveis a projetos (sem redução por taxa de utilização) — menos
+  // o que esse recurso já registou nesse dia em tipos de trabalho SEM projeto (comercial,
+  // administrativo, etc., ver App.horasNaoProjetoNoDia). Um dia gasto, mesmo que só em parte,
+  // noutra atividade sobra com menos horas (ou nenhuma) para redistribuir o trabalho de projeto —
+  // a carga desse dia desloca-se para os dias seguintes (ver horasNoDia) e, se não houver onde
+  // caber, a sobre-alocação real acaba por se detetar sozinha (ver intervalosCriticos), tal como
+  // hoje já acontece com feriados/ausências.
   capacidadeDiaria(date, recurso) {
     if (this.ehFimDeSemana(date) || this.ehFeriado(date) || this.ehAusente(date, recurso.id)) return 0;
-    return this.HORAS_DIA;
+    const iso = DateUtil.toISO(date);
+    return Math.max(0, this.HORAS_DIA - App.horasNaoProjetoNoDia(iso, recurso.id));
   },
 
   tarefasAtivasNoDia(date, recursoId) {
@@ -81,12 +91,19 @@ const Capacidade = {
   // IMPORTANTE: isto é só uma distribuição para desenhar barras/blocos (Gantt, Alocações) — nunca
   // se usa isto para decidir "sobre-alocação real" (ver intervalosCriticos, resolvida de forma
   // completamente diferente).
+  //
+  // A distribuição é PROPORCIONAL à capacidade real de cada dia, não um simples "total ÷ nº de
+  // dias disponíveis": um dia já parcialmente ocupado com outra atividade (ver capacidadeDiaria)
+  // sobra com menos horas livres do que um dia inteiro por preencher, por isso deve receber
+  // proporcionalmente menos da carga a redistribuir — não a mesma fatia de um dia cheio. Um dia sem
+  // capacidade nenhuma (0h livres) nunca recebe nada, mesmo que ainda seja um dia útil.
   horasNoDia(horasTotais, inicioISO, fimISO, recursoId, date) {
     if (horasTotais <= 0) return 0;
-    const { diasUteis, diasDisp } = this.diasDisponiveisJanela(inicioISO, fimISO, recursoId);
-    if (diasDisp === 0) return diasUteis > 0 ? horasTotais / diasUteis : 0;
-    if (this.capacidadeDiaria(date, { id: recursoId }) === 0) return 0;
-    return horasTotais / diasDisp;
+    const { diasUteis, capacidadeTotal } = this.diasDisponiveisJanela(inicioISO, fimISO, recursoId);
+    if (capacidadeTotal === 0) return diasUteis > 0 ? horasTotais / diasUteis : 0;
+    const capDia = this.capacidadeDiaria(date, { id: recursoId });
+    if (capDia === 0) return 0;
+    return horasTotais * (capDia / capacidadeTotal);
   },
   // Quanto esta tarefa contribui neste dia — distribuída pelos dias disponíveis (ver horasNoDia),
   // mas com um "hoje" a partir do qual o ritmo passa a ser dinâmico:
