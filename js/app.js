@@ -3916,12 +3916,25 @@ const App = {
     // edição ficava sempre a mostrar "Projeto" (o <select> cai na primeira opção quando nenhuma
     // bate certo), mesmo não sendo esse o tipo real, e arriscava reclassificar o registo sem se
     // dar por isso ao gravar. Se o tipo tiver sido mesmo ELIMINADO (não só desativado), não há
-    // nome nenhum para recuperar — avisa-se em vez de fingir que continua a ser "Projeto".
+    // nome nenhum para recuperar — em vez de fingir que passou a ser "Projeto" (o que obrigaria a
+    // escolher projeto/tarefa só para poderes corrigir horas/notas), oferece-se um marcador
+    // "manter como estava": herda de "requerProjeto" o que os PRÓPRIOS campos do registo já
+    // indicam (tinha projeto ou não), e ao gravar sem o mudar preserva o mesmo tipoTrabalhoId
+    // (continua "perdido", tal e qual estava, sem inventar um valor novo).
     let tipoOriginalEliminado = false;
+    let valorSelecionadoInicial = tipoInicialId;
     if (tipoInicialId && !tipos.some(tt => String(tt.id || '') === String(tipoInicialId))) {
       const tipoDesativado = this.state.tiposTrabalho.find(tt => tt.id === tipoInicialId);
-      if (tipoDesativado) tipos = [...tipos, tipoDesativado];
-      else tipoOriginalEliminado = true;
+      if (tipoDesativado) {
+        tipos = [...tipos, tipoDesativado];
+      } else {
+        tipoOriginalEliminado = true;
+        valorSelecionadoInicial = '__perdido__';
+        tipos = [...tipos, {
+          id: '__perdido__', nome: 'Tipo original (eliminado) — manter', cor: '#94a3b8',
+          requerProjeto: !!registoExistente.projetoIdInterno, criaAusencia: false
+        }];
+      }
     }
     const outrasHorasDoDia = this.state.registos
       .filter(r => r.pessoa === pessoa && r.data === dataAlvo && r.id !== registoId)
@@ -3935,10 +3948,10 @@ const App = {
       </div>
       <label>Tipo de trabalho
         <select id="blocoTipo">
-          ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(tipoInicialId) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
+          ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(valorSelecionadoInicial) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
         </select>
       </label>
-      ${tipoOriginalEliminado ? '<p class="hint" style="color:var(--vermelho);">⚠ O tipo de trabalho original deste registo foi entretanto eliminado em Tipos de Trabalho — escolhe um novo tipo antes de guardar.</p>' : ''}
+      ${tipoOriginalEliminado ? '<p class="hint" style="color:var(--vermelho);">⚠ O tipo de trabalho original deste registo foi entretanto eliminado em Tipos de Trabalho. Continua marcado como tal — dá para editar horas/notas à mesma sem escolher outro; troca aqui o tipo só se quiseres mesmo reclassificar este registo.</p>' : ''}
       <div id="blocoProjetoWrap" class="row-2">
         <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
@@ -3975,12 +3988,24 @@ const App = {
       if (registoExistente && projetosDaPessoa.some(p => p.idInterno === registoExistente.projetoIdInterno)) selProjeto.value = registoExistente.projetoIdInterno;
       preencherTarefas();
     };
+    // "__perdido__" (ver acima) não é um tipo real de state.tiposTrabalho — tipoTrabalhoPorId não o
+    // reconheceria e cairia sempre em "Projeto". Este resolvedor local sabe também lidar com ele.
+    const resolverTipoSelecionado = () => {
+      if (selTipo.value === '__perdido__') {
+        // O marcador em si não é um id real — devolve-se com o id ORIGINAL (o uuid órfão), para
+        // que gravar sem mudar o tipo preserve exatamente o que já lá estava, em vez de gravar a
+        // string "__perdido__" como se fosse um tipoTrabalhoId válido.
+        const marcador = tipos.find(tt => tt.id === '__perdido__');
+        return { ...marcador, id: tipoInicialId };
+      }
+      return this.tipoTrabalhoPorId(selTipo.value || null);
+    };
     // Um tipo "cria ausência" (Férias, Baixa, etc. — ver App.state.tiposTrabalho / coluna "Cria
     // Ausência" no separador Tipos de Trabalho) não pede horas nem projeto: pede antes um período
     // (Data até Data fim) e, ao guardar, cria/atualiza uma linha em Ausências em vez de um registo
     // — ver o "if (tipo.criaAusencia)" no botão Guardar, mais abaixo.
     const atualizarCamposPorTipo = () => {
-      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
+      const tipo = resolverTipoSelecionado();
       wrapProjeto.style.display = tipo.requerProjeto ? '' : 'none';
       if (tipo.requerProjeto) preencherProjetos();
       wrapDataFim.style.display = tipo.criaAusencia ? '' : 'none';
@@ -3994,7 +4019,7 @@ const App = {
     m.querySelector('#blocoGuardar').addEventListener('click', () => {
       const data = inpData.value;
       if (!this.anoDataPlausivel(data)) { this.toast('Indica uma data válida.'); return; }
-      const tipo = this.tipoTrabalhoPorId(selTipo.value || null);
+      const tipo = resolverTipoSelecionado();
       const notas = m.querySelector('#blocoNotas').value.trim();
 
       if (tipo.criaAusencia) {
