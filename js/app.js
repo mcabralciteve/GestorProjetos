@@ -3910,8 +3910,19 @@ const App = {
     // Um registo já existente nunca é de um tipo "cria ausência" (esses nunca chegam a virar
     // registos — ver ramo abaixo, que cria antes uma Ausência); por isso só se oferece esses tipos
     // como opção quando se está mesmo a criar um bloco novo.
-    const tipos = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia || !registoExistente);
+    let tipos = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia || !registoExistente);
     const tipoInicialId = registoExistente ? (registoExistente.tipoTrabalhoId || '') : (tipoPreSelecionadoId || '');
+    // Um tipo entretanto desativado continua a aparecer aqui, só para ESTE registo — senão a
+    // edição ficava sempre a mostrar "Projeto" (o <select> cai na primeira opção quando nenhuma
+    // bate certo), mesmo não sendo esse o tipo real, e arriscava reclassificar o registo sem se
+    // dar por isso ao gravar. Se o tipo tiver sido mesmo ELIMINADO (não só desativado), não há
+    // nome nenhum para recuperar — avisa-se em vez de fingir que continua a ser "Projeto".
+    let tipoOriginalEliminado = false;
+    if (tipoInicialId && !tipos.some(tt => String(tt.id || '') === String(tipoInicialId))) {
+      const tipoDesativado = this.state.tiposTrabalho.find(tt => tt.id === tipoInicialId);
+      if (tipoDesativado) tipos = [...tipos, tipoDesativado];
+      else tipoOriginalEliminado = true;
+    }
     const outrasHorasDoDia = this.state.registos
       .filter(r => r.pessoa === pessoa && r.data === dataAlvo && r.id !== registoId)
       .reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
@@ -3927,6 +3938,7 @@ const App = {
           ${tipos.map(tt => `<option value="${tt.id || ''}" ${String(tt.id || '') === String(tipoInicialId) ? 'selected' : ''}>${escapeHtml(tt.nome)}</option>`).join('')}
         </select>
       </label>
+      ${tipoOriginalEliminado ? '<p class="hint" style="color:var(--vermelho);">⚠ O tipo de trabalho original deste registo foi entretanto eliminado em Tipos de Trabalho — escolhe um novo tipo antes de guardar.</p>' : ''}
       <div id="blocoProjetoWrap" class="row-2">
         <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
