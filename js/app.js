@@ -1905,55 +1905,29 @@ const App = {
       .filter(r => this.registoPertenceAoProjeto(r, p))
       .reduce((soma, r) => soma + (parseFloat(r.horas) || 0), 0);
   },
-  mesmoMes(dataISO, ano, mes) {
-    const d = DateUtil.parseISO(dataISO);
-    return !!d && d.getFullYear() === ano && d.getMonth() === mes;
-  },
-  // Horas planeadas do projeto num mês específico — só conta os dias de cada tarefa que caem
-  // dentro desse mês — usado para construir a reprevisão. Uma tarefa sem nenhum consultor
-  // atribuído não entra na conta (0h): sem alguém indicado, não há esforço real associado a
-  // somar, só um marco/fase de calendário — contá-la como "1 pessoa a tempo inteiro" por omissão
-  // inflava artificialmente a reprevisão sempre que várias tarefas por atribuir se sobrepunham.
-  planeadoMesProjeto(p, ano, mes) {
-    const inicioMes = new Date(ano, mes, 1);
-    const fimMes = new Date(ano, mes + 1, 0);
+  // Reprevisão / EAC — por TAREFA (folha, sem sub-tarefas — uma fase/resumo só somaria em
+  // duplicado com as suas próprias sub-tarefas), com a fórmula clássica de gestão de projetos
+  // "Estimativa a Completar":
+  //  - Concluída (100%): conta sempre as horas REAIS já lançadas — a estimativa deixou de
+  //    importar, o que se gastou é o custo final desta tarefa, seja mais ou menos que o planeado.
+  //  - Em curso, já com horas reais lançadas: EXTRAPOLA a partir do progresso indicado
+  //    (reais ÷ %concluído) — ex.: 10h planeadas, 25% feito, 2h reais → reprevê-se 2÷0,25 = 8h no
+  //    total (a correr melhor que o previsto, o EAC desce); se estivesse a correr pior (ex.: 6h
+  //    reais aos 25%), dava 24h (o EAC sobe). Assume que o ritmo até agora se mantém até ao fim.
+  //  - Ainda sem nenhuma hora real lançada (mesmo que o progresso já tenha sido marcado manualmente
+  //    sem gastar horas): mantém-se o Planeado original — não há nada real para extrapolar a partir
+  //    de zero.
+  reprevisaoEAC(p) {
     let total = 0;
     p.tarefas.forEach(t => {
       if (this.temFilhos(p, t.id)) return;
-      if (!t.recursoIds.length) return;
-      const inicioT = DateUtil.parseISO(t.inicio), fimT = DateUtil.parseISO(t.fim);
-      const inicio = inicioT > inicioMes ? inicioT : inicioMes;
-      const fim = fimT < fimMes ? fimT : fimMes;
-      if (inicio > fim) return;
-      const fatorRecursos = t.recursoIds.reduce((soma, rid) => soma + this.pctAlocacao(t, rid) / 100, 0);
-      for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
-        if (!Capacidade.ehFimDeSemana(d)) total += Capacidade.HORAS_DIA * fatorRecursos;
-      }
+      const reais = this.horasReaisTarefa(p, t);
+      const progresso = t.progresso || 0;
+      if (progresso >= 100) { total += reais; return; }
+      if (reais > 0 && progresso > 0) { total += reais / (progresso / 100); return; }
+      total += t.recursoIds.reduce((soma, rid) => soma + this.horasAlocadas(t, rid), 0);
     });
     return total;
-  },
-  realMesProjeto(p, ano, mes) {
-    return this.state.registos
-      .filter(r => this.registoPertenceAoProjeto(r, p) && this.mesmoMes(r.data, ano, mes))
-      .reduce((soma, r) => soma + (parseFloat(r.horas) || 0), 0);
-  },
-  // Meses a considerar na reprevisão: do início ao fim das tarefas do projeto, alargado para
-  // incluir também quaisquer registos de horas reais fora desse intervalo (ex.: trabalho lançado
-  // num mês sem tarefas planeadas) — assim a reprevisão nunca fica abaixo do real já registado.
-  mesesDoProjeto(p) {
-    const datas = [];
-    p.tarefas.forEach(t => { if (!this.temFilhos(p, t.id)) datas.push(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim)); });
-    this.state.registos.forEach(r => { if (this.registoPertenceAoProjeto(r, p)) datas.push(DateUtil.parseISO(r.data)); });
-    if (!datas.length) return [];
-    return Capacidade.mesesEntre(new Date(Math.min(...datas)), new Date(Math.max(...datas)));
-  },
-  // Reprevisão / EAC = para cada mês do projeto, usa o Real se já houver registos nesse mês,
-  // senão usa o Planeado — mês a mês, tal como no ficheiro de controlo de capacidade de origem.
-  reprevisaoEAC(p) {
-    return this.mesesDoProjeto(p).reduce((soma, m) => {
-      const temRegisto = this.state.registos.some(r => this.registoPertenceAoProjeto(r, p) && this.mesmoMes(r.data, m.ano, m.mes));
-      return soma + (temRegisto ? this.realMesProjeto(p, m.ano, m.mes) : this.planeadoMesProjeto(p, m.ano, m.mes));
-    }, 0);
   },
   avaliarPrazoProjeto(p) {
     const progresso = this.progressoGeralProjeto(p);
