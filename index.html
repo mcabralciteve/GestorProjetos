@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260915f">
+<link rel="stylesheet" href="css/style.css?v=20260915g">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -87,7 +87,6 @@
   <div class="tabs-grupo" data-grupo="horas">
     <button class="tab-btn" data-tab="dia">Dia</button>
     <button class="tab-btn" data-tab="registo">Registo</button>
-    <button class="tab-btn" data-tab="calendario">Calendário</button>
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Registo</button>
@@ -645,19 +644,41 @@
     <div class="pagina-head">
       <h2>🕒 Registo do Dia</h2>
     </div>
-    <p class="pagina-sub">Regista aqui, num único ecrã e mês a mês, tudo o que preencheu os dias de uma pessoa — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho. Clica em qualquer dia do mês para adicionar ou editar um bloco.</p>
-    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
-      <label class="zoom-label">Pessoa <select id="diaPessoa"><option value="">Seleciona…</option></select></label>
+    <div class="filters" style="display:flex;gap:8px;margin-bottom:12px;">
+      <button type="button" class="chip-projeto" id="btnModoDiaPessoal">👤 A minha vista</button>
+      <button type="button" class="chip-projeto" id="btnModoDiaEquipa">👥 Vista de equipa</button>
     </div>
-    <span id="diaMsg" class="hint" style="color:var(--vermelho);display:block;margin-bottom:8px;"></span>
-    <div class="cal-topbar">
-      <button type="button" class="btn btn-sm" id="btnDiaAnt">‹</button>
-      <button type="button" class="btn btn-sm" id="btnDiaHoje">Hoje</button>
-      <button type="button" class="btn btn-sm" id="btnDiaSeg">›</button>
-      <strong id="diaDataLabel"></strong>
-      <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
+
+    <div id="diaModoPessoal">
+      <p class="pagina-sub">Regista aqui, num único ecrã e mês a mês, tudo o que preencheu os dias de uma pessoa — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho. Clica em qualquer dia do mês para adicionar ou editar um bloco.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
+        <label class="zoom-label">Pessoa <select id="diaPessoa"><option value="">Seleciona…</option></select></label>
+      </div>
+      <span id="diaMsg" class="hint" style="color:var(--vermelho);display:block;margin-bottom:8px;"></span>
+      <div class="cal-topbar">
+        <button type="button" class="btn btn-sm" id="btnDiaAnt">‹</button>
+        <button type="button" class="btn btn-sm" id="btnDiaHoje">Hoje</button>
+        <button type="button" class="btn btn-sm" id="btnDiaSeg">›</button>
+        <strong id="diaDataLabel"></strong>
+        <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
+      </div>
+      <div id="diaGrelha" class="calendario-registos"></div>
     </div>
-    <div id="diaGrelha" class="calendario-registos"></div>
+
+    <div id="diaModoEquipa" hidden>
+      <p class="pagina-sub">Vista mensal, só de leitura, das horas lançadas por toda a gente — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
+      </div>
+      <div class="cal-topbar">
+        <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
+        <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
+        <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
+        <strong id="calMesLabel"></strong>
+      </div>
+      <div id="calendarioRegistos" class="calendario-registos"></div>
+    </div>
   </div>
 </section>
 
@@ -730,27 +751,6 @@
       </table>
     </div>
     <div class="paginacao" id="paginacaoRegistos"></div>
-  </div>
-</section>
-
-<!-- ===================== TAB: CALENDÁRIO DE HORAS ===================== -->
-<section class="tab-panel" id="tab-calendario">
-  <div class="pagina">
-    <div class="pagina-head">
-      <h2>📅 Calendário</h2>
-    </div>
-    <p class="pagina-sub">Vista mensal das horas lançadas — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
-    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
-      <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
-      <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
-    </div>
-    <div class="cal-topbar">
-      <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
-      <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
-      <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
-      <strong id="calMesLabel"></strong>
-    </div>
-    <div id="calendarioRegistos" class="calendario-registos"></div>
   </div>
 </section>
 
@@ -942,14 +942,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260915f"></script>
-<script src="js/auth.js?v=20260915f"></script>
-<script src="js/sync.js?v=20260915f"></script>
-<script src="js/gantt.js?v=20260915f"></script>
-<script src="js/capacidade.js?v=20260915f"></script>
-<script src="js/portfolio-gantt.js?v=20260915f"></script>
-<script src="js/reserva-viatura.js?v=20260915f"></script>
-<script src="js/backup.js?v=20260915f"></script>
-<script src="js/app.js?v=20260915f"></script>
+<script src="js/supabase-config.js?v=20260915g"></script>
+<script src="js/auth.js?v=20260915g"></script>
+<script src="js/sync.js?v=20260915g"></script>
+<script src="js/gantt.js?v=20260915g"></script>
+<script src="js/capacidade.js?v=20260915g"></script>
+<script src="js/portfolio-gantt.js?v=20260915g"></script>
+<script src="js/reserva-viatura.js?v=20260915g"></script>
+<script src="js/backup.js?v=20260915g"></script>
+<script src="js/app.js?v=20260915g"></script>
 </body>
 </html>

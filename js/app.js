@@ -62,6 +62,11 @@ const App = {
   // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
   diaRegistoPessoa: '',
   mesRegistoDiaAtual: null,
+  // Separador "Dia" — dois modos, a mesma aba: "pessoal" (editável, uma pessoa de cada vez — a
+  // antiga vista "Dia") e "equipa" (só leitura, todas as pessoas — a antiga vista "Calendário").
+  // Ao contrário de diaRegistoPessoa/mesRegistoDiaAtual, este fica guardado (gravarPrefUI) — é só
+  // uma preferência de interface, faz sentido lembrar qual das duas vistas cada pessoa prefere.
+  modoRegistoDia: 'pessoal',
   filtrosAlocacoes: { pessoa: '', projeto: '', cliente: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
@@ -102,6 +107,8 @@ const App = {
   init() {
     this.cacheEls();
     this.aplicarTema(this.lerPrefsUI().tema || 'claro');
+    this.modoRegistoDia = this.lerPrefsUI().modoRegistoDia || 'pessoal';
+    this.aplicarModoRegistoDia();
     this.capturarEstadoLocalPreLogin();
     this.state = this.estadoVazio();
     this.wireEvents();
@@ -128,6 +135,10 @@ const App = {
       notifWrap: document.getElementById('notifWrap'),
       notifBadge: document.getElementById('notifBadge'),
       btnNotificacoes: document.getElementById('btnNotificacoes'),
+      diaModoPessoal: document.getElementById('diaModoPessoal'),
+      diaModoEquipa: document.getElementById('diaModoEquipa'),
+      btnModoDiaPessoal: document.getElementById('btnModoDiaPessoal'),
+      btnModoDiaEquipa: document.getElementById('btnModoDiaEquipa'),
       selProjeto: document.getElementById('selProjeto'),
       projIdInterno: document.getElementById('projIdInterno'),
       projEstado: document.getElementById('projEstado'),
@@ -3965,6 +3976,27 @@ const App = {
     e.calendarioRegistos.innerHTML = html;
   },
 
+  // Alterna entre as duas vistas do separador "Dia" — "pessoal" (editável, a antiga aba "Dia") e
+  // "equipa" (só leitura, a antiga aba "Calendário") — sem trocar de separador nenhum: são dois
+  // blocos na mesma página, um deles sempre escondido (ver "hidden" no index.html). Cada bloco já
+  // se mantém atualizado sozinho (renderRegistoDia/renderCalendarioRegisto correm sempre nos dois,
+  // independentemente de qual está visível — ver renderTudo/renderTabelaRegistos), por isso alternar
+  // o modo é só uma troca de visibilidade, nunca precisa de voltar a calcular nada.
+  aplicarModoRegistoDia() {
+    const e = this.els;
+    if (!e.diaModoPessoal || !e.diaModoEquipa) return;
+    const pessoal = this.modoRegistoDia !== 'equipa';
+    e.diaModoPessoal.hidden = !pessoal;
+    e.diaModoEquipa.hidden = pessoal;
+    if (e.btnModoDiaPessoal) e.btnModoDiaPessoal.classList.toggle('ativo', pessoal);
+    if (e.btnModoDiaEquipa) e.btnModoDiaEquipa.classList.toggle('ativo', !pessoal);
+  },
+  alternarModoRegistoDia(modo) {
+    this.modoRegistoDia = modo;
+    this.gravarPrefUI('modoRegistoDia', modo);
+    this.aplicarModoRegistoDia();
+  },
+
   // ---------- Tab: Registo do Dia (vista mensal) ----------
   // Um único ecrã para lançar tudo o que preencheu cada dia de uma pessoa, num mês inteiro — projeto
   // ou qualquer outro Tipo de Trabalho (Ausência, Formação, Comercial, etc.). Cada segmento colorido
@@ -5520,7 +5552,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', calendario: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -5531,8 +5563,7 @@ const App = {
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'dashboard') this.renderDashboard();
     if (nome === 'gantt') this.renderGanttAtual();
-    if (nome === 'dia') this.renderRegistoDia();
-    if (nome === 'calendario') this.renderCalendarioRegisto();
+    if (nome === 'dia') { this.renderRegistoDia(); this.renderCalendarioRegisto(); }
     if (nome === 'alocacoes') this.renderCalendarioAlocacoes();
   },
   irParaGrupo(grupo) {
@@ -6105,6 +6136,9 @@ const App = {
     if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
     if (e.btnCalMesSeg) e.btnCalMesSeg.addEventListener('click', () => this.navegarMesCalendario(1));
     if (e.btnCalHoje) e.btnCalHoje.addEventListener('click', () => this.irParaHojeCalendario());
+
+    if (e.btnModoDiaPessoal) e.btnModoDiaPessoal.addEventListener('click', () => this.alternarModoRegistoDia('pessoal'));
+    if (e.btnModoDiaEquipa) e.btnModoDiaEquipa.addEventListener('click', () => this.alternarModoRegistoDia('equipa'));
 
     if (e.diaPessoa) e.diaPessoa.addEventListener('change', () => { this.diaRegistoPessoa = e.diaPessoa.value; this.renderRegistoDia(); });
     const btnDiaAnt = document.getElementById('btnDiaAnt');
