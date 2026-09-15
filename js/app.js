@@ -1684,7 +1684,8 @@ const App = {
   // recurso não chegou às 8h registadas — "hoje" nunca conta (ainda a decorrer, não é justo cobrar
   // já; ver o mesmo raciocínio em Capacidade.horasTarefaNoDia). Um feriado/ausência não conta nem a
   // favor nem contra — simplesmente não entra na contagem dos "nDias" considerados, tal como já não
-  // entra em Capacidade.capacidadeDiaria. Devolve as datas (ISO) por ordem cronológica.
+  // entra em Capacidade.capacidadeDiaria. Devolve {iso, faltam} por ordem cronológica — "faltam" é
+  // quanto falta para as 8h, para o Dashboard poder mostrar não só o dia mas quanto falta nele.
   diasIncompletosRecurso(recursoId, nDias) {
     const dias = [];
     let cursor = DateUtil.addDays(DateUtil.parseISO(DateUtil.todayISO()), -1);
@@ -1697,11 +1698,12 @@ const App = {
       if (!Capacidade.ehFimDeSemana(cursor) && !Capacidade.ehFeriado(cursor) && !Capacidade.ehAusente(cursor, recursoId)) {
         vistos++;
         const iso = DateUtil.toISO(cursor);
-        if (this.horasTotalRegistadasNoDia(recursoId, iso) + 1e-9 < Capacidade.HORAS_DIA) dias.push(iso);
+        const registadas = this.horasTotalRegistadasNoDia(recursoId, iso);
+        if (registadas + 1e-9 < Capacidade.HORAS_DIA) dias.push({ iso, faltam: Capacidade.HORAS_DIA - registadas });
       }
       cursor = DateUtil.addDays(cursor, -1);
     }
-    return dias.sort();
+    return dias.sort((a, b) => a.iso.localeCompare(b.iso));
   },
   // Soma das horas já registadas (Registo de Horas) para esta tarefa e este recurso — usada só
   // para prever carga FUTURA (ver Capacidade.horasRestantesTarefa), nunca para alterar o que foi
@@ -2569,7 +2571,7 @@ const App = {
         const dias = this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO);
         corpo = dias.length
           ? `<p class="hint">⚠ ${dias.length} dia(s) por preencher nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis:</p>` +
-            dias.map(iso => `<div class="dash-linha"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(iso))}</span></div>`).join('')
+            dias.map(d => `<div class="dash-linha"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(d.iso))}</span><span class="dash-linha-sub">faltam ${d.faltam.toFixed(1)}h</span></div>`).join('')
           : `<p class="hint">✅ Registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
       }
       html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo);
