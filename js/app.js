@@ -1601,9 +1601,12 @@ const App = {
   //    registado num dia já passado, em vez de continuar a mostrar a distribuição teórica original
   //    desse dia (ver a nota grande em horasTarefaNoDia — não faz sentido "alocação prevista" num
   //    dia que já lá vai e nunca aconteceu).
+  //  - "porDiaTotal" (chave "pessoa|data" -> horas somadas), com TUDO — projeto e sem projeto —
+  //    usado por horasTotalRegistadasNoDia/diasIncompletosRecurso para saber se um dia ficou
+  //    completo, independentemente de para onde foram as horas.
   indiceRegistosPorTarefa() {
     if (this._indiceRegistosRef !== this.state.registos) {
-      const porTarefa = new Map(), legado = new Map(), porDiaNaoProjeto = new Map();
+      const porTarefa = new Map(), legado = new Map(), porDiaNaoProjeto = new Map(), porDiaTotal = new Map();
       const porTarefaDia = new Map(), legadoDia = new Map();
       this.state.registos.forEach(r => {
         const horas = parseFloat(r.horas) || 0;
@@ -1622,17 +1625,20 @@ const App = {
           const chaveDia = r.pessoa + '|' + r.data;
           porDiaNaoProjeto.set(chaveDia, (porDiaNaoProjeto.get(chaveDia) || 0) + horas);
         }
+        const chaveDiaTotal = r.pessoa + '|' + r.data;
+        porDiaTotal.set(chaveDiaTotal, (porDiaTotal.get(chaveDiaTotal) || 0) + horas);
       });
       this._indiceRegistosPorTarefa = porTarefa;
       this._indiceRegistosLegado = legado;
       this._indicePorDiaNaoProjeto = porDiaNaoProjeto;
+      this._indicePorDiaTotal = porDiaTotal;
       this._indicePorTarefaDia = porTarefaDia;
       this._indiceLegadoDia = legadoDia;
       this._indiceRegistosRef = this.state.registos;
     }
     return {
       porTarefa: this._indiceRegistosPorTarefa, legado: this._indiceRegistosLegado,
-      porDiaNaoProjeto: this._indicePorDiaNaoProjeto,
+      porDiaNaoProjeto: this._indicePorDiaNaoProjeto, porDiaTotal: this._indicePorDiaTotal,
       porTarefaDia: this._indicePorTarefaDia, legadoDia: this._indiceLegadoDia
     };
   },
@@ -1665,6 +1671,37 @@ const App = {
     if (!recurso) return 0;
     const { porDiaNaoProjeto } = this.indiceRegistosPorTarefa();
     return porDiaNaoProjeto.get(recurso.nome + '|' + iso) || 0;
+  },
+  // Quantas horas, ao todo (projeto + sem projeto), este recurso já tem registadas num dia — usada
+  // só para saber se o dia ficou "completo" (ver diasIncompletosRecurso), não para onde foram.
+  horasTotalRegistadasNoDia(recursoId, iso) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return 0;
+    const { porDiaTotal } = this.indiceRegistosPorTarefa();
+    return porDiaTotal.get(recurso.nome + '|' + iso) || 0;
+  },
+  // Últimos "nDias" dias ÚTEIS (sem fim de semana, feriado, ou ausência de dia inteiro) em que este
+  // recurso não chegou às 8h registadas — "hoje" nunca conta (ainda a decorrer, não é justo cobrar
+  // já; ver o mesmo raciocínio em Capacidade.horasTarefaNoDia). Um feriado/ausência não conta nem a
+  // favor nem contra — simplesmente não entra na contagem dos "nDias" considerados, tal como já não
+  // entra em Capacidade.capacidadeDiaria. Devolve as datas (ISO) por ordem cronológica.
+  diasIncompletosRecurso(recursoId, nDias) {
+    const dias = [];
+    let cursor = DateUtil.addDays(DateUtil.parseISO(DateUtil.todayISO()), -1);
+    let vistos = 0;
+    // Limite de segurança (nunca deve ser atingido em uso normal) — evita um ciclo sem fim se o
+    // recurso estiver, por exemplo, com uma ausência que cobre todo o calendário.
+    let guarda = 0;
+    while (vistos < nDias && guarda < nDias * 20 + 90) {
+      guarda++;
+      if (!Capacidade.ehFimDeSemana(cursor) && !Capacidade.ehFeriado(cursor) && !Capacidade.ehAusente(cursor, recursoId)) {
+        vistos++;
+        const iso = DateUtil.toISO(cursor);
+        if (this.horasTotalRegistadasNoDia(recursoId, iso) + 1e-9 < Capacidade.HORAS_DIA) dias.push(iso);
+      }
+      cursor = DateUtil.addDays(cursor, -1);
+    }
+    return dias.sort();
   },
   // Soma das horas já registadas (Registo de Horas) para esta tarefa e este recurso — usada só
   // para prever carga FUTURA (ver Capacidade.horasRestantesTarefa), nunca para alterar o que foi
@@ -2384,16 +2421,21 @@ const App = {
   // render. Os dois últimos (Faturação a vencer / Ausências da equipa) só fazem sentido para quem
   // gere alguma coisa — para um Consultor simples ficam sempre de fora, mesmo que os "ligasse" no
   // painel de personalizar (esse painel nem lhos oferece — ver renderPainelPersonalizarDashboard).
+  // Janela de dias úteis olhada para trás pelo alerta de registo incompleto (widgets
+  // "meusDiasIncompletos"/"equipaDiasIncompletos") — ver App.diasIncompletosRecurso.
+  DIAS_JANELA_REGISTO_INCOMPLETO: 10,
   DASHBOARD_WIDGETS: [
     { key: 'agendaHoje', label: 'A minha agenda de hoje' },
     { key: 'proximos7dias', label: 'Próximos 7 dias' },
     { key: 'meusPassos', label: 'Os meus Next Steps' },
     { key: 'meusProjetos', label: 'Os meus projetos' },
     { key: 'registoRapido', label: 'Registar horas de hoje' },
+    { key: 'meusDiasIncompletos', label: 'Os meus dias por preencher' },
     { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
-    { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' }
+    { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
+    { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Gestor/Admin)' }
   ],
-  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa'],
+  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'equipaDiasIncompletos'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
   // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
   dashboardWidgetsOcultosSet() {
@@ -2521,6 +2563,18 @@ const App = {
       html += this.cartaoDashboard('🕒 Registar horas de hoje', `<button type="button" class="btn btn-primary" id="btnDashRegistoRapido">Abrir Registo do Dia</button>`);
     }
 
+    if (!ocultos.has('meusDiasIncompletos')) {
+      let corpo = semRecurso;
+      if (meuRecurso) {
+        const dias = this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO);
+        corpo = dias.length
+          ? `<p class="hint">⚠ ${dias.length} dia(s) por preencher nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis:</p>` +
+            dias.map(iso => `<div class="dash-linha"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(iso))}</span></div>`).join('')
+          : `<p class="hint">✅ Registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
+      }
+      html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo);
+    }
+
     if (gestorOuAdmin && !ocultos.has('faturacaoAVencer')) {
       const linhas = [];
       this.meusProjetosEnvolvidos().filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
@@ -2559,6 +2613,27 @@ const App = {
           <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
         </div>`).join('') : '<p class="hint">Sem ausências nos próximos 7 dias.</p>';
       html += this.cartaoDashboard('🌴 Ausências da equipa (próx. 7 dias)', corpo);
+    }
+
+    if (gestorOuAdmin && !ocultos.has('equipaDiasIncompletos')) {
+      let recursosEquipa;
+      if (admin) {
+        recursosEquipa = this.state.recursos;
+      } else {
+        const ids = new Set();
+        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
+        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
+      }
+      const comFalhas = recursosEquipa
+        .map(r => ({ r, nDias: this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length }))
+        .filter(x => x.nDias > 0)
+        .sort((a, b) => b.nDias - a.nDias);
+      const corpo = comFalhas.length ? comFalhas.map(({ r, nDias }) => `
+        <div class="dash-linha">
+          <span class="dash-linha-principal">${escapeHtml(r.nome)}</span>
+          <span class="dash-linha-sub">${nDias} dia(s) por preencher (últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis)</span>
+        </div>`).join('') : `<p class="hint">✅ Toda a gente com o registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
+      html += this.cartaoDashboard('📋 Registos incompletos da equipa', corpo);
     }
 
     e.dashboardGrelha.innerHTML = html || '<p class="hint">Sem cartões para mostrar — liga alguns em "⚙ Personalizar".</p>';
