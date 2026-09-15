@@ -125,6 +125,9 @@ const App = {
 
   cacheEls() {
     this.els = {
+      notifWrap: document.getElementById('notifWrap'),
+      notifBadge: document.getElementById('notifBadge'),
+      btnNotificacoes: document.getElementById('btnNotificacoes'),
       selProjeto: document.getElementById('selProjeto'),
       projIdInterno: document.getElementById('projIdInterno'),
       projEstado: document.getElementById('projEstado'),
@@ -793,6 +796,15 @@ const App = {
     const ids = new Set();
     p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => ids.add(rid)));
     if (p.gestorId) ids.add(p.gestorId);
+    return this.state.recursos.filter(r => ids.has(r.id));
+  },
+  // Consultores "à minha responsabilidade": todos para o Administrador, só os das equipas dos
+  // projetos que giro para um Gestor — o mesmo âmbito usado pelos vários cartões de equipa do
+  // Dashboard (ausências, registos incompletos, sobre-alocação) e pelo contador de notificações.
+  recursosDaMinhaEquipaGestao() {
+    if (this.souAdmin()) return this.state.recursos;
+    const ids = new Set();
+    this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
     return this.state.recursos.filter(r => ids.has(r.id));
   },
   // Um next step só pode ser criado por quem pode editar o projeto (admin ou o gestor desse
@@ -2367,6 +2379,7 @@ const App = {
 
   renderTudo() {
     this.aplicarPermissoesUI();
+    this.renderNotificacoes();
     this.renderDashboard();
     this.renderInfoProjeto();
     this.renderTabelaTarefas();
@@ -2472,6 +2485,61 @@ const App = {
       <div class="dash-cartao-head"><h3>${titulo}</h3>${extraHead || ''}</div>
       <div class="dash-cartao-corpo">${corpoHtml}</div>
     </div>`;
+  },
+  // Quantos dos meus próprios Next Steps (não fechados, atribuídos a mim) já passaram da data
+  // prevista — mesmo critério do aviso "⚠" já usado na lista completa (ver proximoPassoAtrasado).
+  meusPassosAtrasadosCount() {
+    const perfil = this.perfilAtual();
+    if (!perfil || !perfil.recursoId) return 0;
+    let n = 0;
+    Object.values(this.state.projetos).forEach(p => (p.proximosPassos || []).forEach(pp => {
+      if (pp.responsavelId === perfil.recursoId && !pp.fechado && this.proximoPassoAtrasado(pp)) n++;
+    }));
+    return n;
+  },
+  // Quantas faturas por emitir vencem nos próximos 30 dias, nos projetos que posso editar — mesmo
+  // critério do cartão "Faturação a vencer".
+  faturasAVencerCount() {
+    const daqui30ISO = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(DateUtil.todayISO()), 30));
+    let n = 0;
+    this.meusProjetosEnvolvidos().filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
+      (p.faturas || []).forEach(f => { if (!f.emitida && f.dataPrevista && f.dataPrevista <= daqui30ISO) n++; });
+    });
+    return n;
+  },
+  // Quantas pessoas da minha equipa de gestão têm sobre-alocação real detetada — mesmo critério do
+  // cartão "Consultores em risco".
+  consultoresRiscoCount() {
+    Capacidade.limparCaches();
+    return this.recursosDaMinhaEquipaGestao().filter(r => Capacidade.intervalosCriticos({ id: r.id }).length > 0).length;
+  },
+  // Quantas pessoas da minha equipa de gestão têm pelo menos um dia por preencher na janela — mesmo
+  // critério do cartão "Registos incompletos da equipa".
+  equipaDiasIncompletosCount() {
+    return this.recursosDaMinhaEquipaGestao().filter(r => this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length > 0).length;
+  },
+  // Soma tudo o que já é mostrado nos cartões do Dashboard num único número, para o sino da topbar
+  // — não introduz nenhum critério novo, só agrega os já existentes (registo incompleto, next
+  // steps atrasados, e para quem gere algo, faturação a vencer e sobre-alocação).
+  contarNotificacoes() {
+    const perfil = this.perfilAtual();
+    const meuRecurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    let n = 0;
+    if (meuRecurso) n += this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length;
+    n += this.meusPassosAtrasadosCount();
+    if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
+      n += this.faturasAVencerCount();
+      n += this.consultoresRiscoCount();
+      n += this.equipaDiasIncompletosCount();
+    }
+    return n;
+  },
+  renderNotificacoes() {
+    const e = this.els;
+    if (!e.notifBadge) return;
+    const n = this.contarNotificacoes();
+    e.notifBadge.textContent = n > 99 ? '99+' : String(n);
+    e.notifBadge.style.display = n > 0 ? '' : 'none';
   },
   renderDashboard() {
     const e = this.els;
@@ -2595,14 +2663,7 @@ const App = {
     }
 
     if (gestorOuAdmin && !ocultos.has('ausenciasEquipa')) {
-      let recursosEquipa;
-      if (admin) {
-        recursosEquipa = this.state.recursos;
-      } else {
-        const ids = new Set();
-        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
-        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
-      }
+      const recursosEquipa = this.recursosDaMinhaEquipaGestao();
       const proximas = [];
       this.state.ausencias.forEach(a => {
         if (a.dataFim < hojeISO || a.dataInicio > daqui7ISO) return;
@@ -2619,14 +2680,7 @@ const App = {
     }
 
     if (gestorOuAdmin && !ocultos.has('equipaDiasIncompletos')) {
-      let recursosEquipa;
-      if (admin) {
-        recursosEquipa = this.state.recursos;
-      } else {
-        const ids = new Set();
-        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
-        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
-      }
+      const recursosEquipa = this.recursosDaMinhaEquipaGestao();
       const comFalhas = recursosEquipa
         .map(r => ({ r, nDias: this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length }))
         .filter(x => x.nDias > 0)
@@ -2640,14 +2694,7 @@ const App = {
     }
 
     if (gestorOuAdmin && !ocultos.has('consultoresRisco')) {
-      let recursosEquipa;
-      if (admin) {
-        recursosEquipa = this.state.recursos;
-      } else {
-        const ids = new Set();
-        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
-        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
-      }
+      const recursosEquipa = this.recursosDaMinhaEquipaGestao();
       // Ver a nota em renderTabelaTarefas — garante que este render nunca reaproveita um cache do
       // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
       Capacidade.limparCaches();
@@ -6142,6 +6189,7 @@ const App = {
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
+    if (this.els.btnNotificacoes) this.els.btnNotificacoes.addEventListener('click', () => this.irParaAba('dashboard'));
     document.getElementById('btnExportCsv').addEventListener('click', () => this.exportarCsv());
     document.getElementById('btnExportImagem').addEventListener('click', () => this.exportarImagem());
     document.getElementById('btnExportPdf').addEventListener('click', () => this.exportarPdf());

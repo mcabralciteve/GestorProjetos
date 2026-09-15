@@ -513,6 +513,10 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .card-aviso-suspenso{background:#fdf3d6;border:1px solid #e8c766;border-radius:var(--radius);padding:8px 10px;font-size:11.5px;color:var(--cinza-700);margin-bottom:10px;}
 :root[data-tema="escuro"] .card-aviso-suspenso{background:#4a3a15;border-color:#7a5f20;color:var(--cinza-300);}
 
+/* Sino de notificações (topbar) */
+.notif-wrap{position:relative;display:inline-flex;}
+.notif-badge{position:absolute;top:-3px;right:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:var(--radius-pill);background:var(--vermelho);color:#fff;font-size:9.5px;font-weight:700;line-height:15px;text-align:center;pointer-events:none;}
+
 /* Dashboard (Início) */
 .dashboard-grelha{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;}
 .dash-cartao{border:1px solid var(--cinza-200);border-radius:var(--radius);background:var(--branco);box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:8px;}
