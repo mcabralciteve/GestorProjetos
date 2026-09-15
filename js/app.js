@@ -2424,10 +2424,11 @@ const App = {
     const admin = this.souAdmin();
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
     // "Equipa" passa a ser visível para Gestor de Projeto também (precisa de ver Alocações dos
-    // seus projetos), não só Administrador — "Capacidade" continua só para Administrador, por
-    // isso tem o próprio esconde/mostra ao nível do separador (tabBtnCapacidade), não do grupo.
+    // seus projetos) — "Capacidade" (heatmap/conflitos) também, desde que só veja a sua própria
+    // equipa e nunca a previsão de faturação (ver renderCapacidade, que esconde "cap-revenue" e o
+    // botão "Ver todas as tarefas" para quem não for Administrador).
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = gestorDeAlgo ? '' : 'none';
-    if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = admin ? '' : 'none';
+    if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo) ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
@@ -2437,7 +2438,8 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'capacidade', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && !gestorDeAlgo && this.abaAtiva === 'capacidade') this.irParaAba('dashboard');
     if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('dashboard');
   },
 
@@ -3349,9 +3351,13 @@ const App = {
     e.gridCapacidade.innerHTML = '';
 
     this.filtroEquipaCap = e.selEquipaCap.value;
+    // Um Gestor (não-admin) só vê aqui a sua própria equipa de gestão — o mesmo âmbito já usado
+    // pelos cartões de equipa do Dashboard (ver recursosDaMinhaEquipaGestao). O filtro de equipa
+    // (selEquipaCap) aplica-se por cima disto, nunca alarga o que já está limitado aqui.
+    const recursosBase = this.recursosDaMinhaEquipaGestao();
     const recursosFiltrados = this.filtroEquipaCap
-      ? this.state.recursos.filter(r => String(r.equipaId || '') === this.filtroEquipaCap)
-      : this.state.recursos;
+      ? recursosBase.filter(r => String(r.equipaId || '') === this.filtroEquipaCap)
+      : recursosBase;
 
     if (this.state.recursos.length === 0) {
       e.gridCapacidade.innerHTML = '<p style="color:var(--cinza-500)">Sem consultores definidos. Adiciona no separador "Pessoas".</p>';
@@ -3382,7 +3388,12 @@ const App = {
       e.heatmapCapBody.appendChild(tr);
 
       const mesAtual = resumos[0];
-      const revenueTotal = resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0);
+      // Previsão de faturação (preço de venda × horas) fica reservada ao Administrador — um Gestor
+      // já vê aqui a ocupação e os conflitos da sua equipa, mas não os valores monetários por
+      // pessoa, tal como o botão "Ver todas as tarefas" (permite editar horas alocadas em QUALQUER
+      // projeto dessa pessoa, incluindo projetos que o Gestor não gere — ver abrirModalAlocacoesRecurso).
+      const admin = this.souAdmin();
+      const revenueTotal = admin ? resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0) : 0;
       const projetos = Capacidade.projetosDoRecurso(r.id);
       const datasConflito = resumos.reduce((acc, res) => acc.concat(res.datasConflitoDisponibilidade), []);
       const clsMesAtual = Capacidade.classeResumo(mesAtual);
@@ -3400,14 +3411,14 @@ const App = {
         <div class="cap-meses">
           ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
-        <div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>
+        ${admin ? `<div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>` : ''}
         ${intervalosCriticos.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarIntervalosConflito(intervalosCriticos, 10)}</div>` : ''}
         ${datasConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${this.formatarDatasConflito(datasConflito, 10)}</div>` : ''}
         <div class="cap-projetos">
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
         </div>
-        <button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>`;
-      card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
+        ${admin ? '<button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>' : ''}`;
+      if (admin) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
       e.gridCapacidade.appendChild(card);
     });
   },
