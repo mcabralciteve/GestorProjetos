@@ -1219,9 +1219,18 @@ const App = {
     if (!alvos.length) return;
     const temSub = alvos.some(a => this.temFilhos(p, a.id));
     const descricao = alvos.length === 1 ? `"${alvos[0].nome}"` : `${alvos.length} tarefas selecionadas`;
-    if (!confirm(`Eliminar ${descricao}${temSub ? ' e as suas subtarefas' : ''}?`)) return;
     const idsRemover = new Set();
     alvos.forEach(a => { idsRemover.add(a.id); this.descendentesDe(p, a.id).forEach(d => idsRemover.add(d.id)); });
+    // Um registo ligado por tarefaId a uma tarefa que desaparece fica órfão (sem tarefa válida) —
+    // já não é possível "perder a referência" por renomear (tarefaId nunca muda), mas eliminar a
+    // tarefa continua a partir a ligação por completo. Aviso explícito antes de deixar isso
+    // acontecer sem se dar por isso — ver o levantamento de registos órfãos feito em 2026-09-15.
+    const horasEmRisco = [...idsRemover].reduce((soma, tid) =>
+      soma + this.state.registos.filter(r => r.tarefaId === tid).reduce((s, r) => s + (parseFloat(r.horas) || 0), 0), 0);
+    const avisoHoras = horasEmRisco > 0
+      ? `\n\n⚠ Há ${horasEmRisco.toFixed(1)}h já registadas nesta(s) tarefa(s) — ficam sem tarefa associada (continuam no Registo de Horas, mas deixam de contar para EAC/Capacidade/Alocações).`
+      : '';
+    if (!confirm(`Eliminar ${descricao}${temSub ? ' e as suas subtarefas' : ''}?${avisoHoras}`)) return;
     p.tarefas = p.tarefas.filter(t => !idsRemover.has(t.id));
     p.tarefas.forEach(t => { t.predecessores = t.predecessores.filter(pr => !idsRemover.has(pr.id)); });
     this.selecionadaId = null;
