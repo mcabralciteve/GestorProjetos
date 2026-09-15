@@ -743,6 +743,31 @@ const App = {
   registoPertenceAoProjeto(r, p) {
     return r.projetoId ? r.projetoId === p.id : (!!p.idInterno && r.projetoIdInterno === p.idInterno);
   },
+  // Tarefas de projeto com registo REAL neste dia, para este recurso — usado por
+  // Capacidade.tarefasAtivasNoDia em dias já passados, em vez da janela planeada da tarefa no Gantt
+  // (t.inicio/t.fim): um registo pode ter sido lançado num dia fora dessa janela — a tarefa "devia"
+  // ter decorrido noutras datas, mas o trabalho aconteceu mesmo neste dia — e sem isto essas horas
+  // reais desapareciam silenciosamente do calendário de Alocações e do resumo de Capacidade para
+  // esse dia (ver bug reportado: um dia com 3 registos só mostrava o de uma tarefa). Agrupa por
+  // tarefa, somando várias linhas do mesmo dia/tarefa (ver o mesmo padrão em horasJaRegistadasTarefa).
+  tarefasComRegistoNoDia(iso, recursoId) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return [];
+    const porTarefa = new Map();
+    this.state.registos.forEach(r => {
+      if (r.pessoa !== recurso.nome || r.data !== iso) return;
+      const horas = parseFloat(r.horas) || 0;
+      if (horas <= 0) return;
+      const projeto = this.projetoDoRegisto(r);
+      if (!projeto) return;
+      const tarefa = r.tarefaId ? this.tarefaPorId(projeto, r.tarefaId) : projeto.tarefas.find(t => t.nome === r.tarefaNome);
+      if (!tarefa || this.temFilhos(projeto, tarefa.id)) return;
+      const chave = projeto.id + '|' + tarefa.id;
+      if (!porTarefa.has(chave)) porTarefa.set(chave, { projeto, tarefa, horas: 0 });
+      porTarefa.get(chave).horas += horas;
+    });
+    return [...porTarefa.values()];
+  },
   // Quem pode editar/reatribuir ou apagar um registo já existente (tabela de Registos): o
   // Administrador (qualquer registo), ou o Gestor do projeto a que ESSE registo pertence — nunca
   // um Gestor de outro projeto, nem um Consultor comum (mesmo em registos seus). Um registo órfão
@@ -1037,7 +1062,15 @@ const App = {
     this.persist();
     this.renderTudo();
   },
+  // Um filtro de Gestor ativo no Gantt (ver renderProjetoSelect) não pode impedir de abrir aqui um
+  // projeto vindo de outro sítio (Alocações, Portefólio, tabela de Projetos) — sem repor o filtro
+  // primeiro, o próprio renderProjetoSelect (chamado a seguir) via o projeto pedido fora da lista
+  // filtrada e trocava-o silenciosamente pelo primeiro dessa lista, abrindo o Gantt errado. Mexe
+  // diretamente no <select> (não só em "filtroGestorGantt") porque, uma vez semeado, é o valor do
+  // próprio elemento que renderProjetoSelect passa a considerar a fonte de verdade.
   abrirProjetoNoGantt(id) {
+    if (this.els.selGestorFiltroGantt) this.els.selGestorFiltroGantt.value = '';
+    this.filtroGestorGantt = '';
     this.selecionarProjeto(id);
     this.renderProjetoSelect();
     this.irParaAba('gantt');

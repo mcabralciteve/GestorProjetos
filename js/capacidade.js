@@ -64,6 +64,16 @@ const Capacidade = {
   tarefasAtivasNoDia(date, recursoId) {
     const hojeISO = DateUtil.todayISO();
     const iso = DateUtil.toISO(date);
+    // Num dia já passado, a pergunta certa não é "que tarefas estavam PLANEADAS para hoje" (a
+    // janela t.inicio/t.fim do Gantt) — é "o que foi REALMENTE registado neste dia" (ver
+    // App.tarefasComRegistoNoDia): um registo pode ter sido lançado fora da janela planeada da sua
+    // tarefa (o trabalho "devia" ter acontecido noutras datas, mas na prática foi feito hoje), e
+    // filtrar só pela janela fazia essas horas reais desaparecerem do calendário de Alocações e do
+    // resumo de Capacidade. Hoje e no futuro continua a ser uma pergunta de planeamento, tratada
+    // no ramo abaixo.
+    if (iso < hojeISO) {
+      return App.tarefasComRegistoNoDia(iso, recursoId).map(x => ({ projeto: x.projeto, tarefa: x.tarefa }));
+    }
     const out = [];
     Object.values(App.state.projetos).forEach(p => {
       if (p.ativo === false) return; // suspenso/fechado: nunca ocupa capacidade de ninguém
@@ -75,7 +85,7 @@ const Capacidade = {
         // restantes a hoje. Sem esta extensão, ela desaparecia silenciosamente de qualquer soma
         // (alocacaoDiaria, capacidadeLivreHoras, avaliarAtribuicao, calendário de Alocações)
         // assim que o seu prazo original passasse — mesmo continuando a "dever" horas.
-        const fimEfetivo = (iso >= hojeISO && t.fim < hojeISO && this.horasRestantesTarefa(p, t, recursoId) > 0) ? hojeISO : t.fim;
+        const fimEfetivo = (t.fim < hojeISO && this.horasRestantesTarefa(p, t, recursoId) > 0) ? hojeISO : t.fim;
         if (iso >= t.inicio && iso <= fimEfetivo) out.push({ projeto: p, tarefa: t });
       });
     });
