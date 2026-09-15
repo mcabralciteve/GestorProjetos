@@ -2435,9 +2435,10 @@ const App = {
     { key: 'meusDiasIncompletos', label: 'Os meus dias por preencher' },
     { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
     { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
-    { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Gestor/Admin)' }
+    { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Gestor/Admin)' },
+    { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' }
   ],
-  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'equipaDiasIncompletos'],
+  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'equipaDiasIncompletos', 'consultoresRisco'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
   // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
   dashboardWidgetsOcultosSet() {
@@ -2636,6 +2637,40 @@ const App = {
           <span class="dash-linha-sub">${nDias} dia(s) por preencher (últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis)</span>
         </div>`).join('') : `<p class="hint">✅ Toda a gente com o registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
       html += this.cartaoDashboard('📋 Registos incompletos da equipa', corpo);
+    }
+
+    if (gestorOuAdmin && !ocultos.has('consultoresRisco')) {
+      let recursosEquipa;
+      if (admin) {
+        recursosEquipa = this.state.recursos;
+      } else {
+        const ids = new Set();
+        this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
+        recursosEquipa = this.state.recursos.filter(r => ids.has(r.id));
+      }
+      // Ver a nota em renderTabelaTarefas — garante que este render nunca reaproveita um cache do
+      // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
+      Capacidade.limparCaches();
+      const emRisco = recursosEquipa
+        .map(r => {
+          const violacoes = Capacidade.intervalosCriticos({ id: r.id });
+          if (!violacoes.length) return null;
+          const maisUrgente = violacoes.reduce((p, v) => (v.inicio < p.inicio ? v : p), violacoes[0]);
+          const piorExcesso = Math.max(...violacoes.map(v => v.excesso));
+          return { r, n: violacoes.length, piorExcesso, maisUrgente };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.maisUrgente.inicio - b.maisUrgente.inicio);
+      const corpo = emRisco.length ? emRisco.map(({ r, n, piorExcesso, maisUrgente }) => {
+        const periodo = +maisUrgente.inicio === +maisUrgente.fim
+          ? DateUtil.formatShort(maisUrgente.inicio)
+          : `${DateUtil.formatShort(maisUrgente.inicio)}–${DateUtil.formatShort(maisUrgente.fim)}`;
+        return `<div class="dash-linha">
+          <span class="dash-linha-principal">⚠ ${escapeHtml(r.nome)}</span>
+          <span class="dash-linha-sub">${n} período(s) crítico(s), até ${piorExcesso.toFixed(1)}h de excesso — o mais próximo: ${periodo}</span>
+        </div>`;
+      }).join('') : '<p class="hint">✅ Sem sobre-alocação real detetada.</p>';
+      html += this.cartaoDashboard('⚠️ Consultores em risco', corpo);
     }
 
     e.dashboardGrelha.innerHTML = html || '<p class="hint">Sem cartões para mostrar — liga alguns em "⚙ Personalizar".</p>';
