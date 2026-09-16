@@ -27,9 +27,15 @@ const Sync = {
       d => ({ id: d.id, nome: d.nome, diretor_id: d.diretorId || null }));
     // "equipas.lider_id"/"departamento_id" referenciam recursos.id/departamentos.id — só podem ser
     // gravados DEPOIS de ambos existirem, mas "equipas" tem de ser sincronizada ANTES de "recursos"
-    // (por causa de recursos.equipa_id, acima). Por isso vão sempre num segundo passo.
+    // (por causa de recursos.equipa_id, acima). Por isso vão sempre num segundo passo — que inclui
+    // sempre "nome" também (não só lider_id/departamento_id): sem isto, uma equipa recém-criada,
+    // com edições rápidas a seguir (ex.: mudar logo o Team Leader), podia ver este segundo pedido
+    // chegar ao Supabase ANTES do primeiro (dois "persist()" concorrentes, sem garantia de ordem na
+    // rede) — nesse caso o Postgres tenta um INSERT (a linha ainda não existe) sem "nome" nenhum, e
+    // rejeita por violar "not null". Repetir "nome" aqui torna este passo autossuficiente: mesmo que
+    // chegue primeiro, já tem tudo para criar a linha sozinho.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, lider_id: eq.liderId || null, departamento_id: eq.departamentoId || null }));
+      eq => ({ id: eq.id, nome: eq.nome, lider_id: eq.liderId || null, departamento_id: eq.departamentoId || null }));
     await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
       tt => ({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia }));
 
