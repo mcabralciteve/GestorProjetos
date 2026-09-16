@@ -347,7 +347,7 @@ const App = {
       // sensato para ele). Prefere sempre um projeto onde seja mesmo Gestor ou Consultor, mesmo
       // sendo Administrador; só cai para "qualquer um" se não tiver nenhum diretamente seu.
       if (!this.estouDiretamenteEnvolvidoEm(this.state.projetoAtivoId)) {
-        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0];
+        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0] || this.projetosQuePossoVer()[0];
         this.state.projetoAtivoId = preferido ? preferido.id : null;
       }
       this.aplicarFiltrosPorDefeito();
@@ -451,7 +451,7 @@ const App = {
       if (projetoAnteriorId && this.state.projetos[projetoAnteriorId] && this.estouEnvolvidoEm(projetoAnteriorId)) {
         this.state.projetoAtivoId = projetoAnteriorId;
       } else if (!this.estouDiretamenteEnvolvidoEm(this.state.projetoAtivoId)) {
-        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0];
+        const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0] || this.projetosQuePossoVer()[0];
         this.state.projetoAtivoId = preferido ? preferido.id : null;
       }
       this._ultimoEstadoPersistido = JSON.stringify(this.state);
@@ -820,6 +820,24 @@ const App = {
   meusProjetosEnvolvidos() {
     return Object.values(this.state.projetos).filter(p => this.estouEnvolvidoEm(p.id));
   },
+  // Mais largo que estouEnvolvidoEm: um Team Leader vê (só vê — nunca edita, ver
+  // possoEditarProjeto, que NUNCA usa esta função) o Gantt de um projeto onde tenha alguém da sua
+  // equipa alocado, mesmo não sendo gestor nem consultor desse projeto — é o que lhe dá contexto
+  // para gerir a disponibilidade/afetação da sua gente ("pode consultar os projetos onde existam
+  // membros da sua equipa envolvidos", sem ganhar edição só por isso). Não é usada em nenhum sítio
+  // que mostre valores monetários (Projetos/Portefólio continuam em meusProjetosEnvolvidos) — só no
+  // seletor do Gantt (ver renderProjetoSelect/projetosQuePossoVer).
+  possoVerProjeto(projetoId) {
+    if (this.estouEnvolvidoEm(projetoId)) return true;
+    const p = this.state.projetos[projetoId];
+    if (!p) return false;
+    const idsLiderados = new Set(this.recursosDaMinhaLideranca().map(r => r.id));
+    if (!idsLiderados.size) return false;
+    return p.tarefas.some(t => (t.recursoIds || []).some(rid => idsLiderados.has(rid)));
+  },
+  projetosQuePossoVer() {
+    return Object.values(this.state.projetos).filter(p => this.possoVerProjeto(p.id));
+  },
   // Pessoas elegíveis como responsável de um next step deste projeto: os consultores (quem já tem
   // o recurso atribuído a alguma tarefa — mesma definição usada por souConsultorDe) MAIS o próprio
   // Gestor do projeto, mesmo que não tenha nenhuma tarefa atribuída a si — muitos next steps de
@@ -830,12 +848,14 @@ const App = {
     if (p.gestorId) ids.add(p.gestorId);
     return this.state.recursos.filter(r => ids.has(r.id));
   },
-  // Consultores "à minha responsabilidade": todos para o Administrador, só os das equipas dos
-  // projetos que giro para um Gestor — o mesmo âmbito usado pelos vários cartões de equipa do
-  // Dashboard (ausências, registos incompletos, sobre-alocação) e pelo contador de notificações.
+  // Consultores "à minha responsabilidade": todos para o Administrador; para os outros, a UNIÃO de
+  // dois canais independentes — as equipas que lidero (recursosDaMinhaLideranca, qualquer projeto)
+  // e as pessoas dos projetos que giro (consultoresDoProjeto, só esses projetos). O mesmo âmbito
+  // usado pelos vários cartões de equipa do Dashboard (ausências, registos incompletos, sobre-
+  // alocação), pelo contador de notificações, e por Capacidade/Alocações.
   recursosDaMinhaEquipaGestao() {
     if (this.souAdmin()) return this.state.recursos;
-    const ids = new Set();
+    const ids = new Set(this.recursosDaMinhaLideranca().map(r => r.id));
     this.meusProjetosDiretamente().filter(p => this.souGestorDe(p.id)).forEach(p => this.consultoresDoProjeto(p).forEach(r => ids.add(r.id)));
     return this.state.recursos.filter(r => ids.has(r.id));
   },
@@ -2374,7 +2394,7 @@ const App = {
   renderProjetoSelect() {
     const sel = this.els.selProjeto;
     const selGestor = this.els.selGestorFiltroGantt;
-    let projetos = this.meusProjetosEnvolvidos();
+    let projetos = this.projetosQuePossoVer();
     if (this.souAdmin() && selGestor) {
       // Esta função é ao mesmo tempo o render E o "handler" do próprio <select> (não há um
       // aplicarFiltroGestorGantt à parte) — por isso um simples "||" com this.filtroGestorGantt
@@ -2444,12 +2464,14 @@ const App = {
     const e = this.els;
     const admin = this.souAdmin();
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
-    // "Equipa" passa a ser visível para Gestor de Projeto também (precisa de ver Alocações dos
-    // seus projetos) — "Capacidade" (heatmap/conflitos) também, desde que só veja a sua própria
-    // equipa e nunca a previsão de faturação (ver renderCapacidade, que esconde "cap-revenue" e o
-    // botão "Ver todas as tarefas" para quem não for Administrador).
-    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = gestorDeAlgo ? '' : 'none';
-    if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo) ? '' : 'none';
+    const liderDeAlgo = this.souLiderDeAlgumaEquipa();
+    // "Equipa" (Alocações/Capacidade) é visível a Gestor de Projeto E a Team Leader — cada um vê,
+    // dentro dela, só a sua própria fatia (ver recursosDaMinhaEquipaGestao/recursosDaMinhaLideranca
+    // e a nota grande em renderCapacidade sobre o que fica escondido de quem não é Administrador).
+    // "Faturação" fica só para Gestor de Projeto — um Team Leader puro (sem ser também gestor de
+    // nenhum projeto) não gere dinheiro de projeto nenhum só por liderar pessoas.
+    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = (gestorDeAlgo || liderDeAlgo) ? '' : 'none';
+    if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
@@ -2460,8 +2482,10 @@ const App = {
       if (btn) btn.style.display = admin ? '' : 'none';
     });
     if (!admin && ['recursos', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
-    if (!admin && !gestorDeAlgo && this.abaAtiva === 'capacidade') this.irParaAba('dashboard');
-    if (!gestorDeAlgo && ['faturacao', 'acompanhamento', 'alocacoes'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
+    // à parte em nenhuma destas condições.
+    if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
+    if (!gestorDeAlgo && ['faturacao', 'acompanhamento'].includes(this.abaAtiva)) this.irParaAba('dashboard');
   },
 
   // ---------- Tab: Início (Dashboard pessoal) ----------
@@ -3223,7 +3247,7 @@ const App = {
     const e = this.els;
     if (!e.calendarioAlocacoes) return;
     this.renderLegendaOcupacao('legendaOcupacao');
-    if (!this.souGestorDeAlgumProjeto()) return; // sem acesso (separador nem devia estar visível)
+    if (!this.souGestorDeAlgumProjeto() && !this.souLiderDeAlgumaEquipa()) return; // sem acesso (separador nem devia estar visível)
     // Ver a nota em renderTabelaTarefas — garante que este render nunca reaproveita um cache do
     // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
     Capacidade.limparCaches();
