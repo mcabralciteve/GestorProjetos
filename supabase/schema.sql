@@ -62,6 +62,18 @@ alter table public.recursos add column if not exists acesso text not null defaul
 alter table public.recursos drop constraint if exists recursos_acesso_check;
 alter table public.recursos add constraint recursos_acesso_check check (acesso in ('admin', 'user'));
 
+-- "equipas.lider_id" substitui "team_leader" (texto livre, acima) por uma referência real a
+-- recursos — só texto não dava para usar em permissões (o mesmo problema de "casar por nome" já
+-- resolvido para tarefas/registos nesta app: um team_leader que mude de nome perdia a associação).
+-- "team_leader" fica na tabela, sem ser lido pela app a partir de agora, só para não perder o
+-- histórico do que lá estava. Backfill automático: só resolve os casos em que o nome já bate certo
+-- com um recurso existente; os que não baterem ficam por preencher — o Administrador atribui à mão
+-- em Configurações → Pessoas → Equipas.
+alter table public.equipas add column if not exists lider_id uuid references public.recursos(id) on delete set null;
+update public.equipas eq set lider_id = r.id
+  from public.recursos r
+  where eq.lider_id is null and eq.team_leader <> '' and r.nome = eq.team_leader;
+
 -- ---------- Feriados ----------
 create table if not exists public.feriados (
   id uuid primary key default gen_random_uuid(),

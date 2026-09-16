@@ -28,7 +28,7 @@ const Backup = {
     const linhas = {};
 
     linhas.equipas = (state.equipas || []).map(eq => ({
-      id: eq.id, nome: eq.nome, departamento: eq.departamento || '', team_leader: eq.teamLeader || '', diretor: eq.diretor || ''
+      id: eq.id, nome: eq.nome, departamento: eq.departamento || '', diretor: eq.diretor || '', lider_id: eq.liderId || null
     }));
 
     linhas.recursos = (state.recursos || []).map(r => ({
@@ -161,8 +161,12 @@ const Backup = {
       const onConflict = tabela === 'tarefa_recursos' ? '(tarefa_id, recurso_id)' : '(id)';
       linhasTabela.forEach(l => {
         // As tarefas entram sem parent_id (2ª passagem mais abaixo liga pai/filho) — evita
-        // depender da ordem de inserção entre uma tarefa-mãe e as suas subtarefas.
-        const linhaParaInserir = tabela === 'tarefas' ? Object.assign({}, l, { parent_id: null }) : l;
+        // depender da ordem de inserção entre uma tarefa-mãe e as suas subtarefas. Pela mesma razão,
+        // "equipas" entra sem lider_id (referencia recursos.id, inserido só a seguir a "equipas" —
+        // ver TABELAS_EM_ORDEM).
+        const linhaParaInserir = tabela === 'tarefas' ? Object.assign({}, l, { parent_id: null })
+          : tabela === 'equipas' ? Object.assign({}, l, { lider_id: null })
+          : l;
         partes.push(this.linhaParaInsert(tabela, linhaParaInserir, onConflict));
       });
     });
@@ -172,6 +176,14 @@ const Backup = {
       partes.push(`\n-- ---------- tarefas: liga parent_id (2ª passagem) ----------`);
       tarefasComPai.forEach(t => {
         partes.push(`update public.tarefas set parent_id = ${this.sqlValor(t.parent_id)} where id = ${this.sqlValor(t.id)};`);
+      });
+    }
+
+    const equipasComLider = (linhas.equipas || []).filter(eq => eq.lider_id);
+    if (equipasComLider.length) {
+      partes.push(`\n-- ---------- equipas: liga lider_id (2ª passagem) ----------`);
+      equipasComLider.forEach(eq => {
+        partes.push(`update public.equipas set lider_id = ${this.sqlValor(eq.lider_id)} where id = ${this.sqlValor(eq.id)};`);
       });
     }
 

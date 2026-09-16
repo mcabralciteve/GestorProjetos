@@ -13,10 +13,17 @@ const Sync = {
     // Equipas antes de recursos, recursos antes do resto — "recursos.equipa_id" e
     // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem. "tipos_trabalho"
     // antes de "registos" pela mesma razão (registos.tipo_trabalho_id).
+    // "team_leader" (texto livre) já não é lido/escrito pela app — foi substituído por "lider_id"
+    // (ver abaixo); fica de fora deste payload para nunca apagar o histórico que lá esteja.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, nome: eq.nome, departamento: eq.departamento || '', team_leader: eq.teamLeader || '', diretor: eq.diretor || '' }));
+      eq => ({ id: eq.id, nome: eq.nome, departamento: eq.departamento || '', diretor: eq.diretor || '' }));
     await this.sincronizarListaSimples('recursos', antes.recursos, depois.recursos,
       r => ({ id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipa_id: r.equipaId || null, preco_custo: r.precoCusto, preco_venda: r.precoVenda }));
+    // "equipas.lider_id" referencia recursos.id — só pode ser gravado DEPOIS de "recursos" existir,
+    // mas "equipas" tem de ser sincronizada ANTES de "recursos" (por causa de recursos.equipa_id,
+    // acima). Por isso o líder vai sempre num segundo passo, já com os recursos todos sincronizados.
+    await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
+      eq => ({ id: eq.id, lider_id: eq.liderId || null }));
     await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
       tt => ({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia }));
 
@@ -236,7 +243,7 @@ const Sync = {
     ]);
     [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
 
-    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, departamento: r.departamento || '', teamLeader: r.team_leader || '', diretor: r.diretor || '' }));
+    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, departamento: r.departamento || '', diretor: r.diretor || '', liderId: r.lider_id || null }));
     const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia }));
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,

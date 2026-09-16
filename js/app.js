@@ -525,9 +525,10 @@ const App = {
     if (!this.state.equipas) this.state.equipas = [];
     this.state.equipas.forEach(eq => {
       delete eq.unidade; // sinónimo de "nome" — deixou de ser um campo à parte
+      delete eq.teamLeader; // substituído por "liderId" (referência a recursos, não texto livre)
       if (eq.departamento === undefined) eq.departamento = '';
-      if (eq.teamLeader === undefined) eq.teamLeader = '';
       if (eq.diretor === undefined) eq.diretor = '';
+      if (eq.liderId === undefined) eq.liderId = null;
     });
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
@@ -676,6 +677,26 @@ const App = {
   },
   estouEnvolvidoEm(projetoId) {
     return this.souAdmin() || this.souGestorDe(projetoId) || this.souConsultorDe(projetoId);
+  },
+  // "liderId" (equipas) referencia um recurso, mesma convenção de gestorId em projetos — comparado
+  // sempre contra o recurso ligado ao meu próprio login.
+  souLiderDe(equipaId) {
+    if (!equipaId) return false;
+    const eq = this.state.equipas.find(x => x.id === equipaId);
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    return !!eq && !!meuRecursoId && eq.liderId === meuRecursoId;
+  },
+  souLiderDeAlgumaEquipa() {
+    return this.state.equipas.some(eq => this.souLiderDe(eq.id));
+  },
+  // Recursos cuja equipa eu lidero — usado para ver (não editar tarefas/projetos, só Registo de
+  // Horas e Viaturas) os registos/pedidos de toda a minha equipa, em QUALQUER projeto — ao
+  // contrário de um Gestor de Projeto, que só vê a sua equipa dentro dos projetos que gere (ver
+  // recursosPermitidosRegisto e possoVerRegisto/possoVerReservaViatura).
+  recursosDaMinhaLideranca() {
+    const idsEquipasLideradas = new Set(this.state.equipas.filter(eq => this.souLiderDe(eq.id)).map(eq => eq.id));
+    if (!idsEquipasLideradas.size) return [];
+    return this.state.recursos.filter(r => idsEquipasLideradas.has(r.equipaId));
   },
   // Um projeto suspenso/fechado (ativo === false — ver botão "Ativo"/"Suspenso" na tabela de
   // Projetos e no Gantt) fica congelado para toda a gente EXCETO o Administrador: nem o próprio
@@ -893,9 +914,9 @@ const App = {
     // áreas/equipas podem pertencer ao mesmo departamento) — fica vazio de propósito, sem valor
     // razoável para adivinhar. "diretor" já vem com o valor de hoje por omissão (só há um
     // departamento — DCS, com João Oliveira como Diretor) para poupar trabalho ao Administrador;
-    // continua editável, para o dia em que deixar de ser verdade. "teamLeader" fica vazio de
+    // continua editável, para o dia em que deixar de ser verdade. "liderId" fica vazio de
     // propósito — é mesmo por equipa, sem valor por omissão razoável.
-    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', departamento: '', teamLeader: '', diretor: 'João Oliveira' };
+    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', departamento: '', liderId: null, diretor: 'João Oliveira' };
   },
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
     return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
@@ -1790,7 +1811,7 @@ const App = {
   atualizarEquipa(id, campo, valor) {
     const eq = this.state.equipas.find(x => x.id === id);
     if (!eq) return;
-    eq[campo] = valor;
+    eq[campo] = campo === 'liderId' ? (valor || null) : valor;
     this.persist();
     this.renderTabelaRecursosCentral();
     this.renderFiltroEquipaCap();
@@ -3061,14 +3082,19 @@ const App = {
     if (!tbody) return;
     tbody.innerHTML = '';
     const equipas = this.aplicarOrdenacaoTabela('tabelaEquipas', this.state.equipas, (eq) => eq.nome.toLowerCase());
+    // Team Leader é um <select> de recursos (não texto livre) — dá para usar em permissões (ver
+    // App.souLiderDe/recursosDaMinhaLideranca): um team leader vê os registos de horas e os pedidos
+    // de viatura de toda a sua equipa, em qualquer projeto.
+    const opcoesLider = '<option value="">— nenhum —</option>' + this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
     equipas.forEach(eq => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
         <td><input type="text" value="${escapeAttr(eq.departamento || '')}" data-campo="departamento"></td>
-        <td><input type="text" value="${escapeAttr(eq.teamLeader || '')}" data-campo="teamLeader"></td>
+        <td><select data-campo="liderId">${opcoesLider}</select></td>
         <td><input type="text" value="${escapeAttr(eq.diretor || '')}" data-campo="diretor"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="liderId"]').value = eq.liderId || '';
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', (e) => this.atualizarEquipa(eq.id, inp.dataset.campo, e.target.value));
       });
@@ -3424,21 +3450,40 @@ const App = {
   },
 
   // ---------- Tab: Registo de Horas ----------
-  // Recursos que o utilizador autenticado pode escolher como "Pessoa": Admin vê todos; Gestor vê
-  // os recursos já atribuídos a alguma tarefa nos projetos que gere (+ o seu próprio); Consultor
-  // só se vê a si próprio (recurso ligado ao seu login) — nunca em nome de outra pessoa.
+  // Recursos que o utilizador autenticado pode escolher como "Pessoa": Admin vê todos; um team
+  // leader vê toda a sua equipa (ver souLiderDe); um Gestor de Projeto vê os recursos já
+  // atribuídos a alguma tarefa nos projetos que gere; qualquer um destes soma-se sempre ao próprio
+  // (recurso ligado ao seu login). Um Consultor simples (nem admin, nem líder, nem gestor de nada)
+  // só se vê a si próprio — nunca em nome de outra pessoa. IMPORTANTE: isto só decide QUEM aparece
+  // nos seletores de Pessoa — QUAIS registos dessa pessoa se veem/editam depois é decidido à parte
+  // (ver possoVerRegisto, que aplica o recorte por projeto a um Gestor sem liderança de equipa; um
+  // team leader continua sem esse recorte, vê a equipa em qualquer projeto).
   recursosPermitidosRegisto() {
     if (this.souAdmin()) return this.state.recursos;
     const meuRecursoId = this.perfilAtual()?.recursoId;
-    if (!this.souGestorDeAlgumProjeto()) {
-      return meuRecursoId ? this.state.recursos.filter(r => r.id === meuRecursoId) : [];
-    }
     const idsPermitidos = new Set(meuRecursoId ? [meuRecursoId] : []);
-    Object.values(this.state.projetos).forEach(p => {
-      if (!this.souGestorDe(p.id)) return;
-      p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => idsPermitidos.add(rid)));
-    });
+    this.recursosDaMinhaLideranca().forEach(r => idsPermitidos.add(r.id));
+    if (this.souGestorDeAlgumProjeto()) {
+      Object.values(this.state.projetos).forEach(p => {
+        if (!this.souGestorDe(p.id)) return;
+        p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => idsPermitidos.add(rid)));
+      });
+    }
     return this.state.recursos.filter(r => idsPermitidos.has(r.id));
+  },
+  // Posso ver ESTE registo concreto (separadores Registo/Dia/Calendário)? Admin vê tudo. Depois,
+  // dois canais que se somam: (1) sou team leader da equipa desta pessoa — vejo-a por inteiro,
+  // qualquer projeto (ver recursosDaMinhaLideranca); (2) a pessoa está no meu leque de
+  // recursosPermitidosRegisto (self, ou tenho-a numa tarefa de um projeto que giro) — mas aqui só
+  // vejo os registos SEM projeto (Ausências/Tipos de Trabalho) ou os de um projeto em que eu
+  // próprio estou envolvido (projetosRegistoPermitidos) — nunca os de projetos alheios.
+  possoVerRegisto(r) {
+    if (this.souAdmin()) return true;
+    const recurso = this.state.recursos.find(x => x.nome === r.pessoa);
+    if (recurso && this.souLiderDe(recurso.equipaId)) return true;
+    if (!this.recursosPermitidosRegisto().some(rec => rec.nome === r.pessoa)) return false;
+    if (!r.projetoIdInterno) return true;
+    return this.projetosRegistoPermitidos().some(p => p.idInterno === r.projetoIdInterno);
   },
   // Projetos em que o utilizador pode registar horas: Admin todos; Gestor só os que gere;
   // Consultor só os em que está envolvido.
@@ -3684,11 +3729,15 @@ const App = {
   },
   // Registos filtrados (filtrosRegisto) e ordenados (ordenacaoRegistos) — partilhado entre a
   // tabela (paginada) e a exportação CSV (sempre tudo, sem paginar), para nunca poderem divergir.
+  // CRÍTICO: começa sempre em possoVerRegisto, nunca em state.registos diretamente — sem isto, a
+  // tabela e o CSV mostravam/exportavam os registos de TODA a gente em TODOS os projetos, a
+  // qualquer utilizador autenticado (só a edição estava protegida, nunca a leitura).
   registosFiltradosOrdenados() {
     const f = this.filtrosRegisto;
     const { campo, dir } = this.ordenacaoRegistos;
     const mult = dir === 'desc' ? -1 : 1;
     return this.state.registos.filter(r => {
+      if (!this.possoVerRegisto(r)) return false;
       if (f.pessoa && r.pessoa !== f.pessoa) return false;
       if (f.projeto && r.projetoIdInterno !== f.projeto) return false;
       if (f.de && r.data < f.de) return false;
@@ -3871,14 +3920,11 @@ const App = {
     for (let i = 0; i < nome.length; i++) hash = (hash * 31 + nome.charCodeAt(i)) >>> 0;
     return cores[hash % cores.length];
   },
-  // Mesma regra de permissão do Registo de Horas (Admin vê tudo; Gestor só os projetos que gere;
-  // Consultor só os seus próprios registos), aplicada aos registos já existentes. Um registo sem
-  // projeto (Ausência justificada, Formação, etc. — ver Registo do Dia) passa só pelo filtro de
-  // pessoa: não tem projeto nenhum a verificar contra projetosPermitidosIds.
+  // Mesma regra de permissão do Registo de Horas — ver possoVerRegisto (Admin vê tudo; um team
+  // leader vê a sua equipa em qualquer projeto; um Gestor só nos projetos que gere; Consultor só os
+  // seus próprios registos).
   registosCalendarioPermitidos() {
-    const pessoasPermitidas = new Set(this.recursosPermitidosRegisto().map(r => r.nome));
-    const projetosPermitidosIds = new Set(this.projetosRegistoPermitidos().map(p => p.idInterno));
-    return this.state.registos.filter(r => pessoasPermitidas.has(r.pessoa) && (!r.projetoIdInterno || projetosPermitidosIds.has(r.projetoIdInterno)));
+    return this.state.registos.filter(r => this.possoVerRegisto(r));
   },
   navegarMesCalendario(delta) {
     if (!this.calMesAtual) { const hoje = new Date(); this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
@@ -4083,7 +4129,9 @@ const App = {
 
     const recurso = this.state.recursos.find(r => r.nome === pessoa);
     const mesISO = `${ano}-${String(mes + 1).padStart(2, '0')}`;
-    const registosDoMes = this.state.registos.filter(r => r.pessoa === pessoa && (r.data || '').startsWith(mesISO));
+    // possoVerRegisto, não só "pessoa === X" — sem isto, escolher aqui alguém que só vejo por ser
+    // gestor de UM dos seus projetos mostrava também as horas dela noutros projetos alheios.
+    const registosDoMes = this.state.registos.filter(r => r.pessoa === pessoa && (r.data || '').startsWith(mesISO) && this.possoVerRegisto(r));
     const porDia = {};
     registosDoMes.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
     Object.values(porDia).forEach(lista => lista.sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || '')));
@@ -4743,11 +4791,26 @@ const App = {
     ].join('\n');
     window.location.href = `mailto:${emails.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
   },
+  // Posso ver este pedido de reserva? Admin vê tudo. Depois, três canais independentes: (1) fui eu
+  // que pedi; (2) sou team leader da equipa do requisitante — vejo a minha equipa em qualquer
+  // projeto; (3) sou gestor do projeto associado ao pedido — vejo só os pedidos DESSE projeto, não
+  // de projetos alheios, mesmo que o requisitante também trabalhe noutros que eu não giro.
+  possoVerReservaViatura(reserva) {
+    if (this.souAdmin()) return true;
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    if (meuRecursoId && reserva.requisitanteId === meuRecursoId) return true;
+    const requisitante = this.state.recursos.find(r => r.id === reserva.requisitanteId);
+    if (requisitante && this.souLiderDe(requisitante.equipaId)) return true;
+    if (reserva.projetoId && this.souGestorDe(reserva.projetoId)) return true;
+    return false;
+  },
   renderTabelaReservasViatura() {
     const e = this.els;
     if (!e.corpoTabelaReservasViatura) return;
     const admin = this.souAdmin();
-    const lista = [...this.state.reservasViatura].sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+    const lista = this.state.reservasViatura
+      .filter(r => this.possoVerReservaViatura(r))
+      .sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
     e.corpoTabelaReservasViatura.innerHTML = '';
     if (!lista.length) {
       e.corpoTabelaReservasViatura.innerHTML = `<tr class="empty-row"><td colspan="7" style="text-align:center;color:var(--cinza-500);padding:20px">Ainda não há pedidos de reserva de viatura.</td></tr>`;
