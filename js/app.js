@@ -266,6 +266,9 @@ const App = {
       corpoTabelaReservasViatura: document.getElementById('corpoTabelaReservasViatura'),
       grupoBtnConfiguracoes: document.getElementById('grupoBtnConfiguracoes'),
       tabBtnCapacidade: document.getElementById('tabBtnCapacidade'),
+      tabBtnFeriados: document.getElementById('tabBtnFeriados'),
+      btnAddFeriado: document.getElementById('btnAddFeriado'),
+      btnAddAusencia: document.getElementById('btnAddAusencia'),
       defEmail1: document.getElementById('defEmail1'),
       defEmail2: document.getElementById('defEmail2'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
@@ -1960,7 +1963,10 @@ const App = {
   },
 
   // ---------- Feriados ----------
+  // Datas não úteis para toda a gente (feriados nacionais/empresa) — só o Administrador edita; um
+  // Team Leader/Diretor só as vê (contexto para as ausências da sua equipa), nunca as altera.
   adicionarFeriado() {
+    if (!this.souAdmin()) return;
     this.state.feriados.push(this.novoFeriadoObj(DateUtil.todayISO(), 'Novo feriado'));
     this.persist();
     this.renderTabelaFeriados();
@@ -1968,6 +1974,7 @@ const App = {
     this.renderCapacidade();
   },
   eliminarFeriado(id) {
+    if (!this.souAdmin()) return;
     this.state.feriados = this.state.feriados.filter(f => f.id !== id);
     this.persist();
     this.renderTabelaFeriados();
@@ -1975,6 +1982,7 @@ const App = {
     this.renderCapacidade();
   },
   atualizarFeriado(id, campo, valor) {
+    if (!this.souAdmin()) return;
     const f = this.state.feriados.find(x => x.id === id);
     if (!f) return;
     if (campo === 'data' && !this.anoDataPlausivel(valor)) return;
@@ -1985,8 +1993,22 @@ const App = {
   },
 
   // ---------- Ausências ----------
+  // Administrador gere ausências de qualquer consultor; Team Leader/Diretor só das pessoas da sua
+  // própria equipa/departamento (recursosDaMinhaLideranca — o mesmo âmbito já usado no Registo de
+  // Horas e nos Pedidos de Viatura). Todas as funções abaixo repetem essa verificação mesmo já
+  // escondendo os controlos na UI para quem não tem acesso (ver aplicarPermissoesUI/renderTabelaAusencias).
+  escopoAusenciasPermitido() {
+    return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca();
+  },
+  possoGerirAusencia(a) {
+    if (this.souAdmin()) return true;
+    if (!this.souLiderDeAlgumaEquipa()) return false;
+    return this.escopoAusenciasPermitido().some(r => r.id === a.recursoId);
+  },
   adicionarAusencia() {
-    const primeiroRecurso = this.state.recursos[0];
+    const escopo = this.escopoAusenciasPermitido();
+    if (!this.souAdmin() && !escopo.length) return;
+    const primeiroRecurso = escopo[0];
     this.state.ausencias.push(this.novoAusenciaObj(primeiroRecurso ? primeiroRecurso.id : null, DateUtil.todayISO(), DateUtil.todayISO(), 'Férias', ''));
     this.persist();
     this.renderTabelaAusencias();
@@ -1994,7 +2016,9 @@ const App = {
     this.renderCapacidade();
   },
   eliminarAusencia(id) {
-    this.state.ausencias = this.state.ausencias.filter(a => a.id !== id);
+    const a = this.state.ausencias.find(x => x.id === id);
+    if (!a || !this.possoGerirAusencia(a)) return;
+    this.state.ausencias = this.state.ausencias.filter(x => x.id !== id);
     this.persist();
     this.renderTabelaAusencias();
     this.renderTabelaTarefas();
@@ -2002,7 +2026,10 @@ const App = {
   },
   atualizarAusencia(id, campo, valor) {
     const a = this.state.ausencias.find(x => x.id === id);
-    if (!a) return;
+    if (!a || !this.possoGerirAusencia(a)) return;
+    // Reatribuir a ausência a outra pessoa só é permitido dentro do mesmo âmbito — impede um Team
+    // Leader de "passar" uma ausência para alguém fora da sua equipa.
+    if (campo === 'recursoId' && !this.escopoAusenciasPermitido().some(r => r.id === valor)) return;
     if ((campo === 'dataInicio' || campo === 'dataFim') && !this.anoDataPlausivel(valor)) return;
     a[campo] = valor;
     if (campo === 'dataInicio' || campo === 'dataFim') {
@@ -2555,6 +2582,15 @@ const App = {
     // nenhum projeto) não gere dinheiro de projeto nenhum só por liderar pessoas.
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = (gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
+    // "Feriados & Ausências" (dentro do grupo "Equipa") é a exceção às "Configurações": um Team
+    // Leader/Diretor gere pessoas, não projetos, e as ausências da sua equipa/departamento são
+    // exatamente isso — por isso fica visível para eles mesmo sem serem Gestor de Projeto nenhum
+    // (ver "gere pessoas, não projetos" na nota grande em souDiretorDoDepartamentoDoProjeto). Os
+    // Feriados nacionais (tabela irmã no mesmo separador) continuam só para o Administrador editar
+    // — ver renderTabelaFeriados/btnAddFeriado.
+    if (e.tabBtnFeriados) e.tabBtnFeriados.style.display = (admin || liderDeAlgo) ? '' : 'none';
+    if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
+    if (e.btnAddAusencia) e.btnAddAusencia.style.display = (admin || liderDeAlgo) ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
@@ -2564,7 +2600,8 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'feriados', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && !liderDeAlgo && this.abaAtiva === 'feriados') this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
     if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
@@ -3266,26 +3303,33 @@ const App = {
   renderTabelaFeriados() {
     const tbody = this.els.corpoTabelaFeriados;
     tbody.innerHTML = '';
+    const admin = this.souAdmin();
     const feriados = this.aplicarOrdenacaoTabela('tabelaFeriados', this.state.feriados, (f, campo) => campo === 'descricao' ? (f.descricao || '').toLowerCase() : f.data);
     feriados.forEach(f => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><input type="date" value="${f.data}" data-campo="data"></td>
-        <td><input type="text" value="${escapeAttr(f.descricao)}" data-campo="descricao" style="min-width:200px"></td>
-        <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+        <td><input type="date" value="${f.data}" data-campo="data" ${admin ? '' : 'disabled'}></td>
+        <td><input type="text" value="${escapeAttr(f.descricao)}" data-campo="descricao" style="min-width:200px" ${admin ? '' : 'disabled'}></td>
+        <td class="col-acoes">${admin ? '<button class="btn-icon" title="Eliminar">🗑</button>' : ''}</td>`;
       tr.querySelectorAll('input[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => this.atualizarFeriado(f.id, inp.dataset.campo, inp.value));
       });
-      tr.querySelector('button').addEventListener('click', () => this.eliminarFeriado(f.id));
+      if (admin) tr.querySelector('button').addEventListener('click', () => this.eliminarFeriado(f.id));
       tbody.appendChild(tr);
     });
   },
   renderTabelaAusencias() {
     const tbody = this.els.corpoTabelaAusencias;
     tbody.innerHTML = '';
-    const opcoesRecursos = this.state.recursos.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    const admin = this.souAdmin();
+    // Team Leader/Diretor só vê e gere ausências das pessoas da sua própria equipa/departamento —
+    // mesmo âmbito do Registo de Horas e dos Pedidos de Viatura (ver escopoAusenciasPermitido).
+    const escopo = this.escopoAusenciasPermitido();
+    const opcoesRecursos = escopo.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const nomeRecursoDe = (a) => (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '';
-    const ausencias = this.aplicarOrdenacaoTabela('tabelaAusencias', this.state.ausencias, (a, campo) => {
+    const idsPermitidos = new Set(escopo.map(r => r.id));
+    const visiveis = admin ? this.state.ausencias : this.state.ausencias.filter(a => idsPermitidos.has(a.recursoId));
+    const ausencias = this.aplicarOrdenacaoTabela('tabelaAusencias', visiveis, (a, campo) => {
       switch (campo) {
         case 'recurso': return nomeRecursoDe(a).toLowerCase();
         case 'tipo': return a.tipo || '';
@@ -5757,7 +5801,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', feriados: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
