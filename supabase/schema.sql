@@ -74,6 +74,38 @@ update public.equipas eq set lider_id = r.id
   from public.recursos r
   where eq.lider_id is null and eq.team_leader <> '' and r.nome = eq.team_leader;
 
+-- ---------- Departamentos ----------
+-- Um departamento agrupa várias equipas ("unidades") — uma unidade só pode pertencer a UM
+-- departamento (equipas.departamento_id). Cada departamento tem um Diretor (recursos.id), com
+-- acesso equivalente a admin mas só dentro do seu departamento (ver App.souDiretorDe/
+-- recursosDaMinhaLideranca — um Diretor é tratado como "líder" de todas as equipas do seu
+-- departamento ao mesmo tempo). Antes disto, "departamento" e "diretor" eram só texto livre POR
+-- EQUIPA (podiam divergir entre equipas do "mesmo" departamento, sem ligação nenhuma a um login) —
+-- a partir de agora são uma entidade própria, com referência real.
+create table if not exists public.departamentos (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  diretor_id uuid references public.recursos(id) on delete set null
+);
+-- Backfill automático a partir do texto livre já existente: um departamento novo por cada nome
+-- distinto (não vazio) em equipas.departamento; o diretor só fica preenchido quando o texto já
+-- bate certo com um recurso existente — os restantes casos, o Administrador atribui à mão no novo
+-- ecrã "Departamentos" (Configurações → Pessoas).
+insert into public.departamentos (nome)
+select distinct eq.departamento from public.equipas eq
+where eq.departamento <> '' and not exists (
+  select 1 from public.departamentos d where d.nome = eq.departamento
+);
+update public.departamentos d set diretor_id = r.id
+from public.equipas eq
+join public.recursos r on r.nome = eq.diretor
+where d.diretor_id is null and eq.departamento = d.nome and eq.diretor <> '';
+
+alter table public.equipas add column if not exists departamento_id uuid references public.departamentos(id) on delete set null;
+update public.equipas eq set departamento_id = d.id
+  from public.departamentos d
+  where eq.departamento_id is null and eq.departamento = d.nome;
+
 -- ---------- Feriados ----------
 create table if not exists public.feriados (
   id uuid primary key default gen_random_uuid(),
@@ -401,7 +433,7 @@ declare
   t text;
 begin
   for t in select unnest(array[
-    'equipas','recursos','feriados','ausencias',
+    'departamentos','equipas','recursos','feriados','ausencias',
     'projetos','tarefas','tarefa_recursos','faturas','registos',
     'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho'
   ])

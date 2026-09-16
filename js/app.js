@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
+  state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -185,6 +185,7 @@ const App = {
       corpoTabelaProjetos: document.getElementById('corpoTabelaProjetos'),
       corpoTabelaRecursosCentral: document.getElementById('corpoTabelaRecursosCentral'),
       corpoTabelaEquipas: document.getElementById('corpoTabelaEquipas'),
+      corpoTabelaDepartamentos: document.getElementById('corpoTabelaDepartamentos'),
       corpoTabelaFeriados: document.getElementById('corpoTabelaFeriados'),
       corpoTabelaAusencias: document.getElementById('corpoTabelaAusencias'),
       selEquipaCap: document.getElementById('selEquipaCap'),
@@ -518,17 +519,20 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
+    return { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
+    if (!this.state.departamentos) this.state.departamentos = [];
+    this.state.departamentos.forEach(d => { if (d.diretorId === undefined) d.diretorId = null; });
     if (!this.state.equipas) this.state.equipas = [];
     this.state.equipas.forEach(eq => {
       delete eq.unidade; // sinónimo de "nome" — deixou de ser um campo à parte
       delete eq.teamLeader; // substituído por "liderId" (referência a recursos, não texto livre)
-      if (eq.departamento === undefined) eq.departamento = '';
-      if (eq.diretor === undefined) eq.diretor = '';
+      delete eq.departamento; // substituído por "departamentoId" (referência a departamentos)
+      delete eq.diretor; // idem — o diretor passa a ser do departamento, não da equipa
       if (eq.liderId === undefined) eq.liderId = null;
+      if (eq.departamentoId === undefined) eq.departamentoId = null;
     });
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
@@ -675,16 +679,38 @@ const App = {
     if (!p || !meuRecursoId) return false;
     return p.tarefas.some(t => (t.recursoIds || []).includes(meuRecursoId));
   },
+  // Um Diretor de Departamento conta como "envolvido" em qualquer projeto do seu departamento — dá-
+  // lhe visibilidade plena (Projetos, Portefólio, incl. valores €) e não só o Gantt em leitura que
+  // um Team Leader normal tem (ver possoVerProjeto, canal à parte). souDiretorDoDepartamentoDoProjeto
+  // não olha para p.ativo — um projeto suspenso continua "meu" para efeitos de visibilidade, tal
+  // como já acontece com souGestorDe (só possoEditarProjeto é que bloqueia a edição nesse caso).
   estouEnvolvidoEm(projetoId) {
-    return this.souAdmin() || this.souGestorDe(projetoId) || this.souConsultorDe(projetoId);
+    return this.souAdmin() || this.souGestorDe(projetoId) || this.souConsultorDe(projetoId) || this.souDiretorDoDepartamentoDoProjeto(projetoId);
+  },
+  // "diretorId" (departamentos) referencia um recurso, mesma convenção de gestorId/liderId.
+  souDiretorDe(departamentoId) {
+    if (!departamentoId) return false;
+    const dep = this.state.departamentos.find(x => x.id === departamentoId);
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    return !!dep && !!meuRecursoId && dep.diretorId === meuRecursoId;
+  },
+  souDiretorDeAlgumDepartamento() {
+    return this.state.departamentos.some(d => this.souDiretorDe(d.id));
   },
   // "liderId" (equipas) referencia um recurso, mesma convenção de gestorId em projetos — comparado
-  // sempre contra o recurso ligado ao meu próprio login.
+  // sempre contra o recurso ligado ao meu próprio login. Um Diretor de Departamento conta TAMBÉM
+  // como líder de todas as equipas desse departamento — é o que dá, através de exatamente o mesmo
+  // mecanismo já construído para Team Leader (recursosDaMinhaLideranca e tudo o que dele depende:
+  // Registo de Horas, Viaturas, Capacidade/Alocações, widgets do Dashboard), visibilidade total
+  // sobre o departamento inteiro sem duplicar nenhuma lógica.
   souLiderDe(equipaId) {
     if (!equipaId) return false;
     const eq = this.state.equipas.find(x => x.id === equipaId);
+    if (!eq) return false;
     const meuRecursoId = this.perfilAtual()?.recursoId;
-    return !!eq && !!meuRecursoId && eq.liderId === meuRecursoId;
+    if (!meuRecursoId) return false;
+    if (eq.liderId === meuRecursoId) return true;
+    return this.souDiretorDe(eq.departamentoId);
   },
   souLiderDeAlgumaEquipa() {
     return this.state.equipas.some(eq => this.souLiderDe(eq.id));
@@ -698,15 +724,39 @@ const App = {
     if (!idsEquipasLideradas.size) return [];
     return this.state.recursos.filter(r => idsEquipasLideradas.has(r.equipaId));
   },
+  // Recursos cujo departamento eu dirijo — ao contrário de recursosDaMinhaLideranca (que também
+  // inclui as equipas onde sou só Team Leader, sem ser Diretor do departamento), este conjunto só
+  // existe para decidir EDIÇÃO de projeto (possoEditarProjeto): um Diretor de Departamento tem
+  // permissões completas sobre qualquer projeto com gente do seu departamento, mas um Team Leader
+  // (sem ser também Diretor) nunca — "não pode editar projetos só por ter elementos alocados".
+  recursosDoMeuDepartamento() {
+    const idsDep = new Set(this.state.departamentos.filter(d => this.souDiretorDe(d.id)).map(d => d.id));
+    if (!idsDep.size) return [];
+    const idsEquipas = new Set(this.state.equipas.filter(eq => idsDep.has(eq.departamentoId)).map(eq => eq.id));
+    return this.state.recursos.filter(r => idsEquipas.has(r.equipaId));
+  },
+  // Tem este projeto alguém do MEU departamento (só conta se eu for mesmo Diretor de algum) numa
+  // tarefa? Usado por estouEnvolvidoEm (visibilidade plena — Projetos/Portefólio, incl. valores) e
+  // por possoEditarProjeto (edição plena) — as duas únicas coisas que um Diretor ganha e um Team
+  // Leader normal não, precisamente porque este canal só olha para recursosDoMeuDepartamento, não
+  // para recursosDaMinhaLideranca (que inclui equipas onde só sou Team Leader).
+  souDiretorDoDepartamentoDoProjeto(projetoId) {
+    const p = this.state.projetos[projetoId];
+    if (!p) return false;
+    const idsDoMeuDepartamento = new Set(this.recursosDoMeuDepartamento().map(r => r.id));
+    if (!idsDoMeuDepartamento.size) return false;
+    return p.tarefas.some(t => (t.recursoIds || []).some(rid => idsDoMeuDepartamento.has(rid)));
+  },
   // Um projeto suspenso/fechado (ativo === false — ver botão "Ativo"/"Suspenso" na tabela de
   // Projetos e no Gantt) fica congelado para toda a gente EXCETO o Administrador: nem o próprio
-  // Gestor consegue voltar a editar tarefas/faturas/next steps enquanto estiver assim — é
-  // exatamente esse o ponto de suspender, e é por isso que só o Administrador pode ativar/desativar
-  // (ver atualizarCampoProjeto). Reativar devolve o acesso normal ao Gestor, sem mais nada a fazer.
+  // Gestor (nem um Diretor de Departamento) consegue voltar a editar tarefas/faturas/next steps
+  // enquanto estiver assim — é exatamente esse o ponto de suspender, e é por isso que só o
+  // Administrador pode ativar/desativar (ver atualizarCampoProjeto). Reativar devolve o acesso
+  // normal, sem mais nada a fazer.
   possoEditarProjeto(projetoId) {
     const p = this.state.projetos[projetoId];
     if (p && p.ativo === false) return this.souAdmin();
-    return this.souAdmin() || this.souGestorDe(projetoId);
+    return this.souAdmin() || this.souGestorDe(projetoId) || this.souDiretorDoDepartamentoDoProjeto(projetoId);
   },
   possoEliminarProjeto(projetoId) {
     return this.souAdmin();
@@ -728,8 +778,13 @@ const App = {
     this.persist();
     this.renderTudo();
   },
+  // Nome histórico ("sou gestor de algum projeto") — na prática já significa "tenho poderes de
+  // gestão de projeto nalgum lado", por isso um Diretor de Departamento conta também (tem
+  // possoEditarProjeto pleno em qualquer projeto do seu departamento — ver
+  // souDiretorDoDepartamentoDoProjeto). É esta função que decide a visibilidade de Faturação,
+  // Acompanhamento, Capacidade e Alocações.
   souGestorDeAlgumProjeto() {
-    return this.souAdmin() || Object.keys(this.state.projetos).some(id => this.souGestorDe(id));
+    return this.souAdmin() || this.souDiretorDeAlgumDepartamento() || Object.keys(this.state.projetos).some(id => this.souGestorDe(id));
   },
   // Só para decidir o projeto/filtros por OMISSÃO ao entrar na app — nunca para permissões (ver
   // estouEnvolvidoEm para isso). Um Administrador "está envolvido" em tudo por definição, o que
@@ -930,13 +985,13 @@ const App = {
   },
   novoEquipaObj(nome) {
     // Não há campo "Unidade" à parte — Área/Unidade e nome da equipa são sinónimos (DCS, ROB,
-    // DPC... já SÃO as unidades/áreas). "departamento" é um nível acima da Área (várias
-    // áreas/equipas podem pertencer ao mesmo departamento) — fica vazio de propósito, sem valor
-    // razoável para adivinhar. "diretor" já vem com o valor de hoje por omissão (só há um
-    // departamento — DCS, com João Oliveira como Diretor) para poupar trabalho ao Administrador;
-    // continua editável, para o dia em que deixar de ser verdade. "liderId" fica vazio de
-    // propósito — é mesmo por equipa, sem valor por omissão razoável.
-    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', departamento: '', liderId: null, diretor: 'João Oliveira' };
+    // DPC... já SÃO as unidades/áreas). "departamentoId" e "liderId" ficam vazios de propósito —
+    // uma unidade nova ainda não pertence a nenhum departamento nem tem líder óbvio; o
+    // Administrador atribui os dois a seguir (ver renderTabelaEquipas).
+    return { id: crypto.randomUUID(), nome: nome || 'Nova equipa', departamentoId: null, liderId: null };
+  },
+  novoDepartamentoObj(nome) {
+    return { id: crypto.randomUUID(), nome: nome || 'Novo departamento', diretorId: null };
   },
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
     return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
@@ -1831,10 +1886,37 @@ const App = {
   atualizarEquipa(id, campo, valor) {
     const eq = this.state.equipas.find(x => x.id === id);
     if (!eq) return;
-    eq[campo] = campo === 'liderId' ? (valor || null) : valor;
+    eq[campo] = (campo === 'liderId' || campo === 'departamentoId') ? (valor || null) : valor;
     this.persist();
     this.renderTabelaRecursosCentral();
     this.renderFiltroEquipaCap();
+  },
+
+  // ---------- Departamentos (central) ----------
+  // Agrupam várias equipas ("unidades") — uma unidade só pode pertencer a UM departamento (ver o
+  // <select> em renderTabelaEquipas). O Diretor de um departamento é tratado, para efeitos de
+  // permissões, como líder de TODAS as equipas desse departamento ao mesmo tempo — ver
+  // recursosDaMinhaLideranca, que já soma este canal ao de liderId por equipa.
+  adicionarDepartamento() {
+    this.state.departamentos.push(this.novoDepartamentoObj('Novo departamento'));
+    this.persist();
+    this.renderTabelaDepartamentos();
+    this.renderTabelaEquipas();
+  },
+  eliminarDepartamento(id) {
+    if (!confirm('Eliminar este departamento? As equipas associadas ficam sem departamento atribuído.')) return;
+    this.state.departamentos = this.state.departamentos.filter(d => d.id !== id);
+    this.state.equipas.forEach(eq => { if (eq.departamentoId === id) eq.departamentoId = null; });
+    this.persist();
+    this.renderTabelaDepartamentos();
+    this.renderTabelaEquipas();
+  },
+  atualizarDepartamento(id, campo, valor) {
+    const d = this.state.departamentos.find(x => x.id === id);
+    if (!d) return;
+    d[campo] = campo === 'diretorId' ? (valor || null) : valor;
+    this.persist();
+    this.renderTabelaEquipas();
   },
 
   // ---------- Tipos de Trabalho (Registo do Dia) ----------
@@ -2439,6 +2521,7 @@ const App = {
     this.renderTabelaProjetos();
     this.renderPortefolio();
     this.renderTabelaRecursosCentral();
+    this.renderTabelaDepartamentos();
     this.renderTabelaEquipas();
     this.renderTabelaTiposTrabalho();
     this.renderTabelaFeriados();
@@ -3108,21 +3191,42 @@ const App = {
     const equipas = this.aplicarOrdenacaoTabela('tabelaEquipas', this.state.equipas, (eq) => eq.nome.toLowerCase());
     // Team Leader é um <select> de recursos (não texto livre) — dá para usar em permissões (ver
     // App.souLiderDe/recursosDaMinhaLideranca): um team leader vê os registos de horas e os pedidos
-    // de viatura de toda a sua equipa, em qualquer projeto.
+    // de viatura de toda a sua equipa, em qualquer projeto. Departamento é um <select> das
+    // Departamentos (ver renderTabelaDepartamentos, tabela à parte) — uma unidade só pertence a um.
     const opcoesLider = '<option value="">— nenhum —</option>' + this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
+    const opcoesDepartamento = '<option value="">— nenhum —</option>' + this.state.departamentos.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.nome)}</option>`).join('');
     equipas.forEach(eq => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
-        <td><input type="text" value="${escapeAttr(eq.departamento || '')}" data-campo="departamento"></td>
+        <td><select data-campo="departamentoId">${opcoesDepartamento}</select></td>
         <td><select data-campo="liderId">${opcoesLider}</select></td>
-        <td><input type="text" value="${escapeAttr(eq.diretor || '')}" data-campo="diretor"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="departamentoId"]').value = eq.departamentoId || '';
       tr.querySelector('[data-campo="liderId"]').value = eq.liderId || '';
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', (e) => this.atualizarEquipa(eq.id, inp.dataset.campo, e.target.value));
       });
       tr.querySelector('button').addEventListener('click', () => this.eliminarEquipa(eq.id));
+      tbody.appendChild(tr);
+    });
+  },
+  renderTabelaDepartamentos() {
+    const tbody = this.els.corpoTabelaDepartamentos;
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const opcoesDiretor = '<option value="">— nenhum —</option>' + this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
+    [...this.state.departamentos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).forEach(d => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" value="${escapeAttr(d.nome)}" data-campo="nome"></td>
+        <td><select data-campo="diretorId">${opcoesDiretor}</select></td>
+        <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="diretorId"]').value = d.diretorId || '';
+      tr.querySelectorAll('[data-campo]').forEach(inp => {
+        inp.addEventListener('change', (e) => this.atualizarDepartamento(d.id, inp.dataset.campo, e.target.value));
+      });
+      tr.querySelector('button').addEventListener('click', () => this.eliminarDepartamento(d.id));
       tbody.appendChild(tr);
     });
   },
@@ -3438,17 +3542,18 @@ const App = {
       e.heatmapCapBody.appendChild(tr);
 
       const mesAtual = resumos[0];
-      // Previsão de faturação (preço de venda × horas) fica reservada ao Administrador — um Gestor
-      // já vê aqui a ocupação e os conflitos da sua equipa, mas não os valores monetários por
-      // pessoa, tal como o botão "Ver todas as tarefas" (permite editar horas alocadas em QUALQUER
-      // projeto dessa pessoa, incluindo projetos que o Gestor não gere — ver abrirModalAlocacoesRecurso).
+      const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
+      // Previsão de faturação (preço de venda × horas) fica reservada ao Administrador e ao Diretor
+      // do departamento DESTA pessoa — um Gestor de Projeto ou Team Leader normal já vê aqui a
+      // ocupação e os conflitos, mas não os valores monetários, tal como o botão "Ver todas as
+      // tarefas" (permite editar horas alocadas em QUALQUER projeto dessa pessoa, incluindo
+      // projetos que o Gestor não gere — ver abrirModalAlocacoesRecurso).
       const admin = this.souAdmin();
-      const revenueTotal = admin ? resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0) : 0;
+      const vejoValoresDesteRecurso = admin || this.souDiretorDe(equipa ? equipa.departamentoId : null);
+      const revenueTotal = vejoValoresDesteRecurso ? resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0) : 0;
       const projetos = Capacidade.projetosDoRecurso(r.id);
       const datasConflito = resumos.reduce((acc, res) => acc.concat(res.datasConflitoDisponibilidade), []);
       const clsMesAtual = Capacidade.classeResumo(mesAtual);
-
-      const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
       const card = document.createElement('div');
       card.className = 'card-capacidade';
       card.innerHTML = `
@@ -3461,14 +3566,14 @@ const App = {
         <div class="cap-meses">
           ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
-        ${admin ? `<div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>` : ''}
+        ${vejoValoresDesteRecurso ? `<div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>` : ''}
         ${intervalosCriticos.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarIntervalosConflito(intervalosCriticos, 10)}</div>` : ''}
         ${datasConflito.length ? `<div class="cap-alerta cap-alerta-conflito">⚠ Conflito com ausência/feriado em: ${this.formatarDatasConflito(datasConflito, 10)}</div>` : ''}
         <div class="cap-projetos">
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
         </div>
-        ${admin ? '<button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>' : ''}`;
-      if (admin) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
+        ${vejoValoresDesteRecurso ? '<button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>' : ''}`;
+      if (vejoValoresDesteRecurso) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
       e.gridCapacidade.appendChild(card);
     });
   },
@@ -4706,14 +4811,16 @@ const App = {
     const perfil = this.perfilAtual();
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
     const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
+    const departamento = equipa && equipa.departamentoId ? this.state.departamentos.find(d => d.id === equipa.departamentoId) : null;
+    const diretor = departamento && departamento.diretorId ? this.state.recursos.find(r => r.id === departamento.diretorId) : null;
     // Um projeto suspenso/fechado não aceita novos pedidos de viatura — o próprio ponto de o
     // suspender (ver possoEditarProjeto/projetosRegistoPermitidos, a mesma regra).
     const projetos = this.meusProjetosEnvolvidos().filter(p => p.ativo !== false);
     if (e.reservaRequisitanteInfo) e.reservaRequisitanteInfo.textContent = recurso ? recurso.nome : '—';
-    // "Área/Unidade" impressa = Departamento da equipa (não o nome da equipa/área em si); "Chefia"
-    // = Diretor dessa mesma equipa. Ambos só leitura, tal como o Gestor de Projeto abaixo.
-    e.reservaArea.value = equipa ? equipa.departamento : '';
-    e.reservaChefia.value = equipa ? equipa.diretor : '';
+    // "Área/Unidade" impressa = nome do Departamento da equipa/unidade da pessoa; "Chefia" = Diretor
+    // desse departamento. Ambos só leitura, tal como o Gestor de Projeto abaixo.
+    e.reservaArea.value = departamento ? departamento.nome : '';
+    e.reservaChefia.value = diretor ? diretor.nome : '';
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
       projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
@@ -4724,8 +4831,8 @@ const App = {
     if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
       if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
       else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
-      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem Departamento definido — contacta o administrador.'; }
-      else if (!e.reservaChefia.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não tem Diretor definido — contacta o administrador.'; }
+      else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não está associada a nenhum departamento — contacta o administrador.'; }
+      else if (!e.reservaChefia.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'O teu departamento não tem Diretor definido — contacta o administrador.'; }
       else { e.reservaMsg.textContent = ''; }
     }
     e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
@@ -5953,7 +6060,7 @@ const App = {
     if (!p || !p.gestorId) return '';
     const recGestor = this.state.recursos.find(r => r.id === p.gestorId);
     const equipaGestor = recGestor && this.state.equipas.find(eq => eq.id === recGestor.equipaId);
-    return (equipaGestor && equipaGestor.departamento) || '';
+    return (equipaGestor && equipaGestor.departamentoId) || '';
   },
   abrirModalRecursos(taskId, filtrosIniciais) {
     const p = this.projetoAtivo();
@@ -5976,7 +6083,7 @@ const App = {
     const linhas = this.state.recursos.map(r => ({ r, resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
-    const departamentos = [...new Set(this.state.equipas.map(eq => eq.departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+    const departamentos = [...this.state.departamentos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
     const filtros = Object.assign(
       { departamento: this.departamentoDefeitoAssociarConsultores(p), equipa: '', nome: '' },
       filtrosIniciais || {}
@@ -5987,7 +6094,7 @@ const App = {
       <div class="rec-filtros">
         <select id="recFiltroDepartamento">
           <option value="">Todos os departamentos</option>
-          ${departamentos.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('')}
+          ${departamentos.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.nome)}</option>`).join('')}
         </select>
         <select id="recFiltroEquipa"></select>
         <input type="text" id="recFiltroNome" placeholder="Procurar por nome...">
@@ -6003,7 +6110,7 @@ const App = {
     const resumoEl = m.querySelector('#recResumoAssociados');
 
     const popularEquipas = () => {
-      const equipasDoDept = this.state.equipas.filter(eq => !filtros.departamento || eq.departamento === filtros.departamento);
+      const equipasDoDept = this.state.equipas.filter(eq => !filtros.departamento || eq.departamentoId === filtros.departamento);
       selEquipa.innerHTML = `<option value="">Todas as equipas</option>` +
         equipasDoDept.map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
       if (filtros.equipa && !equipasDoDept.some(eq => eq.id === filtros.equipa)) filtros.equipa = '';
@@ -6020,7 +6127,7 @@ const App = {
       const visiveis = linhas.filter(({ r }) => {
         if (filtros.departamento) {
           const eq = this.state.equipas.find(x => x.id === r.equipaId);
-          if (!eq || eq.departamento !== filtros.departamento) return false;
+          if (!eq || eq.departamentoId !== filtros.departamento) return false;
         }
         if (filtros.equipa && r.equipaId !== filtros.equipa) return false;
         if (termo && !r.nome.toLowerCase().includes(termo)) return false;
@@ -6207,6 +6314,7 @@ const App = {
     });
 
     document.getElementById('btnAddRecursoTab').addEventListener('click', () => this.adicionarRecurso());
+    document.getElementById('btnAddDepartamento').addEventListener('click', () => this.adicionarDepartamento());
     document.getElementById('btnAddEquipa').addEventListener('click', () => this.adicionarEquipa());
     document.getElementById('btnAddFeriado').addEventListener('click', () => this.adicionarFeriado());
     document.getElementById('btnAddAusencia').addEventListener('click', () => this.adicionarAusencia());

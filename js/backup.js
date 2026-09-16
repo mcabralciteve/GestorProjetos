@@ -17,7 +17,7 @@
 // passo manual. Por isso "recursos.auth_user_id" e "registos.user_id" saem sempre em branco.
 const Backup = {
   TABELAS_EM_ORDEM: [
-    'equipas', 'recursos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos',
+    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos',
     'faturas', 'pontos_situacao', 'proximos_passos', 'registos', 'reservas_viatura'
   ],
   // Composta pelas mesmas transformações já usadas em js/sync.js para escrever cada tabela — se o
@@ -28,7 +28,7 @@ const Backup = {
     const linhas = {};
 
     linhas.equipas = (state.equipas || []).map(eq => ({
-      id: eq.id, nome: eq.nome, departamento: eq.departamento || '', diretor: eq.diretor || '', lider_id: eq.liderId || null
+      id: eq.id, nome: eq.nome, lider_id: eq.liderId || null, departamento_id: eq.departamentoId || null
     }));
 
     linhas.recursos = (state.recursos || []).map(r => ({
@@ -36,6 +36,10 @@ const Backup = {
       preco_custo: r.precoCusto || 0, preco_venda: r.precoVenda || 0,
       auth_user_id: null, // ver nota grande no topo do ficheiro — religa-se sozinho por email
       acesso: r.acesso || 'user'
+    }));
+
+    linhas.departamentos = (state.departamentos || []).map(d => ({
+      id: d.id, nome: d.nome, diretor_id: d.diretorId || null
     }));
 
     linhas.feriados = (state.feriados || []).map(f => ({ id: f.id, data: f.data, descricao: f.descricao || '' }));
@@ -162,10 +166,10 @@ const Backup = {
       linhasTabela.forEach(l => {
         // As tarefas entram sem parent_id (2ª passagem mais abaixo liga pai/filho) — evita
         // depender da ordem de inserção entre uma tarefa-mãe e as suas subtarefas. Pela mesma razão,
-        // "equipas" entra sem lider_id (referencia recursos.id, inserido só a seguir a "equipas" —
-        // ver TABELAS_EM_ORDEM).
+        // "equipas" entra sem lider_id/departamento_id (referenciam recursos.id/departamentos.id,
+        // ambos inseridos só a seguir a "equipas" — ver TABELAS_EM_ORDEM).
         const linhaParaInserir = tabela === 'tarefas' ? Object.assign({}, l, { parent_id: null })
-          : tabela === 'equipas' ? Object.assign({}, l, { lider_id: null })
+          : tabela === 'equipas' ? Object.assign({}, l, { lider_id: null, departamento_id: null })
           : l;
         partes.push(this.linhaParaInsert(tabela, linhaParaInserir, onConflict));
       });
@@ -184,6 +188,14 @@ const Backup = {
       partes.push(`\n-- ---------- equipas: liga lider_id (2ª passagem) ----------`);
       equipasComLider.forEach(eq => {
         partes.push(`update public.equipas set lider_id = ${this.sqlValor(eq.lider_id)} where id = ${this.sqlValor(eq.id)};`);
+      });
+    }
+
+    const equipasComDepartamento = (linhas.equipas || []).filter(eq => eq.departamento_id);
+    if (equipasComDepartamento.length) {
+      partes.push(`\n-- ---------- equipas: liga departamento_id (2ª passagem) ----------`);
+      equipasComDepartamento.forEach(eq => {
+        partes.push(`update public.equipas set departamento_id = ${this.sqlValor(eq.departamento_id)} where id = ${this.sqlValor(eq.id)};`);
       });
     }
 

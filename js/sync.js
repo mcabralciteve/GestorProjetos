@@ -13,17 +13,23 @@ const Sync = {
     // Equipas antes de recursos, recursos antes do resto — "recursos.equipa_id" e
     // "ausencias.recurso_id"/"tarefa_recursos.recurso_id" dependem de já existirem. "tipos_trabalho"
     // antes de "registos" pela mesma razão (registos.tipo_trabalho_id).
-    // "team_leader" (texto livre) já não é lido/escrito pela app — foi substituído por "lider_id"
-    // (ver abaixo); fica de fora deste payload para nunca apagar o histórico que lá esteja.
+    // "team_leader"/"departamento"/"diretor" (texto livre) já não são lidos/escritos pela app —
+    // substituídos por "lider_id" e "departamento_id" (ver abaixo); ficam de fora deste payload
+    // para nunca apagar o histórico que lá esteja.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, nome: eq.nome, departamento: eq.departamento || '', diretor: eq.diretor || '' }));
+      eq => ({ id: eq.id, nome: eq.nome }));
     await this.sincronizarListaSimples('recursos', antes.recursos, depois.recursos,
       r => ({ id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipa_id: r.equipaId || null, preco_custo: r.precoCusto, preco_venda: r.precoVenda }));
-    // "equipas.lider_id" referencia recursos.id — só pode ser gravado DEPOIS de "recursos" existir,
-    // mas "equipas" tem de ser sincronizada ANTES de "recursos" (por causa de recursos.equipa_id,
-    // acima). Por isso o líder vai sempre num segundo passo, já com os recursos todos sincronizados.
+    // "departamentos.diretor_id" referencia recursos.id — só pode ser gravado DEPOIS de "recursos"
+    // existir, por isso "departamentos" vai só a seguir a "recursos" (nunca antes de "equipas", já
+    // que "equipas.departamento_id" depende de "departamentos" existir — ver o segundo passo abaixo).
+    await this.sincronizarListaSimples('departamentos', antes.departamentos, depois.departamentos,
+      d => ({ id: d.id, nome: d.nome, diretor_id: d.diretorId || null }));
+    // "equipas.lider_id"/"departamento_id" referenciam recursos.id/departamentos.id — só podem ser
+    // gravados DEPOIS de ambos existirem, mas "equipas" tem de ser sincronizada ANTES de "recursos"
+    // (por causa de recursos.equipa_id, acima). Por isso vão sempre num segundo passo.
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
-      eq => ({ id: eq.id, lider_id: eq.liderId || null }));
+      eq => ({ id: eq.id, lider_id: eq.liderId || null, departamento_id: eq.departamentoId || null }));
     await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
       tt => ({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia }));
 
@@ -221,8 +227,9 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    const [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt] = await Promise.all([
+    const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
+      supabaseClient.from('departamentos').select('*'),
       supabaseClient.from('recursos').select('*'),
       supabaseClient.from('feriados').select('*'),
       supabaseClient.from('ausencias').select('*'),
@@ -241,9 +248,10 @@ const Sync = {
       supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle(),
       supabaseClient.from('tipos_trabalho').select('*')
     ]);
-    [eq, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
+    [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
 
-    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, departamento: r.departamento || '', diretor: r.diretor || '', liderId: r.lider_id || null }));
+    const departamentos = dep.data.map(r => ({ id: r.id, nome: r.nome, diretorId: r.diretor_id || null }));
+    const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, liderId: r.lider_id || null, departamentoId: r.departamento_id || null }));
     const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia }));
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
@@ -333,7 +341,7 @@ const Sync = {
     };
 
     App.state = {
-      equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, tiposTrabalho,
+      departamentos, equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, tiposTrabalho,
       reservasViatura, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
     };
   },
