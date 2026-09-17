@@ -170,8 +170,10 @@ const App = {
       acompReuniaoData: document.getElementById('acompReuniaoData'),
       acompReuniaoFeedback: document.getElementById('acompReuniaoFeedback'),
       corpoPontosSituacao: document.getElementById('corpoPontosSituacao'),
-      nsFiltroGestores: document.getElementById('nsFiltroGestores'),
-      nsFiltroProjetos: document.getElementById('nsFiltroProjetos'),
+      btnFiltroGestoresNS: document.getElementById('btnFiltroGestoresNS'),
+      painelFiltroGestoresNS: document.getElementById('painelFiltroGestoresNS'),
+      btnFiltroProjetosNS: document.getElementById('btnFiltroProjetosNS'),
+      painelFiltroProjetosNS: document.getElementById('painelFiltroProjetosNS'),
       nsFiltroSessao: document.getElementById('nsFiltroSessao'),
       nsFiltroResponsavel: document.getElementById('nsFiltroResponsavel'),
       nsFiltroEstado: document.getElementById('nsFiltroEstado'),
@@ -5387,6 +5389,21 @@ const App = {
     this.filtrosNextSteps = { gestores: [], projetos: [], pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' };
     this.renderNextStepsGlobal();
   },
+  // "(Todos)" no topo de cada dropdown de Gestor/Projeto — limpa só esse filtro (os outros mantêm-se).
+  limparFiltroNextStepsCampo(campo) {
+    this.filtrosNextSteps[campo] = [];
+    this.renderNextStepsGlobal();
+  },
+  // Texto do botão que abre cada dropdown — "Todos" sem seleção, o nome quando é só um, ou a
+  // contagem quando são vários (mesma ideia do filtro "(Todos)" de uma tabela dinâmica).
+  rotuloFiltroNextSteps(ids, opcoes, singular) {
+    if (!ids.length) return `${singular}: Todos`;
+    if (ids.length === 1) {
+      const o = opcoes.find(x => x.id === ids[0]);
+      return `${singular}: ${o ? o.nome : '1 selecionado'}`;
+    }
+    return `${singular}: ${ids.length} selecionados`;
+  },
   aplicarFiltrosNextStepsSimples() {
     const e = this.els;
     const f = this.filtrosNextSteps;
@@ -5404,16 +5421,29 @@ const App = {
     const f = this.filtrosNextSteps;
     const permitidos = this.projetosAcompanhamentoPermitidos();
 
+    const linhaFiltro = (marcado, rotulo, ehTodos) => `
+      <label style="display:flex;gap:8px;align-items:center;padding:6px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap;${ehTodos ? 'border-bottom:1px solid var(--cinza-200);margin-bottom:2px;font-weight:600;' : ''}">
+        ${marcado}${escapeHtml(rotulo)}
+      </label>`;
+
     const idsGestores = new Set(permitidos.map(p => p.gestorId).filter(Boolean));
     const gestoresDisponiveis = this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome));
-    e.nsFiltroGestores.innerHTML = gestoresDisponiveis.map(r => `<label><input type="checkbox" data-gestor="${r.id}" ${f.gestores.includes(r.id) ? 'checked' : ''}> ${escapeHtml(r.nome)}</label>`).join('') || '<span class="hint">—</span>';
-    e.nsFiltroGestores.querySelectorAll('input[data-gestor]').forEach(cb => {
+    e.btnFiltroGestoresNS.textContent = this.rotuloFiltroNextSteps(f.gestores, gestoresDisponiveis, 'Gestor');
+    e.painelFiltroGestoresNS.innerHTML =
+      linhaFiltro(`<input type="checkbox" data-todos ${f.gestores.length === 0 ? 'checked' : ''}>`, '(Todos)', true) +
+      gestoresDisponiveis.map(r => linhaFiltro(`<input type="checkbox" data-gestor="${r.id}" ${f.gestores.includes(r.id) ? 'checked' : ''}>`, r.nome, false)).join('');
+    e.painelFiltroGestoresNS.querySelector('[data-todos]').addEventListener('change', () => this.limparFiltroNextStepsCampo('gestores'));
+    e.painelFiltroGestoresNS.querySelectorAll('input[data-gestor]').forEach(cb => {
       cb.addEventListener('change', () => this.alternarFiltroNextSteps('gestores', cb.dataset.gestor));
     });
 
     const projetosParaCheckbox = f.gestores.length ? permitidos.filter(p => f.gestores.includes(p.gestorId)) : permitidos;
-    e.nsFiltroProjetos.innerHTML = projetosParaCheckbox.map(p => `<label><input type="checkbox" data-projeto="${p.id}" ${f.projetos.includes(p.id) ? 'checked' : ''}> ${escapeHtml(p.idInterno || p.nome)}</label>`).join('') || '<span class="hint">—</span>';
-    e.nsFiltroProjetos.querySelectorAll('input[data-projeto]').forEach(cb => {
+    e.btnFiltroProjetosNS.textContent = this.rotuloFiltroNextSteps(f.projetos, projetosParaCheckbox.map(p => ({ id: p.id, nome: p.idInterno || p.nome })), 'Projeto');
+    e.painelFiltroProjetosNS.innerHTML =
+      linhaFiltro(`<input type="checkbox" data-todos ${f.projetos.length === 0 ? 'checked' : ''}>`, '(Todos)', true) +
+      projetosParaCheckbox.map(p => linhaFiltro(`<input type="checkbox" data-projeto="${p.id}" ${f.projetos.includes(p.id) ? 'checked' : ''}>`, p.idInterno || p.nome, false)).join('');
+    e.painelFiltroProjetosNS.querySelector('[data-todos]').addEventListener('change', () => this.limparFiltroNextStepsCampo('projetos'));
+    e.painelFiltroProjetosNS.querySelectorAll('input[data-projeto]').forEach(cb => {
       cb.addEventListener('change', () => this.alternarFiltroNextSteps('projetos', cb.dataset.projeto));
     });
 
@@ -6440,6 +6470,11 @@ const App = {
     }
     [e.nsFiltroSessao, e.nsFiltroResponsavel, e.nsFiltroEstado, e.nsFiltroCriadoDe, e.nsFiltroCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosNextStepsSimples()));
     document.getElementById('btnLimparFiltrosNextSteps').addEventListener('click', () => this.limparFiltrosNextSteps());
+    e.btnFiltroGestoresNS.addEventListener('click', (ev) => { ev.stopPropagation(); e.painelFiltroProjetosNS.classList.remove('aberto'); e.painelFiltroGestoresNS.classList.toggle('aberto'); });
+    e.painelFiltroGestoresNS.addEventListener('click', (ev) => ev.stopPropagation());
+    e.btnFiltroProjetosNS.addEventListener('click', (ev) => { ev.stopPropagation(); e.painelFiltroGestoresNS.classList.remove('aberto'); e.painelFiltroProjetosNS.classList.toggle('aberto'); });
+    e.painelFiltroProjetosNS.addEventListener('click', (ev) => ev.stopPropagation());
+    document.addEventListener('click', () => { e.painelFiltroGestoresNS.classList.remove('aberto'); e.painelFiltroProjetosNS.classList.remove('aberto'); });
     document.querySelector('#tabelaFaturas thead').addEventListener('click', (ev) => {
       const th = ev.target.closest('th[data-sort]');
       if (!th) return;

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260917a">
+<link rel="stylesheet" href="css/style.css?v=20260917b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -403,14 +403,14 @@
       <button id="btnAddProximoPasso" class="btn btn-primary btn-sm">+ Next Step</button>
     </div>
     <p class="pagina-sub">Mostra os next steps de todos os projetos a que tens acesso — marca Gestores/Projetos para restringir; sem nada marcado, mostra tudo.</p>
-    <div class="filters" style="display:flex;gap:16px;flex-wrap:wrap;align-items:start;margin-bottom:12px;">
-      <div>
-        <div class="hint" style="margin-bottom:4px;">Gestor</div>
-        <div class="checkbox-list" id="nsFiltroGestores"></div>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <div class="conta-menu-wrap">
+        <button type="button" id="btnFiltroGestoresNS" class="btn btn-sm">Gestor: Todos</button>
+        <div class="conta-menu para-esquerda" id="painelFiltroGestoresNS" style="min-width:200px;max-height:260px;overflow-y:auto;padding:6px 0;"></div>
       </div>
-      <div>
-        <div class="hint" style="margin-bottom:4px;">Projeto</div>
-        <div class="checkbox-list" id="nsFiltroProjetos"></div>
+      <div class="conta-menu-wrap">
+        <button type="button" id="btnFiltroProjetosNS" class="btn btn-sm">Projeto: Todos</button>
+        <div class="conta-menu para-esquerda" id="painelFiltroProjetosNS" style="min-width:220px;max-height:260px;overflow-y:auto;padding:6px 0;"></div>
       </div>
       <label class="zoom-label">Sessão <select id="nsFiltroSessao"><option value="">Todas</option></select></label>
       <label class="zoom-label">Responsável <select id="nsFiltroResponsavel"><option value="">Todos</option></select></label>
@@ -933,14 +933,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260917a"></script>
-<script src="js/auth.js?v=20260917a"></script>
-<script src="js/sync.js?v=20260917a"></script>
-<script src="js/gantt.js?v=20260917a"></script>
-<script src="js/capacidade.js?v=20260917a"></script>
-<script src="js/portfolio-gantt.js?v=20260917a"></script>
-<script src="js/reserva-viatura.js?v=20260917a"></script>
-<script src="js/backup.js?v=20260917a"></script>
-<script src="js/app.js?v=20260917a"></script>
+<script src="js/supabase-config.js?v=20260917b"></script>
+<script src="js/auth.js?v=20260917b"></script>
+<script src="js/sync.js?v=20260917b"></script>
+<script src="js/gantt.js?v=20260917b"></script>
+<script src="js/capacidade.js?v=20260917b"></script>
+<script src="js/portfolio-gantt.js?v=20260917b"></script>
+<script src="js/reserva-viatura.js?v=20260917b"></script>
+<script src="js/backup.js?v=20260917b"></script>
+<script src="js/app.js?v=20260917b"></script>
 </body>
 </html>
