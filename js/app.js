@@ -5394,6 +5394,12 @@ const App = {
     this.filtrosNextSteps[campo] = [];
     this.renderNextStepsGlobal();
   },
+  // Um projeto nunca se identifica só pelo código interno (ex.: "2025/890") — sem o nome/cliente ao
+  // lado fica ininteligível para quem não decorou os códigos de cor. Mesmo formato já usado nos
+  // selects de projeto espalhados pela app (Alocações, Faturação, Reserva de Viatura, Acompanhamento).
+  rotuloProjeto(p) {
+    return (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ` (${p.cliente})` : '');
+  },
   // Texto do botão que abre cada dropdown — "Todos" sem seleção, o nome quando é só um, ou a
   // contagem quando são vários (mesma ideia do filtro "(Todos)" de uma tabela dinâmica).
   rotuloFiltroNextSteps(ids, opcoes, singular) {
@@ -5438,10 +5444,10 @@ const App = {
     });
 
     const projetosParaCheckbox = f.gestores.length ? permitidos.filter(p => f.gestores.includes(p.gestorId)) : permitidos;
-    e.btnFiltroProjetosNS.textContent = this.rotuloFiltroNextSteps(f.projetos, projetosParaCheckbox.map(p => ({ id: p.id, nome: p.idInterno || p.nome })), 'Projeto');
+    e.btnFiltroProjetosNS.textContent = this.rotuloFiltroNextSteps(f.projetos, projetosParaCheckbox.map(p => ({ id: p.id, nome: this.rotuloProjeto(p) })), 'Projeto');
     e.painelFiltroProjetosNS.innerHTML =
       linhaFiltro(`<input type="checkbox" data-todos ${f.projetos.length === 0 ? 'checked' : ''}>`, '(Todos)', true) +
-      projetosParaCheckbox.map(p => linhaFiltro(`<input type="checkbox" data-projeto="${p.id}" ${f.projetos.includes(p.id) ? 'checked' : ''}>`, p.idInterno || p.nome, false)).join('');
+      projetosParaCheckbox.map(p => linhaFiltro(`<input type="checkbox" data-projeto="${p.id}" ${f.projetos.includes(p.id) ? 'checked' : ''}>`, this.rotuloProjeto(p), false)).join('');
     e.painelFiltroProjetosNS.querySelector('[data-todos]').addEventListener('change', () => this.limparFiltroNextStepsCampo('projetos'));
     e.painelFiltroProjetosNS.querySelectorAll('input[data-projeto]').forEach(cb => {
       cb.addEventListener('change', () => this.alternarFiltroNextSteps('projetos', cb.dataset.projeto));
@@ -5453,7 +5459,7 @@ const App = {
     const opcoesSessao = [];
     projetosParaSessoes.forEach(p => {
       [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data)).forEach(ps => {
-        opcoesSessao.push(`<option value="${ps.id}">${escapeHtml(p.idInterno || p.nome)} — ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</option>`);
+        opcoesSessao.push(`<option value="${ps.id}">${escapeHtml(this.rotuloProjeto(p))} — ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</option>`);
       });
     });
     e.nsFiltroSessao.innerHTML = '<option value="">Todas</option>' + opcoesSessao.join('');
