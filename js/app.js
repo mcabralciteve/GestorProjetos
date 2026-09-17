@@ -71,7 +71,10 @@ const App = {
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
-  filtrosTodosPassos: { gestor: '', projeto: '', pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
+  // Filtros da lista global de Next Steps dentro de Acompanhamento (ver renderNextStepsGlobal) —
+  // "gestores"/"projetos" são arrays de ids marcados via checkbox (vazio = sem restrição, mostra
+  // tudo a que o utilizador tem acesso); os restantes são um valor único, como nos outros filtros.
+  filtrosNextSteps: { gestores: [], projetos: [], pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
   // Estado da sessão de Acompanhamento — só do lado do cliente, nunca gravado/sincronizado (por
   // isso vive fora de "state", tal como filtrosRegisto/paginaRegistos etc.). Uma "reunião" é só
   // uma data + um feedback partilhados que se propagam automaticamente para o Ponto de Situação de
@@ -167,16 +170,14 @@ const App = {
       acompReuniaoData: document.getElementById('acompReuniaoData'),
       acompReuniaoFeedback: document.getElementById('acompReuniaoFeedback'),
       corpoPontosSituacao: document.getElementById('corpoPontosSituacao'),
-      corpoProximosPassos: document.getElementById('corpoProximosPassos'),
-      tabBtnTodosPassos: document.getElementById('tabBtnTodosPassos'),
-      fPassoGestor: document.getElementById('fPassoGestor'),
-      fPassoProjeto: document.getElementById('fPassoProjeto'),
-      fPassoSessao: document.getElementById('fPassoSessao'),
-      fPassoResponsavel: document.getElementById('fPassoResponsavel'),
-      fPassoEstado: document.getElementById('fPassoEstado'),
-      fPassoCriadoDe: document.getElementById('fPassoCriadoDe'),
-      fPassoCriadoAte: document.getElementById('fPassoCriadoAte'),
-      corpoTodosPassos: document.getElementById('corpoTodosPassos'),
+      nsFiltroGestores: document.getElementById('nsFiltroGestores'),
+      nsFiltroProjetos: document.getElementById('nsFiltroProjetos'),
+      nsFiltroSessao: document.getElementById('nsFiltroSessao'),
+      nsFiltroResponsavel: document.getElementById('nsFiltroResponsavel'),
+      nsFiltroEstado: document.getElementById('nsFiltroEstado'),
+      nsFiltroCriadoDe: document.getElementById('nsFiltroCriadoDe'),
+      nsFiltroCriadoAte: document.getElementById('nsFiltroCriadoAte'),
+      corpoNextStepsGlobal: document.getElementById('corpoNextStepsGlobal'),
       projHorasReais: document.getElementById('projHorasReais'),
       projHorasEAC: document.getElementById('projHorasEAC'),
       projHorasSaldo: document.getElementById('projHorasSaldo'),
@@ -2564,7 +2565,6 @@ const App = {
     this.renderTabelaReservasViatura();
     this.renderDefinicoes();
     this.renderAcompanhamento();
-    this.renderTodosPassos();
   },
 
   // Esconde/mostra grupos de navegação, separadores e botões consoante o papel do utilizador
@@ -2594,13 +2594,12 @@ const App = {
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
-    if (e.tabBtnTodosPassos) e.tabBtnTodosPassos.style.display = admin ? '' : 'none';
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
     ['btnNovoProjeto', 'btnNovoProjeto2', 'btnDuplicarProjeto', 'btnEliminarProjeto'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'todosPassos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
     if (!admin && !liderDeAlgo && this.abaAtiva === 'feriados') this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
@@ -5192,11 +5191,21 @@ const App = {
     this.renderTudo();
     this.toast('Next step criado.');
   },
+  // Localiza o projeto "dono" de um next step pelo id — as ações abaixo já não podem assumir que é
+  // sempre o projeto ativo no seletor "Reunião" (this.projetoAcompanhamento()), porque a lista de
+  // Next Steps agora mostra vários projetos ao mesmo tempo (ver renderNextStepsGlobal).
+  projetoDoProximoPasso(ppId) {
+    for (const p of Object.values(this.state.projetos)) {
+      const pp = p.proximosPassos.find(x => x.id === ppId);
+      if (pp) return { p, pp };
+    }
+    return null;
+  },
   atualizarProximoPasso(id, campo, valor) {
-    const p = this.projetoAcompanhamento();
-    if (!p) return;
-    const pp = p.proximosPassos.find(x => x.id === id);
-    if (!pp || !this.podeEditarProximoPasso(p, pp)) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { p, pp } = achado;
+    if (!this.podeEditarProximoPasso(p, pp)) return;
     if ((campo === 'dataPrevista' || campo === 'dataReal') && valor && !this.anoDataPlausivel(valor)) return;
     pp[campo] = ['tarefaId', 'pontoSituacaoId', 'responsavelId', 'dataPrevista', 'dataReal'].includes(campo) ? (valor || null) : valor;
     pp.atualizadoEm = new Date().toISOString();
@@ -5213,9 +5222,10 @@ const App = {
   // tarefa ligada (mesmo campo que "Associar consultores" usa no Gantt); só faz sentido havendo
   // tarefa E responsável.
   atualizarHorasPrevistasProximoPasso(id, valor) {
-    const p = this.projetoAcompanhamento();
-    const pp = p && p.proximosPassos.find(x => x.id === id);
-    if (!pp || !this.podeEditarProximoPasso(p, pp) || !pp.tarefaId || !pp.responsavelId) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { p, pp } = achado;
+    if (!this.podeEditarProximoPasso(p, pp) || !pp.tarefaId || !pp.responsavelId) return;
     this.definirHorasRecursoTarefa(p, pp.tarefaId, pp.responsavelId, valor);
   },
   // Cria uma tarefa nova no Gantt deste projeto a partir de um next step antigo, criado antes desta
@@ -5225,10 +5235,10 @@ const App = {
   // fica uma tarefa de 1 dia, tal como "+ Tarefa" já faz por omissão. Só se pode promover uma vez;
   // depois disso, o próprio dropdown de Tarefa já mostra a ligação.
   promoverProximoPassoATarefa(id) {
-    const p = this.projetoAcompanhamento();
-    if (!p || !this.possoEditarProjeto(p.id)) return;
-    const pp = p.proximosPassos.find(x => x.id === id);
-    if (!pp || pp.tarefaId) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { p, pp } = achado;
+    if (!this.possoEditarProjeto(p.id) || pp.tarefaId) return;
     const hojeISO = DateUtil.todayISO();
     const fim = (pp.dataPrevista && pp.dataPrevista > hojeISO) ? pp.dataPrevista : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hojeISO), 1));
     const recursoIds = pp.responsavelId && this.state.recursos.some(r => r.id === pp.responsavelId) ? [pp.responsavelId] : [];
@@ -5242,10 +5252,10 @@ const App = {
     this.toast(`Tarefa "${t.nome}" criada no Gantt a partir deste next step.`);
   },
   eliminarProximoPasso(id) {
-    const p = this.projetoAcompanhamento();
-    if (!p) return;
-    const pp = p.proximosPassos.find(x => x.id === id);
-    if (!pp || !this.podeEliminarProximoPasso(p, pp)) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { p, pp } = achado;
+    if (!this.podeEliminarProximoPasso(p, pp)) return;
     if (!confirm('Eliminar este next step?')) return;
     p.proximosPassos = p.proximosPassos.filter(x => x.id !== id);
     this.persist();
@@ -5256,9 +5266,9 @@ const App = {
   // próprio select da linha; o fecho fica para o próximo clique em "Fechar").
   fecharProximoPasso(id) {
     if (!this.souAdmin()) return;
-    const p = this.projetoAcompanhamento();
-    const pp = p && p.proximosPassos.find(x => x.id === id);
-    if (!pp) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { pp } = achado;
     if (!['concluido', 'abandonado'].includes(pp.estado)) {
       const corrigirEstado = confirm('O estado ainda não está "Concluído" nem "Abandonado". Queres alterar o estado antes de fechar este next step?');
       if (corrigirEstado) return;
@@ -5273,9 +5283,9 @@ const App = {
   // horas ficam associadas à tarefa automaticamente (ver App.horasJaRegistadasTarefa/tarefaId no
   // registo), tal como pedido — só falta escrever a data e as horas.
   registarHorasDoProximoPasso(id) {
-    const p = this.projetoAcompanhamento();
-    const pp = p && p.proximosPassos.find(x => x.id === id);
-    if (!pp) return;
+    const achado = this.projetoDoProximoPasso(id);
+    if (!achado) return;
+    const { p, pp } = achado;
     const tarefa = pp.tarefaId ? this.tarefaPorId(p, pp.tarefaId) : null;
     const recurso = pp.responsavelId ? this.state.recursos.find(r => r.id === pp.responsavelId) : null;
     const e = this.els;
@@ -5325,55 +5335,153 @@ const App = {
     e.acompanhamentoSemProjeto.textContent = p ? 'Não tens acesso ao acompanhamento deste projeto.' : 'Escolhe um Gestor e um projeto acima primeiro.';
     if (btnAddPS) btnAddPS.style.display = (podeVer && admin) ? '' : 'none';
     if (btnAddPP) btnAddPP.style.display = podeVer ? '' : 'none';
-    if (!podeVer) return;
+    if (podeVer) {
+      const pontos = this.aplicarOrdenacaoTabela('tabelaPontosSituacao', p.pontosSituacao, (ps, campo) => campo === 'feedback' ? (ps.feedback || '').toLowerCase() : ps.data);
+      e.corpoPontosSituacao.innerHTML = pontos.length ? '' : '<tr class="empty-row"><td colspan="3" style="text-align:center;color:var(--cinza-500);padding:16px">Sem pontos de situação registados.</td></tr>';
+      pontos.forEach(ps => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${admin ? `<input type="date" value="${ps.data}" data-campo="data">` : escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</td>
+          <td>${admin ? `<textarea data-campo="feedback" rows="2" style="width:100%;resize:vertical;">${escapeHtml(ps.feedback)}</textarea>` : escapeHtml(ps.feedback)}</td>
+          <td class="col-acoes">${admin ? '<button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>' : ''}</td>`;
+        if (admin) {
+          tr.querySelectorAll('[data-campo]').forEach(inp => {
+            inp.addEventListener('change', () => this.atualizarPontoSituacao(ps.id, inp.dataset.campo, inp.value));
+          });
+          tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarPontoSituacao(ps.id));
+        }
+        e.corpoPontosSituacao.appendChild(tr);
+      });
+    }
+    this.renderNextStepsGlobal();
+  },
 
-    const pontos = this.aplicarOrdenacaoTabela('tabelaPontosSituacao', p.pontosSituacao, (ps, campo) => campo === 'feedback' ? (ps.feedback || '').toLowerCase() : ps.data);
-    e.corpoPontosSituacao.innerHTML = pontos.length ? '' : '<tr class="empty-row"><td colspan="3" style="text-align:center;color:var(--cinza-500);padding:16px">Sem pontos de situação registados.</td></tr>';
-    pontos.forEach(ps => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${admin ? `<input type="date" value="${ps.data}" data-campo="data">` : escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</td>
-        <td>${admin ? `<textarea data-campo="feedback" rows="2" style="width:100%;resize:vertical;">${escapeHtml(ps.feedback)}</textarea>` : escapeHtml(ps.feedback)}</td>
-        <td class="col-acoes">${admin ? '<button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>' : ''}</td>`;
-      if (admin) {
-        tr.querySelectorAll('[data-campo]').forEach(inp => {
-          inp.addEventListener('change', () => this.atualizarPontoSituacao(ps.id, inp.dataset.campo, inp.value));
-        });
-        tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarPontoSituacao(ps.id));
-      }
-      e.corpoPontosSituacao.appendChild(tr);
+  // ---------- Next Steps (lista global, dentro de Acompanhamento) ----------
+  // Substitui a antiga janela "Todos os Next Steps": mostra os next steps de TODOS os projetos a
+  // que o utilizador tem acesso (Admin: todos; Gestor/Diretor: só os seus, via
+  // projetosAcompanhamentoPermitidos), com checkboxes de Gestor/Projeto para restringir — sem nada
+  // marcado, mostra tudo. Cada linha já é a mesma tabela editável de sempre (autoria/permissão via
+  // podeEditarProximoPasso/podeEliminarProximoPasso) — editar aqui não obriga a escolher primeiro
+  // esse projeto no seletor "Reunião" acima.
+  projetosAcompanhamentoPermitidos() {
+    const todos = Object.values(this.state.projetos);
+    return this.souAdmin() ? todos : todos.filter(p => this.possoEditarProjeto(p.id));
+  },
+  alternarFiltroNextSteps(campo, id) {
+    const f = this.filtrosNextSteps;
+    const lista = f[campo];
+    const i = lista.indexOf(id);
+    if (i === -1) lista.push(id); else lista.splice(i, 1);
+    if (campo === 'gestores') {
+      // Um projeto marcado que já não pertença a nenhum gestor marcado sai da seleção — evita um
+      // filtro "invisível" (projeto continuar marcado sem aparecer na lista de checkboxes).
+      const permitidos = this.projetosAcompanhamentoPermitidos();
+      f.projetos = f.projetos.filter(pid => {
+        const proj = permitidos.find(p => p.id === pid);
+        return proj && (!f.gestores.length || f.gestores.includes(proj.gestorId));
+      });
+    }
+    this.renderNextStepsGlobal();
+  },
+  limparFiltrosNextSteps() {
+    this.filtrosNextSteps = { gestores: [], projetos: [], pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' };
+    this.renderNextStepsGlobal();
+  },
+  aplicarFiltrosNextStepsSimples() {
+    const e = this.els;
+    const f = this.filtrosNextSteps;
+    f.pontoSituacao = e.nsFiltroSessao.value;
+    f.responsavel = e.nsFiltroResponsavel.value;
+    f.estado = e.nsFiltroEstado.value;
+    f.criadoDe = e.nsFiltroCriadoDe.value;
+    f.criadoAte = e.nsFiltroCriadoAte.value;
+    this.renderNextStepsGlobal();
+  },
+  renderNextStepsGlobal() {
+    const e = this.els;
+    if (!e.corpoNextStepsGlobal) return;
+    const admin = this.souAdmin();
+    const f = this.filtrosNextSteps;
+    const permitidos = this.projetosAcompanhamentoPermitidos();
+
+    const idsGestores = new Set(permitidos.map(p => p.gestorId).filter(Boolean));
+    const gestoresDisponiveis = this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome));
+    e.nsFiltroGestores.innerHTML = gestoresDisponiveis.map(r => `<label><input type="checkbox" data-gestor="${r.id}" ${f.gestores.includes(r.id) ? 'checked' : ''}> ${escapeHtml(r.nome)}</label>`).join('') || '<span class="hint">—</span>';
+    e.nsFiltroGestores.querySelectorAll('input[data-gestor]').forEach(cb => {
+      cb.addEventListener('change', () => this.alternarFiltroNextSteps('gestores', cb.dataset.gestor));
     });
 
-    const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
-    const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
-    const sessoesOrdenadas = [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
-    const opcoesSessao = sessoesOrdenadas.map(ps => `<option value="${ps.id}">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 30)) : ''}</option>`).join('');
-    const consultores = this.consultoresDoProjeto(p);
-    const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    const projetosParaCheckbox = f.gestores.length ? permitidos.filter(p => f.gestores.includes(p.gestorId)) : permitidos;
+    e.nsFiltroProjetos.innerHTML = projetosParaCheckbox.map(p => `<label><input type="checkbox" data-projeto="${p.id}" ${f.projetos.includes(p.id) ? 'checked' : ''}> ${escapeHtml(p.idInterno || p.nome)}</label>`).join('') || '<span class="hint">—</span>';
+    e.nsFiltroProjetos.querySelectorAll('input[data-projeto]').forEach(cb => {
+      cb.addEventListener('change', () => this.alternarFiltroNextSteps('projetos', cb.dataset.projeto));
+    });
 
-    const passos = this.aplicarOrdenacaoTabela('tabelaProximosPassos', p.proximosPassos, (pp, campo) => {
+    // A lista de sessões filtra-se pelos Gestores/Projetos marcados; se a seleção deixar de fazer
+    // sentido, o filtro de sessão reinicia sozinho.
+    const projetosParaSessoes = f.projetos.length ? permitidos.filter(p => f.projetos.includes(p.id)) : projetosParaCheckbox;
+    const opcoesSessao = [];
+    projetosParaSessoes.forEach(p => {
+      [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data)).forEach(ps => {
+        opcoesSessao.push(`<option value="${ps.id}">${escapeHtml(p.idInterno || p.nome)} — ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</option>`);
+      });
+    });
+    e.nsFiltroSessao.innerHTML = '<option value="">Todas</option>' + opcoesSessao.join('');
+    e.nsFiltroSessao.value = f.pontoSituacao;
+    if (e.nsFiltroSessao.value !== f.pontoSituacao) { f.pontoSituacao = ''; e.nsFiltroSessao.value = ''; }
+
+    const responsaveisOrdenados = [...this.state.recursos].sort((a, b) => a.nome.localeCompare(b.nome));
+    e.nsFiltroResponsavel.innerHTML = '<option value="">Todos</option>' + responsaveisOrdenados.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    e.nsFiltroResponsavel.value = f.responsavel;
+    e.nsFiltroEstado.value = f.estado;
+    e.nsFiltroCriadoDe.value = f.criadoDe;
+    e.nsFiltroCriadoAte.value = f.criadoAte;
+
+    const linhas = [];
+    permitidos.forEach(p => p.proximosPassos.forEach(pp => linhas.push({ p, pp })));
+    const filtradas = linhas.filter(({ p, pp }) => {
+      if (f.gestores.length && !f.gestores.includes(p.gestorId)) return false;
+      if (f.projetos.length && !f.projetos.includes(p.id)) return false;
+      if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
+      if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
+      if (f.estado && pp.estado !== f.estado) return false;
+      if (f.criadoDe && pp.criadoEm.slice(0, 10) < f.criadoDe) return false;
+      if (f.criadoAte && pp.criadoEm.slice(0, 10) > f.criadoAte) return false;
+      return true;
+    });
+
+    const ordenadas = this.aplicarOrdenacaoTabela('tabelaNextStepsGlobal', filtradas, ({ p, pp }, campo) => {
       switch (campo) {
-        case 'descricao': return (pp.descricao || '').toLowerCase();
+        case 'gestor': return ((this.state.recursos.find(r => r.id === p.gestorId) || {}).nome || '').toLowerCase();
+        case 'projeto': return (p.idInterno || p.nome).toLowerCase();
         case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
-        case 'tarefa': return ((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
-        case 'responsavel': return ((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
+        case 'tarefa': return ((p.tarefas.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
+        case 'descricao': return (pp.descricao || '').toLowerCase();
+        case 'responsavel': return ((this.state.recursos.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
         case 'dataPrevista': return pp.dataPrevista || '';
         case 'dataReal': return pp.dataReal || '';
         case 'estado': return pp.estado || '';
         case 'notas': return (pp.notas || '').toLowerCase();
+        case 'criadoPor': return ((this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '').toLowerCase();
         default: return pp.fechado ? 1 : 0;
       }
     });
-    e.corpoProximosPassos.innerHTML = passos.length ? '' : '<tr class="empty-row"><td colspan="11" style="text-align:center;color:var(--cinza-500);padding:16px">Sem next steps registados.</td></tr>';
-    passos.forEach(pp => {
-      const tr = document.createElement('tr');
-      tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
+
+    e.corpoNextStepsGlobal.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="13" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
+    ordenadas.forEach(({ p, pp }) => {
+      const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
+      const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+      const sessoesOrdenadas = [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
+      const opcoesSessaoLinha = sessoesOrdenadas.map(ps => `<option value="${ps.id}">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 30)) : ''}</option>`).join('');
+      const consultores = this.consultoresDoProjeto(p);
+      const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+      const gestor = this.state.recursos.find(r => r.id === p.gestorId);
+      const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
+      const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
       const podeEditar = this.podeEditarProximoPasso(p, pp);
       const podeEliminar = this.podeEliminarProximoPasso(p, pp);
       const podePromover = !pp.tarefaId && this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
-      const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
-      const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
       const marcadorAtraso = this.proximoPassoAtrasado(pp) ? '⚠ ' : '';
       // Horas: só faz sentido havendo tarefa E responsável — previstas (editável, alocacoesHoras
       // da tarefa) e reais (só leitura, soma dos registos já ligados a esta tarefa+pessoa).
@@ -5381,9 +5489,13 @@ const App = {
       const temHoras = !!(tarefaLigada && pp.responsavelId);
       const horasPrevistas = temHoras ? this.horasAlocadas(tarefaLigada, pp.responsavelId) : null;
       const horasReais = temHoras ? this.horasJaRegistadasTarefa(p, tarefaLigada, pp.responsavelId) : null;
+      const tr = document.createElement('tr');
+      tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
       tr.innerHTML = `
+        <td class="hint">${escapeHtml(gestor ? gestor.nome : '—')}</td>
+        <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
         <td>${podeEditar ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px">` : escapeHtml(pp.descricao)}</td>
-        <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessao}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
+        <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessaoLinha}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
         <td>${podeEditar ? `<select data-campo="tarefaId">${opcoesTarefa}</select>` : escapeHtml((tarefasFolha.find(t => t.id === pp.tarefaId) || {}).nome || '—')}
           ${podePromover ? '<button type="button" class="btn btn-sm" data-acao="promover" style="margin-top:4px;" title="Cria uma tarefa nova no Gantt deste projeto a partir deste next step (nome, responsável e data prevista já vêm preenchidos)">↳ Promover a Tarefa</button>' : ''}</td>
         <td>${podeEditar ? `<select data-campo="responsavelId">${opcoesResponsavel}</select>` : escapeHtml((consultores.find(r => r.id === pp.responsavelId) || {}).nome || '—')}</td>
@@ -5425,119 +5537,7 @@ const App = {
       if (btnPromover) btnPromover.addEventListener('click', () => this.promoverProximoPassoATarefa(pp.id));
       const btnHoras = tr.querySelector('[data-acao="registar-horas"]');
       if (btnHoras) btnHoras.addEventListener('click', () => this.registarHorasDoProximoPasso(pp.id));
-      e.corpoProximosPassos.appendChild(tr);
-    });
-  },
-  abrirProjetoNoAcompanhamento(id) {
-    const p = this.state.projetos[id];
-    if (!p) return;
-    this.acompanhamentoGestorId = p.gestorId || '';
-    this.acompanhamentoProjetoId = id;
-    this.irParaAba('acompanhamento');
-    this.renderAcompanhamento();
-  },
-
-  // ---------- Tab: Todos os Next Steps (visão global, só Administrador) ----------
-  // Só de leitura + navegação — para editar um next step, "Abrir" leva ao Acompanhamento do
-  // respetivo projeto, onde as mesmas regras de autoria/permissão de sempre se aplicam.
-  aplicarFiltrosTodosPassos() {
-    const e = this.els;
-    this.filtrosTodosPassos = {
-      gestor: e.fPassoGestor.value, projeto: e.fPassoProjeto.value, pontoSituacao: e.fPassoSessao.value, responsavel: e.fPassoResponsavel.value,
-      estado: e.fPassoEstado.value, criadoDe: e.fPassoCriadoDe.value, criadoAte: e.fPassoCriadoAte.value
-    };
-    this.renderTodosPassos();
-  },
-  renderTodosPassos() {
-    const e = this.els;
-    if (!e.corpoTodosPassos || !this.souAdmin()) return;
-    const todosProjetos = Object.values(this.state.projetos);
-    const f = this.filtrosTodosPassos;
-
-    // Gestor — uma reunião de acompanhamento é com uma PESSOA, que muitas vezes gere vários
-    // projetos; este filtro deixa ver de imediato todos os next steps dela, independentemente de
-    // em que projeto ficaram (só depois de escolher o Gestor é que normalmente interessa afinar
-    // por projeto/sessão).
-    const gestorAtual = e.fPassoGestor.value;
-    const idsGestores = new Set(todosProjetos.map(p => p.gestorId).filter(Boolean));
-    const gestoresOrdenados = this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome));
-    e.fPassoGestor.innerHTML = '<option value="">Todos</option>' + gestoresOrdenados.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
-    e.fPassoGestor.value = gestorAtual;
-
-    const projetosDoGestor = f.gestor ? todosProjetos.filter(p => p.gestorId === f.gestor) : todosProjetos;
-    const projAtual = e.fPassoProjeto.value;
-    e.fPassoProjeto.innerHTML = '<option value="">Todos</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
-    e.fPassoProjeto.value = projAtual;
-    if (e.fPassoProjeto.value !== projAtual) { f.projeto = ''; e.fPassoProjeto.value = ''; }
-
-    // A lista de sessões filtra-se pelo Gestor/projeto escolhidos; se a seleção deixar de fazer
-    // sentido, o filtro de sessão reinicia sozinho.
-    const projetosParaSessoes = f.projeto ? todosProjetos.filter(p => p.id === f.projeto) : projetosDoGestor;
-    const opcoesSessao = [];
-    projetosParaSessoes.forEach(p => {
-      [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data)).forEach(ps => {
-        opcoesSessao.push(`<option value="${ps.id}">${escapeHtml(p.idInterno || p.nome)} — ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}</option>`);
-      });
-    });
-    e.fPassoSessao.innerHTML = '<option value="">Todas</option>' + opcoesSessao.join('');
-    e.fPassoSessao.value = f.pontoSituacao;
-    if (e.fPassoSessao.value !== f.pontoSituacao) { f.pontoSituacao = ''; e.fPassoSessao.value = ''; }
-
-    const respAtual = e.fPassoResponsavel.value;
-    const responsaveisOrdenados = [...this.state.recursos].sort((a, b) => a.nome.localeCompare(b.nome));
-    e.fPassoResponsavel.innerHTML = '<option value="">Todos</option>' + responsaveisOrdenados.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
-    e.fPassoResponsavel.value = respAtual;
-
-    const linhas = [];
-    todosProjetos.forEach(p => p.proximosPassos.forEach(pp => linhas.push({ p, pp })));
-    const filtradas = linhas.filter(({ p, pp }) => {
-      if (f.gestor && p.gestorId !== f.gestor) return false;
-      if (f.projeto && p.id !== f.projeto) return false;
-      if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
-      if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
-      if (f.estado && pp.estado !== f.estado) return false;
-      if (f.criadoDe && pp.criadoEm.slice(0, 10) < f.criadoDe) return false;
-      if (f.criadoAte && pp.criadoEm.slice(0, 10) > f.criadoAte) return false;
-      return true;
-    });
-    const rotulosEstado = { aberto: 'Aberto', em_curso: 'Em curso', concluido: 'Concluído', abandonado: 'Abandonado' };
-    const ordenadas = this.aplicarOrdenacaoTabela('tabelaTodosPassos', filtradas, ({ p, pp }, campo) => {
-      switch (campo) {
-        case 'gestor': return ((this.state.recursos.find(r => r.id === p.gestorId) || {}).nome || '').toLowerCase();
-        case 'projeto': return (p.idInterno || p.nome).toLowerCase();
-        case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
-        case 'descricao': return (pp.descricao || '').toLowerCase();
-        case 'responsavel': return ((this.state.recursos.find(r => r.id === pp.responsavelId) || {}).nome || '').toLowerCase();
-        case 'dataPrevista': return pp.dataPrevista || '';
-        case 'dataReal': return pp.dataReal || '';
-        case 'estado': return pp.estado || '';
-        case 'criadoPor': return ((this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '').toLowerCase();
-        default: return pp.criadoEm || '';
-      }
-    });
-
-    e.corpoTodosPassos.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="11" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
-    ordenadas.forEach(({ p, pp }) => {
-      const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
-      const gestor = this.state.recursos.find(r => r.id === p.gestorId);
-      const responsavel = this.state.recursos.find(r => r.id === pp.responsavelId);
-      const criador = this.state.recursos.find(r => r.id === pp.criadoPor);
-      const tr = document.createElement('tr');
-      tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
-      tr.innerHTML = `
-        <td>${escapeHtml(gestor ? gestor.nome : '—')}</td>
-        <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
-        <td>${sessao ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(sessao.data))) : '—'}</td>
-        <td>${escapeHtml(pp.descricao)}</td>
-        <td>${escapeHtml(responsavel ? responsavel.nome : '—')}</td>
-        <td>${pp.dataPrevista ? (this.proximoPassoAtrasado(pp) ? '⚠ ' : '') + escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista))) : '—'}</td>
-        <td>${pp.dataReal ? escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.dataReal))) : '—'}</td>
-        <td>${escapeHtml(rotulosEstado[pp.estado] || pp.estado)}${pp.fechado ? ' <span class="hint">(fechado)</span>' : ''}</td>
-        <td>${escapeHtml(criador ? criador.nome : '—')}</td>
-        <td>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(pp.criadoEm.slice(0, 10))))}</td>
-        <td class="col-acoes"><button class="btn btn-sm" data-acao="abrir">Abrir</button></td>`;
-      tr.querySelector('[data-acao="abrir"]').addEventListener('click', () => this.abrirProjetoNoAcompanhamento(p.id));
-      e.corpoTodosPassos.appendChild(tr);
+      e.corpoNextStepsGlobal.appendChild(tr);
     });
   },
 
@@ -5801,7 +5801,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', todosPassos: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -6438,12 +6438,8 @@ const App = {
       e.painelPersonalizarDashboard.addEventListener('click', (ev) => ev.stopPropagation());
       document.addEventListener('click', () => e.painelPersonalizarDashboard.classList.remove('aberto'));
     }
-    [e.fPassoGestor, e.fPassoProjeto, e.fPassoSessao, e.fPassoResponsavel, e.fPassoEstado, e.fPassoCriadoDe, e.fPassoCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosTodosPassos()));
-    document.getElementById('btnLimparFiltrosPassos').addEventListener('click', () => {
-      e.fPassoGestor.value = ''; e.fPassoProjeto.value = ''; e.fPassoSessao.value = ''; e.fPassoResponsavel.value = '';
-      e.fPassoEstado.value = ''; e.fPassoCriadoDe.value = ''; e.fPassoCriadoAte.value = '';
-      this.aplicarFiltrosTodosPassos();
-    });
+    [e.nsFiltroSessao, e.nsFiltroResponsavel, e.nsFiltroEstado, e.nsFiltroCriadoDe, e.nsFiltroCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosNextStepsSimples()));
+    document.getElementById('btnLimparFiltrosNextSteps').addEventListener('click', () => this.limparFiltrosNextSteps());
     document.querySelector('#tabelaFaturas thead').addEventListener('click', (ev) => {
       const th = ev.target.closest('th[data-sort]');
       if (!th) return;
@@ -6557,10 +6553,8 @@ const App = {
     this.ligarOrdenacaoTabela('tabelaProjetos', { campo: 'idInterno', dir: 'asc' }, () => this.renderTabelaProjetos());
     this.tornarColunasRedimensionaveis('tabelaPontosSituacao', 'colunasPontosSituacao');
     this.ligarOrdenacaoTabela('tabelaPontosSituacao', { campo: 'data', dir: 'desc' }, () => this.renderAcompanhamento());
-    this.tornarColunasRedimensionaveis('tabelaProximosPassos', 'colunasProximosPassos');
-    this.ligarOrdenacaoTabela('tabelaProximosPassos', { campo: 'fechado', dir: 'asc' }, () => this.renderAcompanhamento());
-    this.tornarColunasRedimensionaveis('tabelaTodosPassos', 'colunasTodosPassos');
-    this.ligarOrdenacaoTabela('tabelaTodosPassos', { campo: 'criadoEm', dir: 'desc' }, () => this.renderTodosPassos());
+    this.tornarColunasRedimensionaveis('tabelaNextStepsGlobal', 'colunasNextStepsGlobal');
+    this.ligarOrdenacaoTabela('tabelaNextStepsGlobal', { campo: 'fechado', dir: 'asc' }, () => this.renderNextStepsGlobal());
     this.tornarColunasRedimensionaveis('tabelaRecursosCentral', 'colunasRecursos');
     this.ligarOrdenacaoTabela('tabelaRecursosCentral', { campo: 'nome', dir: 'asc' }, () => this.renderTabelaRecursosCentral());
     this.tornarColunasRedimensionaveis('tabelaEquipas', 'colunasEquipas');
