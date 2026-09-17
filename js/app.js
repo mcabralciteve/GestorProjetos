@@ -6326,9 +6326,31 @@ const App = {
     this._toastTimer = setTimeout(() => el.classList.remove('mostrar'), 2600);
   },
 
+  // ---------- Tooltip automático para texto cortado ----------
+  // Em qualquer listagem da app, uma célula/campo cujo texto não caiba no espaço visível (coluna
+  // estreita, célula com "text-overflow:ellipsis") ganha sozinho um "title" com o conteúdo completo
+  // — é o balão amarelo nativo do próprio browser, que já aparece ao fim de um instante parado em
+  // cima (nada de tooltip customizado, é sempre o do sistema). Um único listener delegado no
+  // document, ligado uma vez no arranque — cobre qualquer tabela/lista futura sem precisar de mexer
+  // em cada render. Nunca sobrepõe um "title" que já exista de propósito (ex.: botões "Eliminar").
+  ligarTooltipTextoCortado() {
+    document.addEventListener('mouseover', (ev) => {
+      const el = ev.target;
+      if (!(el instanceof HTMLElement) || el.title) return;
+      const ehCampo = el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA';
+      if (!ehCampo && el.children.length > 0) return; // só nós "folha" de texto, nunca um wrapper
+      const estilo = getComputedStyle(el);
+      if (estilo.overflow !== 'hidden' && estilo.textOverflow !== 'ellipsis' && estilo.whiteSpace !== 'nowrap') return;
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+      const texto = (el.tagName === 'SELECT' ? (el.selectedOptions[0]?.text || '') : ehCampo ? el.value : el.textContent).trim();
+      if (texto) el.title = texto;
+    }, true);
+  },
+
   // ---------- Eventos ----------
   wireEvents() {
     const e = this.els;
+    this.ligarTooltipTextoCortado();
     document.getElementById('tabsNav').addEventListener('click', (ev) => {
       const btn = ev.target.closest('.tab-btn');
       if (btn) this.irParaAba(btn.dataset.tab);
