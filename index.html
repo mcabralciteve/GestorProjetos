@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260917d">
+<link rel="stylesheet" href="css/style.css?v=20260918a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -186,6 +186,7 @@
         <div class="calc-line" id="projVersaoLinha">Versão: <b id="projVersao">—</b></div>
         <div class="calc-line" id="projFaturacaoLinha">Faturação planeada: <b id="projFaturacaoResumo">—</b></div>
         <div class="calc-line"><a href="#" data-tab="faturacao" class="link-tab">💶 Ver faturação deste projeto</a></div>
+        <div class="calc-line" id="linhaRelatorioHorasProjeto"><a href="#" id="linkRelatorioHorasProjeto">📄 Relatório de horas deste projeto</a></div>
         <label>Gestor de Projeto
           <select id="projGestorId"><option value="">Sem gestor atribuído</option></select>
         </label>
@@ -370,9 +371,9 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>Acompanhamento — <span id="acompanhamentoProjetoNome">—</span></h2>
-      <button id="btnAddPontoSituacao" class="btn btn-sm">+ Ponto de Situação avulso</button>
+      <button id="btnAddPontoSituacao" class="btn btn-sm">+ Ponto de Situação</button>
     </div>
-    <p class="pagina-sub">Uma reunião cobre uma data e um feedback partilhados — escolhe o Gestor, depois o projeto, e cria os next steps; ao mudar de projeto na mesma reunião, o Ponto de Situação desse projeto é criado/atualizado sozinho com a mesma data/feedback.</p>
+    <p class="pagina-sub">Escolhe o Gestor e o projeto; os Next Steps em baixo passam a ser os dessa seleção. O Ponto de Situação só é criado quando clicas em "+ Ponto de Situação" (com a data e o feedback preenchidos aqui).</p>
     <div class="card" style="margin-bottom:16px;">
       <div class="row-2">
         <label>Gestor <select id="acompGestor"><option value="">Escolhe…</option></select></label>
@@ -380,7 +381,7 @@
       </div>
       <div class="row-2">
         <label>Data da reunião <input type="date" id="acompReuniaoData"></label>
-        <label>Feedback geral <input type="text" id="acompReuniaoFeedback" placeholder="Notas da reunião — aplicam-se a cada projeto que abrires a seguir"></label>
+        <label>Feedback geral <input type="text" id="acompReuniaoFeedback" placeholder="Notas da reunião — usadas ao clicares em + Ponto de Situação"></label>
       </div>
     </div>
     <div id="acompanhamentoSemProjeto" class="hint" style="display:none;">Escolhe um Gestor e um projeto acima primeiro.</div>
@@ -727,7 +728,7 @@
     <div class="pagina-head">
       <h2>Registar Horas</h2>
     </div>
-    <p class="pagina-sub">Regista aqui as horas diárias por projeto/tarefa — fica guardado de imediato e é logo visível para toda a equipa, sem precisares de enviar nem reimportar nada.</p>
+    <p class="pagina-sub">Regista aqui as horas diárias por projeto/tarefa, ou noutras atividades que não são de projeto (escolhe o tipo de trabalho) — fica guardado de imediato e é logo visível para toda a equipa, sem precisares de enviar nem reimportar nada.</p>
 
     <div class="card" style="max-width:640px;">
       <form id="formRegisto">
@@ -739,12 +740,15 @@
             <input type="date" id="regData" required>
           </label>
         </div>
-        <div class="row-2">
+        <label>Tipo de trabalho <span style="color:var(--vermelho);">*</span>
+          <select id="regTipo"></select>
+        </label>
+        <div class="row-2" id="regProjetoWrap">
           <label>Projeto <span style="color:var(--vermelho);">*</span>
-            <select id="regProjeto" required><option value="">Seleciona…</option></select>
+            <select id="regProjeto"><option value="">Seleciona…</option></select>
           </label>
           <label>Tarefa <span style="color:var(--vermelho);">*</span>
-            <select id="regTarefa" required><option value="">Seleciona…</option></select>
+            <select id="regTarefa"><option value="">Seleciona…</option></select>
           </label>
         </div>
         <label>Horas <span style="color:var(--vermelho);">*</span>
@@ -933,14 +937,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260917d"></script>
-<script src="js/auth.js?v=20260917d"></script>
-<script src="js/sync.js?v=20260917d"></script>
-<script src="js/gantt.js?v=20260917d"></script>
-<script src="js/capacidade.js?v=20260917d"></script>
-<script src="js/portfolio-gantt.js?v=20260917d"></script>
-<script src="js/reserva-viatura.js?v=20260917d"></script>
-<script src="js/backup.js?v=20260917d"></script>
-<script src="js/app.js?v=20260917d"></script>
+<script src="js/supabase-config.js?v=20260918a"></script>
+<script src="js/auth.js?v=20260918a"></script>
+<script src="js/sync.js?v=20260918a"></script>
+<script src="js/gantt.js?v=20260918a"></script>
+<script src="js/capacidade.js?v=20260918a"></script>
+<script src="js/portfolio-gantt.js?v=20260918a"></script>
+<script src="js/reserva-viatura.js?v=20260918a"></script>
+<script src="js/backup.js?v=20260918a"></script>
+<script src="js/app.js?v=20260918a"></script>
 </body>
 </html>

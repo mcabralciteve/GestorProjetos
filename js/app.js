@@ -240,6 +240,8 @@ const App = {
       regPessoa: document.getElementById('regPessoa'),
       regData: document.getElementById('regData'),
       regProjeto: document.getElementById('regProjeto'),
+      regTipo: document.getElementById('regTipo'),
+      regProjetoWrap: document.getElementById('regProjetoWrap'),
       regTarefa: document.getElementById('regTarefa'),
       regHoras: document.getElementById('regHoras'),
       regNotas: document.getElementById('regNotas'),
@@ -2928,6 +2930,8 @@ const App = {
     }
     const podeEditar = this.possoEditarProjeto(p.id);
     campos.forEach(c => { c.disabled = !podeEditar; });
+    const linhaRel = document.getElementById('linhaRelatorioHorasProjeto');
+    if (linhaRel) linhaRel.style.display = podeEditar ? '' : 'none';
     // "Ativo" é sempre só do Administrador, independentemente de podeEditar — um Gestor nunca se
     // suspende a si próprio, mesmo enquanto o projeto ainda está ativo (ver atualizarProjetoAtivo).
     if (e.projAtivo) { e.projAtivo.checked = p.ativo !== false; e.projAtivo.disabled = !this.souAdmin(); }
@@ -3381,11 +3385,13 @@ const App = {
     if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
     this.alocMesAtual = { ano, mes };
     this.renderCalendarioAlocacoes();
+    this.centrarHojeCalendario();
   },
   irParaHojeAlocacoes() {
     const hoje = new Date();
     this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
     this.renderCalendarioAlocacoes();
+    this.centrarHojeCalendario();
   },
   aplicarFiltrosAlocacoes() {
     const e = this.els;
@@ -3689,6 +3695,14 @@ const App = {
     }
     if (e.formRegisto) e.formRegisto.querySelectorAll('input,select,textarea,button').forEach(c => { if (c !== e.regPessoa) c.disabled = !recursosPermitidos.length; });
 
+    // Tipo de trabalho: "Projeto" (por omissão) ou qualquer outro tipo ativo que não exija projeto
+    // — os tipos "cria ausência" ficam de fora (pedem um período, tratado no Registo do Dia).
+    const tiposForm = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia);
+    const tipoAtual = e.regTipo.value;
+    e.regTipo.innerHTML = tiposForm.map(tt => `<option value="${escapeAttr(tt.id || '')}">${escapeHtml(tt.nome)}</option>`).join('');
+    e.regTipo.value = tiposForm.some(tt => String(tt.id || '') === tipoAtual) ? tipoAtual : '';
+    this.aplicarTipoRegisto();
+
     this.renderProjetosRegisto();
 
     if (!e.regData.value) e.regData.value = DateUtil.todayISO();
@@ -3706,6 +3720,12 @@ const App = {
     const valorFiltroPessoa = e.fRegPessoa.value || this.filtrosRegisto.pessoa;
     e.fRegPessoa.innerHTML = filtrosPessoas;
     e.fRegPessoa.value = valorFiltroPessoa;
+  },
+  // Um tipo de trabalho que não exige projeto (ex.: Formação interna) esconde Projeto/Tarefa.
+  aplicarTipoRegisto() {
+    const e = this.els;
+    const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
+    e.regProjetoWrap.style.display = tipo.requerProjeto ? '' : 'none';
   },
   // Só mostra, no registo de horas, os projetos aos quais a pessoa selecionada já está
   // efetivamente associada (tem pelo menos uma tarefa com o seu recurso atribuído) — evita
@@ -3842,6 +3862,31 @@ const App = {
     const tarefaNome = e.regTarefa.value;
     const horas = parseFloat(e.regHoras.value);
     const notas = e.regNotas.value.trim();
+    const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
+
+    if (!tipo.requerProjeto) {
+      // Atividade que não é de projeto (Formação interna, etc.) — sem projeto nem tarefa.
+      if (!pessoa || !data || !horas || horas <= 0) {
+        e.regMsg.textContent = 'Preenche pessoa, data e horas.';
+        e.regMsg.style.color = 'var(--vermelho)';
+        return;
+      }
+      if (!this.recursosPermitidosRegisto().some(r => r.nome === pessoa)) {
+        e.regMsg.textContent = 'Não tens permissão para registar horas nesta pessoa.';
+        e.regMsg.style.color = 'var(--vermelho)';
+        return;
+      }
+      this.submeterRegisto({
+        data, pessoa, tipoTrabalhoId: tipo.id, projetoIdInterno: '', projetoNome: '', projetoId: null, cliente: '',
+        tarefaNome: '', tarefaId: null, horas, notas,
+        origem: 'app-gestor-projetos', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
+      });
+      e.regMsg.textContent = 'Registo guardado.';
+      e.regMsg.style.color = 'var(--verde)';
+      e.regHoras.value = '';
+      e.regNotas.value = '';
+      return;
+    }
 
     if (!pessoa || !data || !projetoIdInterno || !tarefaNome || !horas || horas <= 0) {
       e.regMsg.textContent = 'Preenche pessoa, data, projeto, tarefa e horas.';
@@ -4107,11 +4152,13 @@ const App = {
     if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
     this.calMesAtual = { ano, mes };
     this.renderCalendarioRegisto();
+    this.centrarHojeCalendario();
   },
   irParaHojeCalendario() {
     const hoje = new Date();
     this.calMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
     this.renderCalendarioRegisto();
+    this.centrarHojeCalendario();
   },
   aplicarFiltrosCalendarioRegisto() {
     const e = this.els;
@@ -4226,6 +4273,7 @@ const App = {
     this.modoRegistoDia = modo;
     this.gravarPrefUI('modoRegistoDia', modo);
     this.aplicarModoRegistoDia();
+    this.centrarHojeCalendario();
   },
 
   // ---------- Tab: Registo do Dia (vista mensal) ----------
@@ -4264,11 +4312,13 @@ const App = {
     if (mes < 0) { mes = 11; ano--; } else if (mes > 11) { mes = 0; ano++; }
     this.mesRegistoDiaAtual = { ano, mes };
     this.renderRegistoDia();
+    this.centrarHojeCalendario();
   },
   irParaHojeDiaRegisto() {
     const hoje = new Date();
     this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() };
     this.renderRegistoDia();
+    this.centrarHojeCalendario();
   },
   renderRegistoDia() {
     const e = this.els;
@@ -4759,17 +4809,37 @@ const App = {
   // continua a ser a própria Faturação, %/valor fixo, não este relatório). Agrupado por tarefa,
   // com subtotal de cada uma, e um resumo por consultor no fim. Entrega-se por impressão do
   // browser (mesmo mecanismo do "PDF" do Gantt) — ver a regra @media print em css/style.css.
-  abrirRelatorioHoras() {
+  // Chamado a partir da Faturação (sem argumentos: usa os filtros de lá) ou do planeamento do
+  // projeto (projetoIdArg + De/Até escolhidos no modal de abrirModalRelatorioHorasProjeto).
+  abrirModalRelatorioHorasProjeto() {
+    const p = this.projetoAtivo();
+    if (!p || !this.possoEditarProjeto(p.id)) return;
+    this.abrirModal(`Relatório de horas — ${p.nome}`, `
+      <p class="hint">Deixa as datas vazias para incluir todo o histórico do projeto.</p>
+      <div class="row-2">
+        <label>De <input type="date" id="relHorasDe"></label>
+        <label>Até <input type="date" id="relHorasAte"></label>
+      </div>
+      <button type="button" class="btn btn-primary" id="btnGerarRelHoras" style="margin-top:10px;">📄 Gerar relatório</button>`);
+    document.getElementById('btnGerarRelHoras').addEventListener('click', () => {
+      const de = document.getElementById('relHorasDe').value || null;
+      const ate = document.getElementById('relHorasAte').value || null;
+      this.fecharModal();
+      this.abrirRelatorioHoras(p.id, de, ate);
+    });
+  },
+  abrirRelatorioHoras(projetoIdArg, deArg, ateArg) {
     const e = this.els;
-    const projetoId = e.fFatProjeto.value;
+    const doModal = !!projetoIdArg;
+    const projetoId = doModal ? projetoIdArg : e.fFatProjeto.value;
     if (!projetoId) { this.toast('Escolhe um projeto no filtro para gerar o relatório.'); return; }
     const p = this.state.projetos[projetoId];
     // Só Administrador, ou o Gestor DESTE projeto — nunca um Gestor de outro projeto, mesmo que
     // consiga chamar isto diretamente (a lista de projetos do filtro já só mostra os dele, isto é
     // só a defesa a mais, como em todo o Acompanhamento/Faturação).
     if (!p || !this.possoEditarProjeto(p.id)) return;
-    const de = e.fFatDe.value || null;
-    const ate = e.fFatAte.value || null;
+    const de = doModal ? (deArg || null) : (e.fFatDe.value || null);
+    const ate = doModal ? (ateArg || null) : (e.fFatAte.value || null);
     const registos = this.state.registos.filter(r => {
       if (!this.registoPertenceAoProjeto(r, p)) return false;
       if (de && r.data < de) return false;
@@ -5021,12 +5091,11 @@ const App = {
   // depois o projeto, repetir para outro projeto do mesmo Gestor sem sair daqui).
   //
   // "reuniaoAtiva" (data + feedback) é só estado de sessão do browser, nunca gravado à parte —
-  // propaga-se para o Ponto de Situação de CADA projeto que se abra a seguir (ver
-  // garantirPontoSituacaoParaReuniao), para não ser preciso reescrever a mesma nota de reunião
-  // projeto a projeto quando um Gestor tem vários.
+  // serve de valores por omissão para o botão "+ Ponto de Situação" (ver criarPontoSituacao), que
+  // é a ÚNICA forma de criar um Ponto de Situação: nunca é criado sozinho.
   //
-  // Pontos de situação: os automáticos (ligados à reunião) e o botão "avulso" só o Administrador
-  // cria; qualquer um pode editar o feedback/data depois (mesma regra de sempre). Next steps:
+  // Pontos de situação: só o Administrador cria (pelo botão); qualquer um pode editar o
+  // feedback/data depois (mesma regra de sempre). Next steps:
   // Administrador e Gestor do projeto podem criar — sempre através do modal (nunca ficam sem
   // tarefa ligada: ou já existe uma que sirva, ou cria-se logo uma nova a partir da descrição, ver
   // abrirModalNovoProximoPasso) — e cada um só edita/apaga os que criou, exceto o Administrador
@@ -5034,54 +5103,48 @@ const App = {
   projetoAcompanhamento() {
     return this.state.projetos[this.acompanhamentoProjetoId] || null;
   },
+  // A lista de Next Steps em baixo acompanha o Gestor/Projeto escolhidos aqui em cima (os
+  // dropdowns dela continuam a poder alargar a seleção a mais gestores/projetos).
   selecionarGestorAcompanhamento(gestorId) {
     this.acompanhamentoGestorId = gestorId;
     const pAtual = this.projetoAcompanhamento();
     if (!pAtual || pAtual.gestorId !== gestorId) this.acompanhamentoProjetoId = '';
+    this.filtrosNextSteps.gestores = gestorId ? [gestorId] : [];
+    this.filtrosNextSteps.projetos = [];
     this.renderAcompanhamento();
   },
   selecionarProjetoAcompanhamento(projetoId) {
     this.acompanhamentoProjetoId = projetoId;
     const p = this.projetoAcompanhamento();
-    if (p && this.souAdmin()) this.garantirPontoSituacaoParaReuniao(p);
-    this.persist();
+    if (p) { this.filtrosNextSteps.gestores = p.gestorId ? [p.gestorId] : []; this.filtrosNextSteps.projetos = [p.id]; }
+    else this.filtrosNextSteps.projetos = [];
     this.renderAcompanhamento();
   },
-  // Atualiza a data/feedback partilhados da reunião ativa — e, se já houver um projeto aberto,
-  // propaga de imediato para o Ponto de Situação desse projeto (ver garantirPontoSituacaoParaReuniao).
+  // Data/feedback da reunião: só ficam guardados em memória até se clicar em "+ Ponto de
+  // Situação" — nunca criam nem alteram nada sozinhos.
   atualizarReuniaoAtiva(campo, valor) {
     if (campo === 'data' && valor && !this.anoDataPlausivel(valor)) return;
     this.reuniaoAtiva[campo] = valor;
-    const p = this.projetoAcompanhamento();
-    if (p && this.souAdmin()) this.garantirPontoSituacaoParaReuniao(p);
-    this.persist();
-    this.renderAcompanhamento();
   },
-  // Garante que o projeto tem um Ponto de Situação para a data da reunião ativa (hoje, por
-  // omissão), com o feedback atual — encontra-o pela data se já existir (idempotente: reabrir o
-  // mesmo projeto na mesma reunião, ou mudar o feedback a meio, nunca duplica a linha, só
-  // atualiza-a), ou cria um novo. Só o Administrador cria/atualiza (mesma regra de sempre);
-  // devolve o ponto de situação encontrado/criado, ou null se não tiver permissão.
-  garantirPontoSituacaoParaReuniao(p) {
-    if (!this.souAdmin()) return p.pontosSituacao[0] || null;
+  // Ponto de Situação a que um novo next step fica associado: o da data da reunião, senão o mais
+  // recente do projeto (ou null se ainda não há nenhum — cria-se com o botão, nunca sozinho).
+  pontoSituacaoDaReuniao(p) {
     const data = this.reuniaoAtiva.data || DateUtil.todayISO();
-    let ps = p.pontosSituacao.find(x => x.data === data);
-    if (!ps) {
-      ps = this.novoPontoSituacaoObj(this.reuniaoAtiva.feedback, this.perfilAtual()?.recursoId);
-      ps.data = data;
-      p.pontosSituacao.push(ps);
-    } else if (this.reuniaoAtiva.feedback) {
-      ps.feedback = this.reuniaoAtiva.feedback;
-    }
-    return ps;
+    const ordenados = [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
+    return p.pontosSituacao.find(x => x.data === data) || ordenados[ordenados.length - 1] || null;
   },
   criarPontoSituacao() {
     if (!this.souAdmin()) return;
     const p = this.projetoAcompanhamento();
     if (!p) return;
-    p.pontosSituacao.push(this.novoPontoSituacaoObj('', this.perfilAtual()?.recursoId));
+    const data = this.reuniaoAtiva.data || DateUtil.todayISO();
+    if (p.pontosSituacao.some(x => x.data === data)) { this.toast('Já existe um Ponto de Situação neste projeto nessa data.'); return; }
+    const ps = this.novoPontoSituacaoObj(this.reuniaoAtiva.feedback, this.perfilAtual()?.recursoId);
+    ps.data = data;
+    p.pontosSituacao.push(ps);
     this.persist();
     this.renderAcompanhamento();
+    this.toast('Ponto de Situação criado.');
   },
   atualizarPontoSituacao(id, campo, valor) {
     if (!this.souAdmin()) return;
@@ -5108,8 +5171,8 @@ const App = {
   abrirModalNovoProximoPasso() {
     const p = this.projetoAcompanhamento();
     if (!p || !this.possoEditarProjeto(p.id)) return;
-    const ps = this.garantirPontoSituacaoParaReuniao(p);
-    if (!ps) { this.toast('Sem Ponto de Situação para associar — pede a um Administrador para criar um.'); return; }
+    const ps = this.pontoSituacaoDaReuniao(p);
+    if (!ps) { this.toast('Este projeto ainda não tem nenhum Ponto de Situação — cria primeiro um com o botão "+ Ponto de Situação" (ou pede a um Administrador).'); return; }
     const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
     const opcoesTarefa = tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
     const consultores = this.consultoresDoProjeto(p);
@@ -5292,6 +5355,8 @@ const App = {
     const recurso = pp.responsavelId ? this.state.recursos.find(r => r.id === pp.responsavelId) : null;
     const e = this.els;
     this.irParaAba('registo');
+    e.regTipo.value = '';
+    this.aplicarTipoRegisto();
     e.regPessoa.value = recurso ? recurso.nome : '';
     this.renderProjetosRegisto();
     e.regProjeto.value = p.idInterno || '';
@@ -5848,8 +5913,17 @@ const App = {
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'dashboard') this.renderDashboard();
     if (nome === 'gantt') this.renderGanttAtual();
-    if (nome === 'dia') { this.renderRegistoDia(); this.renderCalendarioRegisto(); }
-    if (nome === 'alocacoes') this.renderCalendarioAlocacoes();
+    if (nome === 'dia') { this.renderRegistoDia(); this.renderCalendarioRegisto(); this.centrarHojeCalendario(); }
+    if (nome === 'alocacoes') { this.renderCalendarioAlocacoes(); this.centrarHojeCalendario(); }
+  },
+  // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
+  // (se o mês mostrado o incluir) fica centrado no ecrã — nem encostado ao fundo nem ao topo.
+  // Nunca corre num render normal, para não "roubar" o scroll a quem está a trabalhar.
+  centrarHojeCalendario() {
+    requestAnimationFrame(() => {
+      const hoje = [...document.querySelectorAll('.tab-panel.active .cal-dia.hoje')].find(el => el.offsetParent !== null);
+      if (hoje) hoje.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
   },
   irParaGrupo(grupo) {
     if (this.gruposAbas[this.abaAtiva] === grupo) return;
@@ -6430,6 +6504,7 @@ const App = {
     document.querySelectorAll('.link-tab').forEach(a => a.addEventListener('click', (ev) => { ev.preventDefault(); this.verFaturacaoDoProjeto(); }));
     e.regPessoa.addEventListener('change', () => this.renderProjetosRegisto());
     e.regProjeto.addEventListener('change', () => this.renderTarefasRegisto());
+    e.regTipo.addEventListener('change', () => this.aplicarTipoRegisto());
     e.formRegisto.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormRegisto(); });
     [e.fRegPessoa, e.fRegProjeto, e.fRegDe, e.fRegAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosRegisto()));
     e.fRegTexto.addEventListener('input', () => this.aplicarFiltrosRegisto());
@@ -6467,6 +6542,7 @@ const App = {
     });
     document.getElementById('btnExportFaturasCsv').addEventListener('click', () => this.exportarFaturasCsv());
     document.getElementById('btnRelatorioHoras').addEventListener('click', () => this.abrirRelatorioHoras());
+    document.getElementById('linkRelatorioHorasProjeto').addEventListener('click', (ev) => { ev.preventDefault(); this.abrirModalRelatorioHorasProjeto(); });
     // Repõe a vista normal depois de imprimir (ou de cancelar a impressão) — "afterprint" dispara
     // em ambos os casos, ao contrário de só ouvir o clique num botão "Imprimir" que nem existe
     // (é o próprio diálogo do browser a fechar-se).
