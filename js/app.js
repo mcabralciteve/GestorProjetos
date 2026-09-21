@@ -56,7 +56,7 @@ const App = {
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
-  filtrosCalendarioRegisto: { pessoa: '', projeto: '' },
+  filtrosCalendarioRegisto: { dept: '', equipa: '', pessoa: '', projeto: '' },
   calMesAtual: null,
   // Estado do Registo do Dia — só do lado do cliente, tal como filtrosCalendarioRegisto/calMesAtual
   // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
@@ -67,7 +67,7 @@ const App = {
   // Ao contrário de diaRegistoPessoa/mesRegistoDiaAtual, este fica guardado (gravarPrefUI) — é só
   // uma preferência de interface, faz sentido lembrar qual das duas vistas cada pessoa prefere.
   modoRegistoDia: 'pessoal',
-  filtrosAlocacoes: { pessoa: '', projeto: '', cliente: '' },
+  filtrosAlocacoes: { dept: '', equipa: '', pessoa: '', projeto: '', cliente: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
@@ -285,6 +285,8 @@ const App = {
       ocupMsg: document.getElementById('ocupMsg'),
       btnExportarBackup: document.getElementById('btnExportarBackup'),
       backupMsg: document.getElementById('backupMsg'),
+      fAlocDept: document.getElementById('fAlocDept'),
+      fAlocEquipa: document.getElementById('fAlocEquipa'),
       fAlocPessoa: document.getElementById('fAlocPessoa'),
       fAlocProjeto: document.getElementById('fAlocProjeto'),
       fAlocCliente: document.getElementById('fAlocCliente'),
@@ -293,6 +295,8 @@ const App = {
       btnAlocHoje: document.getElementById('btnAlocHoje'),
       alocMesLabel: document.getElementById('alocMesLabel'),
       calendarioAlocacoes: document.getElementById('calendarioAlocacoes'),
+      fCalDept: document.getElementById('fCalDept'),
+      fCalEquipa: document.getElementById('fCalEquipa'),
       fCalPessoa: document.getElementById('fCalPessoa'),
       fCalProjeto: document.getElementById('fCalProjeto'),
       btnCalMesAnt: document.getElementById('btnCalMesAnt'),
@@ -806,6 +810,44 @@ const App = {
   meusProjetosDiretamente() {
     return Object.values(this.state.projetos).filter(p => this.estouDiretamenteEnvolvidoEm(p.id));
   },
+  // Departamento/equipa de um recurso — para agrupar e filtrar os calendários de equipa por
+  // departamento → equipa → pessoa.
+  orgDoRecurso(r) {
+    const eq = r ? this.state.equipas.find(x => x.id === r.equipaId) : null;
+    const dep = eq ? this.state.departamentos.find(d => d.id === eq.departamentoId) : null;
+    return { equipaId: eq ? eq.id : '', equipaNome: eq ? eq.nome : 'Sem equipa', deptId: dep ? dep.id : '', deptNome: dep ? dep.nome : 'Sem departamento' };
+  },
+  // Preenche os selects Departamento/Equipa a partir dos recursos possíveis (a equipa só oferece as
+  // do departamento escolhido), repõe '' se o valor guardado deixou de existir, e devolve os
+  // recursos que passam nos dois filtros. Mexer no Departamento limpa Equipa e Pessoa, e mexer na
+  // Equipa limpa a Pessoa (ver reagirMudancaFiltroOrg).
+  aplicarFiltroOrg(selDept, selEquipa, recursos, f) {
+    if (!selDept || !selEquipa) return recursos;
+    const orgs = recursos.map(r => ({ r, o: this.orgDoRecurso(r) }));
+    const depts = new Map();
+    orgs.forEach(({ o }) => depts.set(o.deptId || '__sem__', o.deptNome));
+    const listaDept = [...depts.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+    selDept.innerHTML = '<option value="">Todos</option>' + listaDept.map(([id, nome]) => `<option value="${escapeAttr(id)}">${escapeHtml(nome)}</option>`).join('');
+    selDept.value = depts.has(f.dept) ? f.dept : '';
+    const equipas = new Map();
+    orgs.filter(({ o }) => !selDept.value || (o.deptId || '__sem__') === selDept.value).forEach(({ o }) => equipas.set(o.equipaId, o.equipaNome));
+    const listaEq = [...equipas.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+    selEquipa.innerHTML = '<option value="">Todas</option>' + listaEq.map(([id, nome]) => `<option value="${escapeAttr(id)}">${escapeHtml(nome)}</option>`).join('');
+    selEquipa.value = equipas.has(f.equipa) ? f.equipa : '';
+    return orgs.filter(({ o }) => (!selDept.value || (o.deptId || '__sem__') === selDept.value) && (!selEquipa.value || o.equipaId === selEquipa.value)).map(({ r }) => r);
+  },
+  // <option>s de pessoas agrupadas por departamento (<optgroup>), depois por nome.
+  opcoesPessoasPorDepartamento(recursos, valorDe) {
+    const grupos = new Map();
+    recursos.forEach(r => { const o = this.orgDoRecurso(r); (grupos.get(o.deptNome) || grupos.set(o.deptNome, []).get(o.deptNome)).push(r); });
+    return [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt')).map(([dept, lista]) =>
+      `<optgroup label="${escapeAttr(dept)}">${lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(r => `<option value="${escapeAttr(valorDe(r))}">${escapeHtml(r.nome)}</option>`).join('')}</optgroup>`).join('');
+  },
+  reagirMudancaFiltroOrg(anterior, nova) {
+    if (nova.dept !== anterior.dept) { nova.equipa = ''; nova.pessoa = ''; }
+    else if (nova.equipa !== anterior.equipa) nova.pessoa = '';
+    return nova;
+  },
   // Filtros por omissão de várias vistas (Gantt, Alocações, Registo de Horas, Calendário de
   // Registos, Capacidade) em função de quem está autenticado — mesmo o Administrador deve ver
   // primeiro o que lhe diz respeito (o seu próprio registo/equipa/projetos), não tudo misturado
@@ -815,9 +857,14 @@ const App = {
   aplicarFiltrosPorDefeito() {
     const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
     if (!meuRecurso) return;
-    this.filtrosAlocacoes.pessoa = meuRecurso.id;
+    // Os dois calendários de equipa (Alocações e Registo do Dia > Vista de equipa) abrem já na
+    // equipa/departamento da própria pessoa, com "Todas" as pessoas dessa equipa.
+    const org = this.orgDoRecurso(meuRecurso);
+    this.filtrosAlocacoes.dept = org.deptId;
+    this.filtrosAlocacoes.equipa = org.equipaId;
+    this.filtrosCalendarioRegisto.dept = org.deptId;
+    this.filtrosCalendarioRegisto.equipa = org.equipaId;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
-    this.filtrosCalendarioRegisto.pessoa = meuRecurso.nome;
     this.diaRegistoPessoa = meuRecurso.nome;
     if (meuRecurso.equipaId) this.filtroEquipaCap = meuRecurso.equipaId;
     // Só faz sentido para o Administrador (é o único que vê este filtro — ver renderProjetoSelect)
@@ -3395,7 +3442,8 @@ const App = {
   },
   aplicarFiltrosAlocacoes() {
     const e = this.els;
-    this.filtrosAlocacoes = { pessoa: e.fAlocPessoa.value, projeto: e.fAlocProjeto.value, cliente: e.fAlocCliente.value };
+    this.filtrosAlocacoes = this.reagirMudancaFiltroOrg(this.filtrosAlocacoes,
+      { dept: e.fAlocDept.value, equipa: e.fAlocEquipa.value, pessoa: e.fAlocPessoa.value, projeto: e.fAlocProjeto.value, cliente: e.fAlocCliente.value });
     this.renderCalendarioAlocacoes();
   },
   renderCalendarioAlocacoes() {
@@ -3412,10 +3460,12 @@ const App = {
     const recursosPermitidos = this.recursosPermitidosRegisto();
     const projetosPermitidos = this.projetosAlocacaoPermitidos();
 
+    // Departamento → Equipa → Pessoa (pessoas agrupadas por departamento no próprio select).
+    const recursosOrg = this.aplicarFiltroOrg(e.fAlocDept, e.fAlocEquipa, recursosPermitidos, this.filtrosAlocacoes);
     if (e.fAlocPessoa) {
       const valorPessoa = this.filtrosAlocacoes.pessoa;
-      e.fAlocPessoa.innerHTML = '<option value="">Todas</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
-      e.fAlocPessoa.value = recursosPermitidos.some(r => r.id === valorPessoa) ? valorPessoa : '';
+      e.fAlocPessoa.innerHTML = '<option value="">Todas</option>' + this.opcoesPessoasPorDepartamento(recursosOrg, r => r.id);
+      e.fAlocPessoa.value = recursosOrg.some(r => r.id === valorPessoa) ? valorPessoa : '';
     }
     if (e.fAlocProjeto) {
       const valorProjeto = this.filtrosAlocacoes.projeto;
@@ -3429,12 +3479,14 @@ const App = {
       e.fAlocCliente.value = clientes.includes(valorCliente) ? valorCliente : '';
     }
     this.filtrosAlocacoes = {
+      dept: e.fAlocDept ? e.fAlocDept.value : '',
+      equipa: e.fAlocEquipa ? e.fAlocEquipa.value : '',
       pessoa: e.fAlocPessoa ? e.fAlocPessoa.value : '',
       projeto: e.fAlocProjeto ? e.fAlocProjeto.value : '',
       cliente: e.fAlocCliente ? e.fAlocCliente.value : ''
     };
     const f = this.filtrosAlocacoes;
-    const recursosAtivos = f.pessoa ? recursosPermitidos.filter(r => r.id === f.pessoa) : recursosPermitidos;
+    const recursosAtivos = f.pessoa ? recursosOrg.filter(r => r.id === f.pessoa) : recursosOrg;
 
     const { ano, mes } = this.alocMesAtual;
     const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -3466,10 +3518,10 @@ const App = {
           if (f.cliente && projeto.cliente !== f.cliente) return;
           const horas = Capacidade.horasTarefaNoDia(projeto, tarefa, r.id, cursor);
           if (horas <= 0) return;
-          itens.push({ pessoa: r.nome, projetoId: projeto.id, projetoNome: projeto.nome, cliente: projeto.cliente || '', tarefaNome: tarefa.nome, horas });
+          itens.push({ pessoa: r.nome, dept: this.orgDoRecurso(r).deptNome, projetoId: projeto.id, projetoNome: projeto.nome, cliente: projeto.cliente || '', tarefaNome: tarefa.nome, horas });
         });
       });
-      itens.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt'));
+      itens.sort((a, b) => a.dept.localeCompare(b.dept, 'pt') || a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt'));
       const totalHoras = itens.reduce((s, x) => s + x.horas, 0);
       // Cor sempre por PROJETO (não por pessoa): mantém-se útil mesmo com uma só pessoa
       // selecionada no filtro, caso em que uma cor por pessoa seria sempre a mesma para tudo.
@@ -4162,7 +4214,8 @@ const App = {
   },
   aplicarFiltrosCalendarioRegisto() {
     const e = this.els;
-    this.filtrosCalendarioRegisto = { pessoa: e.fCalPessoa.value, projeto: e.fCalProjeto.value };
+    this.filtrosCalendarioRegisto = this.reagirMudancaFiltroOrg(this.filtrosCalendarioRegisto,
+      { dept: e.fCalDept.value, equipa: e.fCalEquipa.value, pessoa: e.fCalPessoa.value, projeto: e.fCalProjeto.value });
     this.renderCalendarioRegisto();
   },
   // Vista mensal tipo Outlook: uma grelha de semanas/dias, com uma barra por registo em cada dia
@@ -4185,11 +4238,15 @@ const App = {
     });
     projetosDisponiveis.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
 
+    // Departamento → Equipa → Pessoa (pessoas agrupadas por departamento no próprio select).
+    const recursosCal = pessoasDisponiveis.map(n => this.state.recursos.find(r => r.nome === n) || { id: '', nome: n, equipaId: null });
+    const recursosOrg = this.aplicarFiltroOrg(e.fCalDept, e.fCalEquipa, recursosCal, this.filtrosCalendarioRegisto);
     if (e.fCalPessoa) {
       const valorPessoa = this.filtrosCalendarioRegisto.pessoa;
-      e.fCalPessoa.innerHTML = '<option value="">Todas</option>' + pessoasDisponiveis.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join('');
-      e.fCalPessoa.value = pessoasDisponiveis.includes(valorPessoa) ? valorPessoa : '';
+      e.fCalPessoa.innerHTML = '<option value="">Todas</option>' + this.opcoesPessoasPorDepartamento(recursosOrg, r => r.nome);
+      e.fCalPessoa.value = recursosOrg.some(r => r.nome === valorPessoa) ? valorPessoa : '';
     }
+    const nomesOrg = new Set(recursosOrg.map(r => r.nome));
     if (e.fCalProjeto) {
       const valorProjeto = this.filtrosCalendarioRegisto.projeto;
       e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
@@ -4203,7 +4260,7 @@ const App = {
     // encontrá-la sozinho. O filtro real usa antes os valores já mostrados no ecrã.
     const pessoaFiltro = e.fCalPessoa ? e.fCalPessoa.value : '';
     const projetoFiltro = e.fCalProjeto ? e.fCalProjeto.value : '';
-    const registosFiltrados = registosPermitidos.filter(r => (!pessoaFiltro || r.pessoa === pessoaFiltro) && (!projetoFiltro || r.projetoIdInterno === projetoFiltro));
+    const registosFiltrados = registosPermitidos.filter(r => nomesOrg.has(r.pessoa) && (!pessoaFiltro || r.pessoa === pessoaFiltro) && (!projetoFiltro || r.projetoIdInterno === projetoFiltro));
 
     const { ano, mes } = this.calMesAtual;
     const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -4218,10 +4275,11 @@ const App = {
 
     const porDia = {};
     registosFiltrados.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
-    Object.values(porDia).forEach(lista => lista.sort((a, b) => a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt')));
+    const deptDe = new Map(recursosOrg.map(r => [r.nome, this.orgDoRecurso(r).deptNome]));
+    Object.values(porDia).forEach(lista => lista.sort((a, b) => (deptDe.get(a.pessoa) || '').localeCompare(deptDe.get(b.pessoa) || '', 'pt') || a.pessoa.localeCompare(b.pessoa, 'pt') || a.projetoNome.localeCompare(b.projetoNome, 'pt')));
 
     const hojeISO = DateUtil.todayISO();
-    const mostrarPessoaNaBarra = !pessoaFiltro && pessoasDisponiveis.length > 1;
+    const mostrarPessoaNaBarra = !pessoaFiltro && recursosOrg.length > 1;
     const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
     let cursor = new Date(inicioGrelha);
@@ -6514,6 +6572,7 @@ const App = {
     });
     document.getElementById('btnExportRegistosCsv').addEventListener('click', () => this.exportarRegistosCsv());
 
+    [e.fCalDept, e.fCalEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto()); });
     if (e.fCalPessoa) e.fCalPessoa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.fCalProjeto) e.fCalProjeto.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
@@ -6552,6 +6611,7 @@ const App = {
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.btnExportarBackup) e.btnExportarBackup.addEventListener('click', () => this.exportarBackup());
+    [e.fAlocDept, e.fAlocEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosAlocacoes()); });
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocCliente) e.fAlocCliente.addEventListener('change', () => this.aplicarFiltrosAlocacoes());

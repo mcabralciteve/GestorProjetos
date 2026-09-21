@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260918a">
+<link rel="stylesheet" href="css/style.css?v=20260921a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -522,6 +522,8 @@
     <p class="pagina-sub">Vista mensal da alocação planeada de cada pessoa aos projetos — cada barra representa uma tarefa ativa nesse dia, com altura proporcional à média de horas por dia útil (horas atribuídas à tarefa a dividir pelos dias úteis do seu prazo). Clica numa barra para abrir esse projeto no Gantt. Administrador vê toda a equipa; Gestor de Projeto só vê quem está nos seus projetos. Com uma Pessoa escolhida no filtro, o fundo de cada dia mostra também o semáforo de ocupação desse dia (ver legenda).</p>
     <div class="legend-row" id="legendaOcupacao"></div>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Departamento <select id="fAlocDept"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Equipa <select id="fAlocEquipa"><option value="">Todas</option></select></label>
       <label class="zoom-label">Pessoa <select id="fAlocPessoa"><option value="">Todas</option></select></label>
       <label class="zoom-label">Projeto <select id="fAlocProjeto"><option value="">Todos</option></select></label>
       <label class="zoom-label">Cliente <select id="fAlocCliente"><option value="">Todos</option></select></label>
@@ -708,6 +710,8 @@
     <div id="diaModoEquipa" hidden>
       <p class="pagina-sub">Vista mensal, só de leitura, das horas lançadas por toda a gente — cada barra representa um registo desse dia, com altura proporcional às horas.</p>
       <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Departamento <select id="fCalDept"><option value="">Todos</option></select></label>
+        <label class="zoom-label">Equipa <select id="fCalEquipa"><option value="">Todas</option></select></label>
         <label class="zoom-label">Pessoa <select id="fCalPessoa"><option value="">Todas</option></select></label>
         <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
       </div>
@@ -937,14 +941,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260918a"></script>
-<script src="js/auth.js?v=20260918a"></script>
-<script src="js/sync.js?v=20260918a"></script>
-<script src="js/gantt.js?v=20260918a"></script>
-<script src="js/capacidade.js?v=20260918a"></script>
-<script src="js/portfolio-gantt.js?v=20260918a"></script>
-<script src="js/reserva-viatura.js?v=20260918a"></script>
-<script src="js/backup.js?v=20260918a"></script>
-<script src="js/app.js?v=20260918a"></script>
+<script src="js/supabase-config.js?v=20260921a"></script>
+<script src="js/auth.js?v=20260921a"></script>
+<script src="js/sync.js?v=20260921a"></script>
+<script src="js/gantt.js?v=20260921a"></script>
+<script src="js/capacidade.js?v=20260921a"></script>
+<script src="js/portfolio-gantt.js?v=20260921a"></script>
+<script src="js/reserva-viatura.js?v=20260921a"></script>
+<script src="js/backup.js?v=20260921a"></script>
+<script src="js/app.js?v=20260921a"></script>
 </body>
 </html>
