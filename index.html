@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260922b">
+<link rel="stylesheet" href="css/style.css?v=20260922c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -607,27 +607,59 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>Ausências</h2>
-      <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
     </div>
-    <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas.</p>
-    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
-      <label class="zoom-label">Direção <select id="fAusDept"><option value="">Todas</option></select></label>
-      <label class="zoom-label">Área <select id="fAusEquipa"><option value="">Todas</option></select></label>
-      <label class="zoom-label">Colaborador <select id="fAusPessoa"><option value="">Todos</option></select></label>
+    <div class="filters" style="display:flex;gap:8px;margin-bottom:12px;">
+      <button type="button" class="chip-projeto ativo" id="btnModoAusLista">📋 Lista</button>
+      <button type="button" class="chip-projeto" id="btnModoAusCalendario">🗓 Calendário de Férias</button>
     </div>
-    <div class="table-scroll">
-      <table class="tabela-crud" id="tabelaAusencias">
-        <thead><tr>
-          <th data-col="recurso" data-sort="recurso">Consultor<span class="col-resizer"></span></th>
-          <th data-col="tipo" data-sort="tipo">Tipo<span class="col-resizer"></span></th>
-          <th data-col="dataInicio" data-sort="dataInicio">Início<span class="col-resizer"></span></th>
-          <th data-col="dataFim" data-sort="dataFim">Fim<span class="col-resizer"></span></th>
-          <th data-col="notas" data-sort="notas">Notas<span class="col-resizer"></span></th>
-          <th data-col="estado" data-sort="estado">Estado<span class="col-resizer"></span></th>
-          <th></th>
-        </tr></thead>
-        <tbody id="corpoTabelaAusencias"></tbody>
-      </table>
+
+    <div id="ausModoLista">
+      <div class="pagina-head">
+        <span></span>
+        <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
+      </div>
+      <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas. Para férias, o Calendário ao lado é mais simples.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Direção <select id="fAusDept"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Área <select id="fAusEquipa"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Colaborador <select id="fAusPessoa"><option value="">Todos</option></select></label>
+      </div>
+      <div class="table-scroll">
+        <table class="tabela-crud" id="tabelaAusencias">
+          <thead><tr>
+            <th data-col="recurso" data-sort="recurso">Consultor<span class="col-resizer"></span></th>
+            <th data-col="tipo" data-sort="tipo">Tipo<span class="col-resizer"></span></th>
+            <th data-col="dataInicio" data-sort="dataInicio">Início<span class="col-resizer"></span></th>
+            <th data-col="dataFim" data-sort="dataFim">Fim<span class="col-resizer"></span></th>
+            <th data-col="notas" data-sort="notas">Notas<span class="col-resizer"></span></th>
+            <th data-col="estado" data-sort="estado">Estado<span class="col-resizer"></span></th>
+            <th></th>
+          </tr></thead>
+          <tbody id="corpoTabelaAusencias"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="ausModoCalendario" hidden>
+      <p class="pagina-sub">Clica num dia para marcar/desmarcar férias — feriados e fins de semana já vêm bloqueados. No fim, carrega em "Submeter alterações": só o que mudou face ao estado anterior é enviado para aprovação do teu Team Leader/Diretor, com conhecimento de RH.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <label class="zoom-label">Colaborador <select id="selPessoaCalFerias"></select></label>
+        <label class="zoom-label">
+          <button type="button" class="btn-icon" id="btnAnoFeriasAnterior" title="Ano anterior">◀</button>
+          <b id="calFeriasAnoLabel" style="margin:0 6px;">—</b>
+          <button type="button" class="btn-icon" id="btnAnoFeriasSeguinte" title="Ano seguinte">▶</button>
+        </label>
+        <span class="legend-row" style="margin:0;">
+          <span><span class="legend-swatch" style="background:var(--azul);"></span> Férias</span>
+          <span><span class="legend-swatch" style="background:var(--cinza-100);"></span> Livre</span>
+          <span><span class="legend-swatch" style="background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);"></span> Indisponível</span>
+        </span>
+      </div>
+      <div id="calendarioFerias" class="ano-ferias-grelha"></div>
+      <div class="pagina-head" style="margin-top:16px;">
+        <span id="resumoFerias" class="hint"></span>
+        <button type="button" class="btn btn-primary" id="btnSubmeterFerias" disabled>Submeter alterações</button>
+      </div>
     </div>
   </div>
 </section>
@@ -956,14 +988,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260922b"></script>
-<script src="js/auth.js?v=20260922b"></script>
-<script src="js/sync.js?v=20260922b"></script>
-<script src="js/gantt.js?v=20260922b"></script>
-<script src="js/capacidade.js?v=20260922b"></script>
-<script src="js/portfolio-gantt.js?v=20260922b"></script>
-<script src="js/reserva-viatura.js?v=20260922b"></script>
-<script src="js/backup.js?v=20260922b"></script>
-<script src="js/app.js?v=20260922b"></script>
+<script src="js/supabase-config.js?v=20260922c"></script>
+<script src="js/auth.js?v=20260922c"></script>
+<script src="js/sync.js?v=20260922c"></script>
+<script src="js/gantt.js?v=20260922c"></script>
+<script src="js/capacidade.js?v=20260922c"></script>
+<script src="js/portfolio-gantt.js?v=20260922c"></script>
+<script src="js/reserva-viatura.js?v=20260922c"></script>
+<script src="js/backup.js?v=20260922c"></script>
+<script src="js/app.js?v=20260922c"></script>
 </body>
 </html>
