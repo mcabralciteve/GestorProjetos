@@ -3725,7 +3725,7 @@ const App = {
     e.ausModoLista.hidden = !lista;
     if (e.ausModoEquipa) e.ausModoEquipa.hidden = !equipa;
     e.ausModoCalendario.hidden = !calendario;
-    if (e.ausFiltrosPartilhados) e.ausFiltrosPartilhados.style.display = calendario ? 'none' : '';
+    if (e.ausFiltrosPartilhados) e.ausFiltrosPartilhados.style.display = calendario ? 'none' : 'flex';
     if (e.btnModoAusLista) e.btnModoAusLista.classList.toggle('ativo', lista);
     if (e.btnModoAusEquipa) e.btnModoAusEquipa.classList.toggle('ativo', equipa);
     if (e.btnModoAusCalendario) e.btnModoAusCalendario.classList.toggle('ativo', calendario);
@@ -3896,7 +3896,14 @@ const App = {
         : `${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
       const intervalosDoAno = this.calcularIntervalosFerias(this.calFeriasSelecao, recurso.id)
         .filter(r => r.dataInicio.slice(0, 4) === String(this.calFeriasAno) || r.dataFim.slice(0, 4) === String(this.calFeriasAno));
-      const totalDias = [...this.calFeriasSelecao].filter(iso => iso.slice(0, 4) === String(this.calFeriasAno)).length;
+      // calFeriasSelecao pode conter fins de semana/feriados "atravessados" dentro de um período já
+      // gravado (ver recarregarSelecaoFerias, que repõe o intervalo completo dataInicio→dataFim) —
+      // para a contagem só interessam os dias úteis realmente gastos em férias.
+      const diaUtil = (iso) => {
+        const dow = DateUtil.parseISO(iso).getDay();
+        return dow !== 0 && dow !== 6 && !this.state.feriados.some(f => f.data === iso);
+      };
+      const totalDias = [...this.calFeriasSelecao].filter(iso => iso.slice(0, 4) === String(this.calFeriasAno) && diaUtil(iso)).length;
       e.resumoDiasFerias.textContent = totalDias
         ? `Férias marcadas em ${this.calFeriasAno} (${totalDias} dia(s)): ${intervalosDoAno.map(fmtPeriodo).join(', ')}`
         : `Sem férias marcadas em ${this.calFeriasAno}.`;
