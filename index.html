@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260922c">
+<link rel="stylesheet" href="css/style.css?v=20260922d">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -610,7 +610,14 @@
     </div>
     <div class="filters" style="display:flex;gap:8px;margin-bottom:12px;">
       <button type="button" class="chip-projeto ativo" id="btnModoAusLista">📋 Lista</button>
+      <button type="button" class="chip-projeto" id="btnModoAusEquipa" style="display:none;">📅 Vista de Equipa</button>
       <button type="button" class="chip-projeto" id="btnModoAusCalendario">🗓 Calendário de Férias</button>
+    </div>
+
+    <div id="ausFiltrosPartilhados" class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Direção <select id="fAusDept"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Área <select id="fAusEquipa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Colaborador <select id="fAusPessoa"><option value="">Todos</option></select></label>
     </div>
 
     <div id="ausModoLista">
@@ -619,11 +626,6 @@
         <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
       </div>
       <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas. Para férias, o Calendário ao lado é mais simples.</p>
-      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
-        <label class="zoom-label">Direção <select id="fAusDept"><option value="">Todas</option></select></label>
-        <label class="zoom-label">Área <select id="fAusEquipa"><option value="">Todas</option></select></label>
-        <label class="zoom-label">Colaborador <select id="fAusPessoa"><option value="">Todos</option></select></label>
-      </div>
       <div class="table-scroll">
         <table class="tabela-crud" id="tabelaAusencias">
           <thead><tr>
@@ -638,6 +640,17 @@
           <tbody id="corpoTabelaAusencias"></tbody>
         </table>
       </div>
+    </div>
+
+    <div id="ausModoEquipa" hidden>
+      <p class="pagina-sub">Ausências da tua equipa/departamento, por dia — a cor identifica a pessoa (a mesma usada nos outros calendários da app); um contorno tracejado com 🟡 assinala um pedido ainda pendente de aprovação.</p>
+      <div class="cal-topbar">
+        <button type="button" class="btn btn-sm" id="btnEquipaAusMesAnt">‹</button>
+        <button type="button" class="btn btn-sm" id="btnEquipaAusHoje">Hoje</button>
+        <button type="button" class="btn btn-sm" id="btnEquipaAusMesSeg">›</button>
+        <strong id="equipaAusMesLabel"></strong>
+      </div>
+      <div id="calendarioEquipaAusencias" class="calendario-registos"></div>
     </div>
 
     <div id="ausModoCalendario" hidden>
@@ -655,11 +668,17 @@
           <span><span class="legend-swatch" style="background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);"></span> Indisponível</span>
         </span>
       </div>
-      <div id="calendarioFerias" class="ano-ferias-grelha"></div>
-      <div class="pagina-head" style="margin-top:16px;">
+      <p id="resumoDiasFerias" class="hint" style="margin:0 0 8px;"></p>
+      <div class="pagina-head" style="margin-bottom:6px;">
         <span id="resumoFerias" class="hint"></span>
         <button type="button" class="btn btn-primary" id="btnSubmeterFerias" disabled>Submeter alterações</button>
       </div>
+      <div class="pagina-head" style="margin-bottom:10px;">
+        <span id="resumoDecisoesFerias" class="hint"></span>
+        <button type="button" class="btn btn-primary" id="btnSubmeterDecisoesFerias" hidden>Submeter decisões</button>
+      </div>
+      <div id="calendarioFerias" class="ano-ferias-grelha"></div>
+      <p class="hint" style="margin-top:6px;">Um pedido pendente de outra pessoa (que possas decidir) tem um clique próprio: 🟡 por decidir → verde a aprovar → vermelho a rejeitar → 🟡 outra vez.</p>
     </div>
   </div>
 </section>
@@ -988,14 +1007,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260922c"></script>
-<script src="js/auth.js?v=20260922c"></script>
-<script src="js/sync.js?v=20260922c"></script>
-<script src="js/gantt.js?v=20260922c"></script>
-<script src="js/capacidade.js?v=20260922c"></script>
-<script src="js/portfolio-gantt.js?v=20260922c"></script>
-<script src="js/reserva-viatura.js?v=20260922c"></script>
-<script src="js/backup.js?v=20260922c"></script>
-<script src="js/app.js?v=20260922c"></script>
+<script src="js/supabase-config.js?v=20260922d"></script>
+<script src="js/auth.js?v=20260922d"></script>
+<script src="js/sync.js?v=20260922d"></script>
+<script src="js/gantt.js?v=20260922d"></script>
+<script src="js/capacidade.js?v=20260922d"></script>
+<script src="js/portfolio-gantt.js?v=20260922d"></script>
+<script src="js/reserva-viatura.js?v=20260922d"></script>
+<script src="js/backup.js?v=20260922d"></script>
+<script src="js/app.js?v=20260922d"></script>
 </body>
 </html>

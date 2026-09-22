@@ -706,6 +706,11 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .dia-ferias.fora-mes{visibility:hidden;cursor:default;}
 .dia-ferias.bloqueado{cursor:not-allowed;background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);color:var(--cinza-400);}
 .dia-ferias.selecionado{background:var(--azul);color:#fff;font-weight:700;}
+/* Pedido de outra pessoa pendente de decisão (ver App.alternarDiaFerias) — três estados possíveis
+   a cada clique: por decidir (amarelo) → aprovar (verde) → rejeitar (vermelho) → por decidir. */
+.dia-ferias.decisao-pendente{background:#fff3b0;color:var(--cinza-900);font-weight:700;}
+.dia-ferias.decisao-aprovar{background:var(--verde);color:#fff;font-weight:700;}
+.dia-ferias.decisao-rejeitar{background:var(--vermelho);color:#fff;font-weight:700;}
 .dia-ferias.hoje{box-shadow:inset 0 0 0 2px var(--vermelho);}
 .dia-ferias:not(.bloqueado):not(.fora-mes):hover{filter:brightness(0.92);}
 :root[data-tema="escuro"] .dia-ferias.bloqueado{background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);}
