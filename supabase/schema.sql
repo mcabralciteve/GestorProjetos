@@ -122,6 +122,17 @@ create table if not exists public.ausencias (
   tipo text not null default 'Férias',
   notas text not null default ''
 );
+-- Aprovação: uma ausência criada pela própria pessoa nasce "pendente" (só o Team Leader/Diretor/
+-- Administrador aprova); criada por quem já a pode aprovar nasce "aprovada" — ver App.adicionarAusencia.
+-- Registos anteriores a esta coluna ficam "aprovada" (já contavam como indisponibilidade, sem passar
+-- por nenhum pedido — não faz sentido pedirem-se a si próprios agora).
+alter table public.ausencias add column if not exists estado text not null default 'aprovada';
+alter table public.ausencias drop constraint if exists ausencias_estado_check;
+alter table public.ausencias add constraint ausencias_estado_check check (estado in ('pendente','aprovada','rejeitada'));
+alter table public.ausencias add column if not exists criado_por uuid references public.recursos(id) on delete set null;
+alter table public.ausencias add column if not exists decidido_por uuid references public.recursos(id) on delete set null;
+alter table public.ausencias add column if not exists decidido_em timestamptz;
+alter table public.ausencias add column if not exists motivo_rejeicao text not null default '';
 
 -- ---------- Projetos ----------
 create table if not exists public.projetos (
@@ -350,6 +361,9 @@ create table if not exists public.configuracoes (
 alter table public.configuracoes add column if not exists ocupacao_limite_baixo numeric not null default 60;
 alter table public.configuracoes add column if not exists ocupacao_limite_alto numeric not null default 80;
 alter table public.configuracoes add column if not exists ocupacao_limite_critico numeric not null default 100;
+-- Email de RH notificado (mailto, ver App.enviarEmailAusencia) sempre que uma ausência é criada,
+-- alterada, aprovada, rejeitada ou eliminada — a par do Team Leader/Diretor da pessoa.
+alter table public.configuracoes add column if not exists email_rh text not null default '';
 insert into public.configuracoes (id) values (1) on conflict (id) do nothing;
 
 -- Depois de alterar colunas por SQL direto, força a API (PostgREST) a esquecer a "schema cache"

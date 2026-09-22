@@ -470,6 +470,9 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 /* Next step aberto/em curso cuja data prevista já passou (ver App.proximoPassoAtrasado) —
    Acompanhamento e Todos os Next Steps. */
 .linha-atrasada td{background:#fff2e8;}
+/* Ausência a aguardar aprovação do Team Leader/Diretor/Admin (ver App.renderTabelaAusencias). */
+.linha-pendente td{background:#fff9db;}
+:root[data-tema="escuro"] .linha-pendente td{background:#3a3418;}
 .modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--cinza-200);font-family:var(--display);font-weight:700;font-size:15px;cursor:move;user-select:none;}
 .modal-body{padding:14px 16px;max-height:70vh;overflow-y:auto;}
 .pred-linha{display:flex;gap:6px;align-items:center;margin-bottom:6px;}

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260921a">
+<link rel="stylesheet" href="css/style.css?v=20260922a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -80,7 +80,7 @@
     <button class="tab-btn" data-tab="acompanhamento" id="tabBtnAcompanhamento">Acompanhamento</button>
   </div>
   <div class="tabs-grupo" data-grupo="equipa">
-    <button class="tab-btn" data-tab="alocacoes">Alocações</button>
+    <button class="tab-btn" data-tab="alocacoes" id="tabBtnAlocacoes">Alocações</button>
     <button class="tab-btn" data-tab="capacidade" id="tabBtnCapacidade">Capacidade</button>
     <button class="tab-btn" data-tab="feriados" id="tabBtnFeriados">Feriados &amp; Ausências</button>
   </div>
@@ -603,7 +603,7 @@
       <h2>Ausências</h2>
       <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
     </div>
-    <p class="pagina-sub">Férias, baixas e outras ausências individuais por consultor — ficheiro central.</p>
+    <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas.</p>
     <div class="table-scroll">
       <table class="tabela-crud" id="tabelaAusencias">
         <thead><tr>
@@ -612,6 +612,7 @@
           <th data-col="dataInicio" data-sort="dataInicio">Início<span class="col-resizer"></span></th>
           <th data-col="dataFim" data-sort="dataFim">Fim<span class="col-resizer"></span></th>
           <th data-col="notas" data-sort="notas">Notas<span class="col-resizer"></span></th>
+          <th data-col="estado" data-sort="estado">Estado<span class="col-resizer"></span></th>
           <th></th>
         </tr></thead>
         <tbody id="corpoTabelaAusencias"></tbody>
@@ -655,6 +656,9 @@
       <p class="pagina-sub" style="margin-top:0;">Emails da equipa que trata dos pedidos de reserva de viatura — usados para pré-preencher o destinatário do email aberto a cada pedido.</p>
       <label>Email 1 <input type="email" id="defEmail1"></label>
       <label>Email 2 <input type="email" id="defEmail2"></label>
+      <h3>Ausências</h3>
+      <p class="pagina-sub" style="margin-top:0;">Email de RH notificado (a par do Team Leader/Diretor da pessoa) sempre que uma ausência é criada, alterada, aprovada, rejeitada ou eliminada.</p>
+      <label>Email de RH <input type="email" id="defEmailRH"></label>
       <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
       <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
@@ -941,14 +945,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260921a"></script>
-<script src="js/auth.js?v=20260921a"></script>
-<script src="js/sync.js?v=20260921a"></script>
-<script src="js/gantt.js?v=20260921a"></script>
-<script src="js/capacidade.js?v=20260921a"></script>
-<script src="js/portfolio-gantt.js?v=20260921a"></script>
-<script src="js/reserva-viatura.js?v=20260921a"></script>
-<script src="js/backup.js?v=20260921a"></script>
-<script src="js/app.js?v=20260921a"></script>
+<script src="js/supabase-config.js?v=20260922a"></script>
+<script src="js/auth.js?v=20260922a"></script>
+<script src="js/sync.js?v=20260922a"></script>
+<script src="js/gantt.js?v=20260922a"></script>
+<script src="js/capacidade.js?v=20260922a"></script>
+<script src="js/portfolio-gantt.js?v=20260922a"></script>
+<script src="js/reserva-viatura.js?v=20260922a"></script>
+<script src="js/backup.js?v=20260922a"></script>
+<script src="js/app.js?v=20260922a"></script>
 </body>
 </html>

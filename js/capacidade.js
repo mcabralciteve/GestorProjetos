@@ -44,9 +44,12 @@ const Capacidade = {
     const iso = DateUtil.toISO(date);
     return App.state.feriados.some(f => f.data === iso);
   },
+  // Uma ausência "pendente" já bloqueia o dia, tal como uma "aprovada" — reserva o período enquanto
+  // se aguarda decisão do Team Leader/Diretor, evitando dois pedidos sobre os mesmos dias. Só
+  // "rejeitada" fica de fora (ver App.escopoAusenciasPermitido/aprovarAusencia/rejeitarAusencia).
   ehAusente(date, recursoId) {
     const iso = DateUtil.toISO(date);
-    return App.state.ausencias.some(a => a.recursoId === recursoId && iso >= a.dataInicio && iso <= a.dataFim);
+    return App.state.ausencias.some(a => a.recursoId === recursoId && a.estado !== 'rejeitada' && iso >= a.dataInicio && iso <= a.dataFim);
   },
   // Um dia útil = 8 horas, 100% alocáveis a projetos (sem redução por taxa de utilização) — menos
   // o que esse recurso já registou nesse dia em tipos de trabalho SEM projeto (comercial,

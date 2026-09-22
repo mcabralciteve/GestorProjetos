@@ -43,7 +43,11 @@ const Sync = {
       this.sincronizarListaSimples('feriados', antes.feriados, depois.feriados,
         f => ({ id: f.id, data: f.data, descricao: f.descricao })),
       this.sincronizarListaSimples('ausencias', antes.ausencias, depois.ausencias,
-        a => ({ id: a.id, recurso_id: a.recursoId, data_inicio: a.dataInicio, data_fim: a.dataFim, tipo: a.tipo, notas: a.notas })),
+        a => ({
+          id: a.id, recurso_id: a.recursoId, data_inicio: a.dataInicio, data_fim: a.dataFim, tipo: a.tipo, notas: a.notas,
+          estado: a.estado || 'aprovada', criado_por: a.criadoPor || null,
+          decidido_por: a.decididoPor || null, decidido_em: a.decididoEm || null, motivo_rejeicao: a.motivoRejeicao || ''
+        })),
       this.sincronizarRegistos(antes.registos, depois.registos),
       this.sincronizarReservasViatura(antes.reservasViatura, depois.reservasViatura),
       this.sincronizarProjetos(antes.projetos || {}, depois.projetos || {})
@@ -272,7 +276,9 @@ const Sync = {
     }));
     const feriados = fer.data.map(r => ({ id: r.id, data: r.data, descricao: r.descricao }));
     const ausencias = aus.data.map(r => ({
-      id: r.id, recursoId: r.recurso_id, dataInicio: r.data_inicio, dataFim: r.data_fim, tipo: r.tipo, notas: r.notas
+      id: r.id, recursoId: r.recurso_id, dataInicio: r.data_inicio, dataFim: r.data_fim, tipo: r.tipo, notas: r.notas,
+      estado: r.estado || 'aprovada', criadoPor: r.criado_por || null,
+      decididoPor: r.decidido_por || null, decididoEm: r.decidido_em || null, motivoRejeicao: r.motivo_rejeicao || ''
     }));
     const registos = reg.data.map(r => ({
       id: r.id, data: r.data, pessoa: r.pessoa, projetoIdInterno: r.projeto_id_interno, projetoId: r.projeto_id,
@@ -341,6 +347,7 @@ const Sync = {
     const configuracoes = {
       emailViaturas1: cfg.data ? (cfg.data.email_viaturas_1 || '') : '',
       emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : '',
+      emailRH: cfg.data ? (cfg.data.email_rh || '') : '',
       ocupacaoLimiteBaixo: cfg.data && cfg.data.ocupacao_limite_baixo != null ? Number(cfg.data.ocupacao_limite_baixo) : 60,
       ocupacaoLimiteAlto: cfg.data && cfg.data.ocupacao_limite_alto != null ? Number(cfg.data.ocupacao_limite_alto) : 80,
       ocupacaoLimiteCritico: cfg.data && cfg.data.ocupacao_limite_critico != null ? Number(cfg.data.ocupacao_limite_critico) : 100

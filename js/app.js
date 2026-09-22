@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
+  state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -270,12 +270,14 @@ const App = {
       btnReservaViatura: document.getElementById('btnReservaViatura'),
       corpoTabelaReservasViatura: document.getElementById('corpoTabelaReservasViatura'),
       grupoBtnConfiguracoes: document.getElementById('grupoBtnConfiguracoes'),
+      tabBtnAlocacoes: document.getElementById('tabBtnAlocacoes'),
       tabBtnCapacidade: document.getElementById('tabBtnCapacidade'),
       tabBtnFeriados: document.getElementById('tabBtnFeriados'),
       btnAddFeriado: document.getElementById('btnAddFeriado'),
       btnAddAusencia: document.getElementById('btnAddAusencia'),
       defEmail1: document.getElementById('defEmail1'),
       defEmail2: document.getElementById('defEmail2'),
+      defEmailRH: document.getElementById('defEmailRH'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
       ocupLimiteBaixo: document.getElementById('ocupLimiteBaixo'),
@@ -531,7 +533,7 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
+    return { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
@@ -549,6 +551,16 @@ const App = {
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
     if (!this.state.registos) this.state.registos = [];
     this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
+    if (!this.state.ausencias) this.state.ausencias = [];
+    // Compatibilidade com ausências guardadas antes da aprovação — já contavam como
+    // indisponibilidade sem pedido nenhum, por isso entram diretamente como "aprovada".
+    this.state.ausencias.forEach(a => {
+      if (a.estado === undefined) a.estado = 'aprovada';
+      if (a.criadoPor === undefined) a.criadoPor = null;
+      if (a.decididoPor === undefined) a.decididoPor = null;
+      if (a.decididoEm === undefined) a.decididoEm = null;
+      if (a.motivoRejeicao === undefined) a.motivoRejeicao = '';
+    });
     if (!this.state.tiposTrabalho) this.state.tiposTrabalho = [];
     this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; });
     if (!this.state.utilizadores) this.state.utilizadores = [];
@@ -557,6 +569,7 @@ const App = {
     const cfg = this.state.configuracoes;
     if (cfg.emailViaturas1 === undefined) cfg.emailViaturas1 = '';
     if (cfg.emailViaturas2 === undefined) cfg.emailViaturas2 = '';
+    if (cfg.emailRH === undefined) cfg.emailRH = '';
     if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
     if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
     if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
@@ -1048,8 +1061,13 @@ const App = {
   novoDepartamentoObj(nome) {
     return { id: crypto.randomUUID(), nome: nome || 'Novo departamento', diretorId: null };
   },
+  // "estado"/"criadoPor" ficam por preencher aqui de propósito — quem chama isto decide-os
+  // (ver adicionarAusencia/abrirModalBlocoDia), consoante for a própria pessoa a pedir ou não.
   novoAusenciaObj(recursoId, dataInicio, dataFim, tipo, notas) {
-    return { id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '' };
+    return {
+      id: crypto.randomUUID(), recursoId: recursoId || null, dataInicio: dataInicio || DateUtil.todayISO(), dataFim: dataFim || DateUtil.todayISO(), tipo: tipo || 'Férias', notas: notas || '',
+      estado: 'aprovada', criadoPor: null, decididoPor: null, decididoEm: null, motivoRejeicao: ''
+    };
   },
   novaTarefaObj(p, nome, parentId, inicio, fim, recursoIds, progresso) {
     return {
@@ -2045,27 +2063,53 @@ const App = {
   },
 
   // ---------- Ausências ----------
-  // Administrador gere ausências de qualquer consultor; Team Leader/Diretor só das pessoas da sua
-  // própria equipa/departamento (recursosDaMinhaLideranca — o mesmo âmbito já usado no Registo de
-  // Horas e nos Pedidos de Viatura). Todas as funções abaixo repetem essa verificação mesmo já
-  // escondendo os controlos na UI para quem não tem acesso (ver aplicarPermissoesUI/renderTabelaAusencias).
+  // Administrador gere ausências de qualquer consultor; Team Leader/Diretor gere as da sua própria
+  // equipa/departamento (recursosDaMinhaLideranca — o mesmo âmbito já usado no Registo de Horas e
+  // nos Pedidos de Viatura), MAIS as suas próprias; qualquer outra pessoa só gere as suas próprias.
+  //
+  // Aprovação: uma ausência criada pela PRÓPRIA pessoa nasce "pendente" — só conta como
+  // indisponibilidade (Capacidade/Registo de Horas já tratam "pendente" e "aprovada" da mesma forma,
+  // só "rejeitada" fica de fora — ver Capacidade.ehAusente) para reservar o período enquanto se
+  // aguarda decisão, evitando dois pedidos sobre os mesmos dias. Uma ausência criada por quem já a
+  // pode aprovar (Team Leader/Diretor/Admin) nasce logo "aprovada" — não faz sentido aprovarem-se a
+  // si próprios. Editar uma ausência já decidida, pela PRÓPRIA pessoa (exceto Admin), volta a pôr
+  // "pendente" — precisa de nova decisão; quem já a decide edita sem reiniciar nada.
+  //
+  // Todas as funções abaixo repetem as verificações de permissão mesmo já escondendo os controlos na
+  // UI para quem não tem acesso (ver aplicarPermissoesUI/renderTabelaAusencias).
   escopoAusenciasPermitido() {
-    return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca();
+    const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
+    if (this.souAdmin()) return this.state.recursos;
+    const liderados = this.recursosDaMinhaLideranca();
+    if (!meuRecurso) return liderados;
+    return liderados.some(r => r.id === meuRecurso.id) ? liderados : [meuRecurso, ...liderados];
   },
   possoGerirAusencia(a) {
     if (this.souAdmin()) return true;
-    if (!this.souLiderDeAlgumaEquipa()) return false;
-    return this.escopoAusenciasPermitido().some(r => r.id === a.recursoId);
+    if (this.perfilAtual()?.recursoId === a.recursoId) return true;
+    return this.souLiderDeAlgumaEquipa() && this.escopoAusenciasPermitido().some(r => r.id === a.recursoId);
+  },
+  // Quem pode aprovar/rejeitar — nunca a própria pessoa (mesmo sendo Team Leader/Diretor), exceto o
+  // Administrador: ninguém se aprova a si próprio.
+  podeDecidirAusencia(a) {
+    if (this.souAdmin()) return true;
+    if (this.perfilAtual()?.recursoId === a.recursoId) return false;
+    return this.souLiderDeAlgumaEquipa() && this.escopoAusenciasPermitido().some(r => r.id === a.recursoId);
   },
   adicionarAusencia() {
     const escopo = this.escopoAusenciasPermitido();
-    if (!this.souAdmin() && !escopo.length) return;
-    const primeiroRecurso = escopo[0];
-    this.state.ausencias.push(this.novoAusenciaObj(primeiroRecurso ? primeiroRecurso.id : null, DateUtil.todayISO(), DateUtil.todayISO(), 'Férias', ''));
+    if (!escopo.length) return;
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    const alvo = escopo.find(r => r.id === meuRecursoId) || escopo[0];
+    const nova = this.novoAusenciaObj(alvo.id, DateUtil.todayISO(), DateUtil.todayISO(), 'Férias', '');
+    nova.criadoPor = meuRecursoId || null;
+    nova.estado = (nova.criadoPor === nova.recursoId && !this.souAdmin()) ? 'pendente' : 'aprovada';
+    this.state.ausencias.push(nova);
     this.persist();
     this.renderTabelaAusencias();
     this.renderTabelaTarefas();
     this.renderCapacidade();
+    this.enviarEmailAusencia(nova, 'criada');
   },
   eliminarAusencia(id) {
     const a = this.state.ausencias.find(x => x.id === id);
@@ -2075,25 +2119,131 @@ const App = {
     this.renderTabelaAusencias();
     this.renderTabelaTarefas();
     this.renderCapacidade();
+    this.enviarEmailAusencia(a, 'eliminada');
   },
-  atualizarAusencia(id, campo, valor) {
+  // Grava uma ou várias alterações de uma vez (campo → valor) — usado tanto pela edição
+  // célula-a-célula da tabela de Feriados & Ausências (atualizarAusencia, um campo de cada vez) como
+  // pelo modal de editar ausência do Registo do Dia (várias de uma vez, um único email no fim).
+  guardarAusencia(id, alteracoes) {
     const a = this.state.ausencias.find(x => x.id === id);
     if (!a || !this.possoGerirAusencia(a)) return;
-    // Reatribuir a ausência a outra pessoa só é permitido dentro do mesmo âmbito — impede um Team
-    // Leader de "passar" uma ausência para alguém fora da sua equipa.
-    if (campo === 'recursoId' && !this.escopoAusenciasPermitido().some(r => r.id === valor)) return;
-    if ((campo === 'dataInicio' || campo === 'dataFim') && !this.anoDataPlausivel(valor)) return;
-    a[campo] = valor;
-    if (campo === 'dataInicio' || campo === 'dataFim') {
-      if (DateUtil.parseISO(a.dataFim) < DateUtil.parseISO(a.dataInicio)) {
-        if (campo === 'dataInicio') a.dataFim = a.dataInicio; else a.dataInicio = a.dataFim;
-        this.toast('A data de fim não pode ser anterior à de início — foi ajustada automaticamente.');
-      }
+    if ('recursoId' in alteracoes) {
+      // Reatribuir a ausência a outra pessoa só é permitido a quem decide (Team Leader/Diretor/
+      // Admin), e só dentro do mesmo âmbito — a própria pessoa nunca "passa" a sua ausência a outra.
+      if (!this.souAdmin() && !this.souLiderDeAlgumaEquipa()) return;
+      if (!this.escopoAusenciasPermitido().some(r => r.id === alteracoes.recursoId)) return;
+    }
+    if ('dataInicio' in alteracoes && !this.anoDataPlausivel(alteracoes.dataInicio)) return;
+    if ('dataFim' in alteracoes && !this.anoDataPlausivel(alteracoes.dataFim)) return;
+    const antes = { dataInicio: a.dataInicio, dataFim: a.dataFim, tipo: a.tipo };
+    Object.assign(a, alteracoes);
+    if (DateUtil.parseISO(a.dataFim) < DateUtil.parseISO(a.dataInicio)) {
+      if ('dataInicio' in alteracoes && !('dataFim' in alteracoes)) a.dataFim = a.dataInicio;
+      else if ('dataFim' in alteracoes && !('dataInicio' in alteracoes)) a.dataInicio = a.dataFim;
+      this.toast('A data de fim não pode ser anterior à de início — foi ajustada automaticamente.');
+    }
+    const souORequerente = this.perfilAtual()?.recursoId === a.recursoId;
+    if (souORequerente && !this.souAdmin() && a.estado !== 'pendente') {
+      a.estado = 'pendente';
+      a.decididoPor = null; a.decididoEm = null; a.motivoRejeicao = '';
     }
     this.persist();
     this.renderTabelaAusencias();
     this.renderTabelaTarefas();
     this.renderCapacidade();
+    this.renderRegistoDia();
+    if (antes.dataInicio !== a.dataInicio || antes.dataFim !== a.dataFim || antes.tipo !== a.tipo) {
+      this.enviarEmailAusencia(a, 'alterada', antes);
+    }
+  },
+  atualizarAusencia(id, campo, valor) {
+    this.guardarAusencia(id, { [campo]: valor });
+  },
+  aprovarAusencia(id) {
+    const a = this.state.ausencias.find(x => x.id === id);
+    if (!a || !this.podeDecidirAusencia(a) || a.estado === 'aprovada') return;
+    a.estado = 'aprovada';
+    a.decididoPor = this.perfilAtual()?.recursoId || null;
+    a.decididoEm = new Date().toISOString();
+    a.motivoRejeicao = '';
+    this.persist();
+    this.renderTabelaAusencias();
+    this.renderTabelaTarefas();
+    this.renderCapacidade();
+    this.renderDashboard();
+    this.enviarEmailAusencia(a, 'aprovada');
+    this.toast('Ausência aprovada.');
+  },
+  abrirModalRejeitarAusencia(id) {
+    const a = this.state.ausencias.find(x => x.id === id);
+    if (!a || !this.podeDecidirAusencia(a)) return;
+    const nomePessoa = (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || 'a pessoa';
+    this.abrirModal('Rejeitar ausência', `
+      <p class="hint">O motivo fica visível para ${escapeHtml(nomePessoa)}.</p>
+      <label>Motivo <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span>
+        <textarea id="motivoRejeicaoAusencia" rows="2"></textarea>
+      </label>
+      <button type="button" class="btn btn-primary" id="btnConfirmarRejeicaoAusencia" style="margin-top:10px;">Rejeitar</button>`);
+    document.getElementById('btnConfirmarRejeicaoAusencia').addEventListener('click', () => {
+      const motivo = document.getElementById('motivoRejeicaoAusencia').value.trim();
+      this.fecharModal();
+      this.rejeitarAusencia(id, motivo);
+    });
+  },
+  rejeitarAusencia(id, motivo) {
+    const a = this.state.ausencias.find(x => x.id === id);
+    if (!a || !this.podeDecidirAusencia(a)) return;
+    a.estado = 'rejeitada';
+    a.decididoPor = this.perfilAtual()?.recursoId || null;
+    a.decididoEm = new Date().toISOString();
+    a.motivoRejeicao = motivo || '';
+    this.persist();
+    this.renderTabelaAusencias();
+    this.renderTabelaTarefas();
+    this.renderCapacidade();
+    this.renderDashboard();
+    this.enviarEmailAusencia(a, 'rejeitada');
+    this.toast('Ausência rejeitada.');
+  },
+  // Endereços a notificar sobre uma ausência: o Team Leader da equipa da pessoa, o Diretor do
+  // departamento dessa equipa, e o email de RH configurado em Configurações → Definições — cada um
+  // só entra se existir e tiver email preenchido (nunca bloqueia o fluxo por faltar algum).
+  destinatariosAusencia(ausencia) {
+    const recurso = this.state.recursos.find(r => r.id === ausencia.recursoId);
+    const equipa = recurso && recurso.equipaId ? this.state.equipas.find(eq => eq.id === recurso.equipaId) : null;
+    const lider = equipa && equipa.liderId ? this.state.recursos.find(r => r.id === equipa.liderId) : null;
+    const departamento = equipa && equipa.departamentoId ? this.state.departamentos.find(d => d.id === equipa.departamentoId) : null;
+    const diretor = departamento && departamento.diretorId ? this.state.recursos.find(r => r.id === departamento.diretorId) : null;
+    const emailRH = (this.state.configuracoes.emailRH || '').trim();
+    return [...new Set([lider?.email, diretor?.email, emailRH].map(x => (x || '').trim()).filter(Boolean))];
+  },
+  // mailto: nunca envia sozinho — é sempre o browser de quem está a agir a abrir o cliente de email,
+  // já pronto a enviar (mesma limitação/abordagem já usada em abrirEmailReservaViatura; não há
+  // envio silencioso do lado do servidor). Chamado sempre que uma ausência é criada, alterada (com o
+  // período/tipo anteriores, se mudaram), decidida (aprovada/rejeitada) ou eliminada, com o Team
+  // Leader, o Diretor e o email de RH configurado como destinatários — ver destinatariosAusencia.
+  enviarEmailAusencia(ausencia, acao, antes) {
+    const destinatarios = this.destinatariosAusencia(ausencia);
+    if (!destinatarios.length) return;
+    const recurso = this.state.recursos.find(r => r.id === ausencia.recursoId);
+    const ator = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
+    const ROTULOS_ACAO = { criada: 'Novo pedido de ausência', alterada: 'Alteração a um pedido de ausência', aprovada: 'Ausência aprovada', rejeitada: 'Ausência rejeitada', eliminada: 'Ausência cancelada' };
+    const ROTULOS_ESTADO = { pendente: 'Pendente de aprovação', aprovada: 'Aprovada', rejeitada: 'Rejeitada' };
+    const periodo = (x) => `${DateUtil.formatShort(DateUtil.parseISO(x.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(x.dataFim))}`;
+    const assunto = `${ROTULOS_ACAO[acao] || 'Pedido de ausência'} — ${recurso ? recurso.nome : ''}`;
+    const linhas = [
+      `${ROTULOS_ACAO[acao] || 'Pedido de ausência'}.`, '',
+      `Pessoa: ${recurso ? recurso.nome : '—'}`,
+      `Tipo: ${ausencia.tipo}`,
+      `Período: ${periodo(ausencia)}`
+    ];
+    if (antes && (antes.dataInicio !== ausencia.dataInicio || antes.dataFim !== ausencia.dataFim || antes.tipo !== ausencia.tipo)) {
+      linhas.push(`Período/tipo anterior: ${periodo(antes)} — ${antes.tipo}`);
+    }
+    if (ausencia.notas) linhas.push(`Notas: ${ausencia.notas}`);
+    if (acao === 'rejeitada' && ausencia.motivoRejeicao) linhas.push(`Motivo da rejeição: ${ausencia.motivoRejeicao}`);
+    linhas.push('', `Ação feita por: ${ator ? ator.nome : '—'}`, `Estado atual: ${ROTULOS_ESTADO[ausencia.estado] || ausencia.estado}`);
+    window.open(`mailto:${destinatarios.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(linhas.join('\n'))}`, '_blank');
   },
 
   // ---------- Faturação ----------
@@ -2626,22 +2776,20 @@ const App = {
     const admin = this.souAdmin();
     const gestorDeAlgo = this.souGestorDeAlgumProjeto();
     const liderDeAlgo = this.souLiderDeAlgumaEquipa();
-    // "Equipa" (Alocações/Capacidade) é visível a Gestor de Projeto E a Team Leader — cada um vê,
-    // dentro dela, só a sua própria fatia (ver recursosDaMinhaEquipaGestao/recursosDaMinhaLideranca
-    // e a nota grande em renderCapacidade sobre o que fica escondido de quem não é Administrador).
+    // O grupo "Equipa" fica sempre visível a toda a gente — "Feriados & Ausências" (as tuas
+    // próprias ausências) já é para qualquer pessoa. Alocações/Capacidade, dentro dele, continuam
+    // só para quem gere algo (Gestor de Projeto ou Team Leader/Diretor) — ver
+    // recursosDaMinhaEquipaGestao/recursosDaMinhaLideranca e a nota grande em renderCapacidade.
     // "Faturação" fica só para Gestor de Projeto — um Team Leader puro (sem ser também gestor de
     // nenhum projeto) não gere dinheiro de projeto nenhum só por liderar pessoas.
-    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = (gestorDeAlgo || liderDeAlgo) ? '' : 'none';
+    if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = '';
+    if (e.tabBtnAlocacoes) e.tabBtnAlocacoes.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
-    // "Feriados & Ausências" (dentro do grupo "Equipa") é a exceção às "Configurações": um Team
-    // Leader/Diretor gere pessoas, não projetos, e as ausências da sua equipa/departamento são
-    // exatamente isso — por isso fica visível para eles mesmo sem serem Gestor de Projeto nenhum
-    // (ver "gere pessoas, não projetos" na nota grande em souDiretorDoDepartamentoDoProjeto). Os
-    // Feriados nacionais (tabela irmã no mesmo separador) continuam só para o Administrador editar
-    // — ver renderTabelaFeriados/btnAddFeriado.
-    if (e.tabBtnFeriados) e.tabBtnFeriados.style.display = (admin || liderDeAlgo) ? '' : 'none';
+    // "Feriados & Ausências" abre a toda a gente: cada um gere as suas próprias ausências (sujeitas
+    // a aprovação — ver App.adicionarAusencia/aprovarAusencia), Team Leader/Diretor gere também as
+    // da sua equipa/departamento. Os Feriados nacionais (tabela irmã no mesmo separador) continuam
+    // só para o Administrador editar — ver renderTabelaFeriados/btnAddFeriado.
     if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
-    if (e.btnAddAusencia) e.btnAddAusencia.style.display = (admin || liderDeAlgo) ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
@@ -2651,7 +2799,6 @@ const App = {
       if (btn) btn.style.display = admin ? '' : 'none';
     });
     if (!admin && ['recursos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
-    if (!admin && !liderDeAlgo && this.abaAtiva === 'feriados') this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
     if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
@@ -2674,12 +2821,15 @@ const App = {
     { key: 'meusProjetos', label: 'Os meus projetos' },
     { key: 'registoRapido', label: 'Registar horas de hoje' },
     { key: 'meusDiasIncompletos', label: 'Os meus dias por preencher' },
+    { key: 'minhasAusencias', label: 'As minhas ausências' },
+    { key: 'ausenciasParaAprovar', label: 'Pedidos de ausência para aprovar (Team Leader/Diretor/Admin)' },
     { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
     { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
     { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Gestor/Admin)' },
     { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' }
   ],
   WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'equipaDiasIncompletos', 'consultoresRisco'],
+  WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
   // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
   dashboardWidgetsOcultosSet() {
@@ -2695,7 +2845,10 @@ const App = {
     if (!this.els.painelPersonalizarDashboard) return;
     const ocultos = this.dashboardWidgetsOcultosSet();
     const gestorOuAdmin = this.souAdmin() || this.souGestorDeAlgumProjeto();
-    const widgets = this.DASHBOARD_WIDGETS.filter(w => gestorOuAdmin || !this.WIDGETS_GESTOR_ADMIN.includes(w.key));
+    const liderOuAdmin = this.souAdmin() || this.souLiderDeAlgumaEquipa();
+    const widgets = this.DASHBOARD_WIDGETS.filter(w =>
+      (gestorOuAdmin || !this.WIDGETS_GESTOR_ADMIN.includes(w.key)) &&
+      (liderOuAdmin || !this.WIDGETS_LIDER_ADMIN.includes(w.key)));
     this.els.painelPersonalizarDashboard.innerHTML = widgets.map(w => `
       <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" data-widget="${w.key}" ${ocultos.has(w.key) ? '' : 'checked'}> ${escapeHtml(w.label)}
@@ -2760,7 +2913,13 @@ const App = {
       n += this.consultoresRiscoCount();
       n += this.equipaDiasIncompletosCount();
     }
+    if (this.souAdmin() || this.souLiderDeAlgumaEquipa()) n += this.ausenciasParaAprovarCount();
     return n;
+  },
+  // Quantos pedidos de ausência (das pessoas que posso decidir) estão pendentes — mesmo critério do
+  // cartão "Pedidos de ausência para aprovar" (nunca conta os meus próprios, ver podeDecidirAusencia).
+  ausenciasParaAprovarCount() {
+    return this.state.ausencias.filter(a => a.estado === 'pendente' && this.podeDecidirAusencia(a)).length;
   },
   renderNotificacoes() {
     const e = this.els;
@@ -2776,6 +2935,7 @@ const App = {
     const meuRecurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
     const admin = this.souAdmin();
     const gestorOuAdmin = admin || this.souGestorDeAlgumProjeto();
+    const liderOuAdmin = admin || this.souLiderDeAlgumaEquipa();
     const ocultos = this.dashboardWidgetsOcultosSet();
     const hojeISO = DateUtil.todayISO();
     const hojeObj = DateUtil.parseISO(hojeISO);
@@ -2794,7 +2954,7 @@ const App = {
       let corpo = semRecurso;
       if (meuRecurso) {
         const feriadoHoje = this.state.feriados.find(f => f.data === hojeISO);
-        const ausenciaHoje = this.state.ausencias.find(a => a.recursoId === meuRecurso.id && hojeISO >= a.dataInicio && hojeISO <= a.dataFim);
+        const ausenciaHoje = this.state.ausencias.find(a => a.recursoId === meuRecurso.id && a.estado !== 'rejeitada' && hojeISO >= a.dataInicio && hojeISO <= a.dataFim);
         if (feriadoHoje) corpo = `<p class="hint">🎉 ${escapeHtml(feriadoHoje.descricao || 'Feriado')} — hoje não é dia útil.</p>`;
         else if (ausenciaHoje) corpo = `<p class="hint">🌴 ${escapeHtml(ausenciaHoje.tipo || 'Ausência')} — não estás disponível hoje.</p>`;
         else {
@@ -2874,6 +3034,37 @@ const App = {
       html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo);
     }
 
+    if (!ocultos.has('minhasAusencias')) {
+      let corpo = semRecurso;
+      if (meuRecurso) {
+        const ROTULOS_ESTADO = { pendente: '🟡 Pendente', aprovada: '✅ Aprovada', rejeitada: '❌ Rejeitada' };
+        const minhas = this.state.ausencias
+          .filter(a => a.recursoId === meuRecurso.id && a.dataFim >= hojeISO)
+          .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
+        corpo = minhas.length ? minhas.map(a => `
+          <div class="dash-linha">
+            <span class="dash-linha-principal">${escapeHtml(a.tipo)} — ${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
+            <span class="dash-linha-sub">${ROTULOS_ESTADO[a.estado] || a.estado}${a.estado === 'rejeitada' && a.motivoRejeicao ? ' — ' + escapeHtml(a.motivoRejeicao) : ''}</span>
+          </div>`).join('') : '<p class="hint">Sem ausências futuras.</p>';
+      }
+      html += this.cartaoDashboard('🌴 As minhas ausências', corpo);
+    }
+
+    if (liderOuAdmin && !ocultos.has('ausenciasParaAprovar')) {
+      const pendentes = this.state.ausencias
+        .filter(a => a.estado === 'pendente' && this.podeDecidirAusencia(a))
+        .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
+      const corpo = pendentes.length ? pendentes.map(a => {
+        const nomePessoa = (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '—';
+        return `
+        <div class="dash-linha">
+          <span class="dash-linha-principal">${escapeHtml(nomePessoa)} — ${escapeHtml(a.tipo)}</span>
+          <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))} · <a href="#" data-ir-aprovar-ausencia="${a.id}">decidir</a></span>
+        </div>`;
+      }).join('') : '<p class="hint">Sem pedidos pendentes.</p>';
+      html += this.cartaoDashboard('🕒 Pedidos de ausência para aprovar', corpo);
+    }
+
     if (gestorOuAdmin && !ocultos.has('faturacaoAVencer')) {
       const linhas = [];
       this.meusProjetosEnvolvidos().filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
@@ -2894,7 +3085,7 @@ const App = {
       const recursosEquipa = this.recursosDaMinhaEquipaGestao();
       const proximas = [];
       this.state.ausencias.forEach(a => {
-        if (a.dataFim < hojeISO || a.dataInicio > daqui7ISO) return;
+        if (a.estado === 'rejeitada' || a.dataFim < hojeISO || a.dataInicio > daqui7ISO) return;
         const r = recursosEquipa.find(x => x.id === a.recursoId);
         if (r) proximas.push({ r, a });
       });
@@ -2954,6 +3145,9 @@ const App = {
       this.irParaGrupo('horas');
       this.irParaAba('dia');
       this.irParaHojeDiaRegisto();
+    });
+    e.dashboardGrelha.querySelectorAll('[data-ir-aprovar-ausencia]').forEach(a => {
+      a.addEventListener('click', (ev) => { ev.preventDefault(); this.irParaAba('feriados'); });
     });
   },
 
@@ -3374,40 +3568,60 @@ const App = {
     const tbody = this.els.corpoTabelaAusencias;
     tbody.innerHTML = '';
     const admin = this.souAdmin();
-    // Team Leader/Diretor só vê e gere ausências das pessoas da sua própria equipa/departamento —
-    // mesmo âmbito do Registo de Horas e dos Pedidos de Viatura (ver escopoAusenciasPermitido).
+    const liderDeAlgo = this.souLiderDeAlgumaEquipa();
+    const meuRecursoId = this.perfilAtual()?.recursoId;
+    // Qualquer pessoa vê e gere as suas próprias ausências; Team Leader/Diretor vê e gere também as
+    // da sua própria equipa/departamento (recursosDaMinhaLideranca) — ver escopoAusenciasPermitido.
     const escopo = this.escopoAusenciasPermitido();
     const opcoesRecursos = escopo.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const nomeRecursoDe = (a) => (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '';
     const idsPermitidos = new Set(escopo.map(r => r.id));
     const visiveis = admin ? this.state.ausencias : this.state.ausencias.filter(a => idsPermitidos.has(a.recursoId));
+    const ROTULOS_ESTADO = { pendente: '🟡 Pendente', aprovada: '✅ Aprovada', rejeitada: '❌ Rejeitada' };
     const ausencias = this.aplicarOrdenacaoTabela('tabelaAusencias', visiveis, (a, campo) => {
       switch (campo) {
         case 'recurso': return nomeRecursoDe(a).toLowerCase();
         case 'tipo': return a.tipo || '';
         case 'dataFim': return a.dataFim || '';
         case 'notas': return (a.notas || '').toLowerCase();
+        case 'estado': return a.estado === 'pendente' ? 0 : a.estado === 'rejeitada' ? 1 : 2;
         default: return a.dataInicio || '';
       }
     });
     ausencias.forEach(a => {
+      const podeGerir = this.possoGerirAusencia(a);
+      const podeDecidir = this.podeDecidirAusencia(a) && a.estado === 'pendente';
+      const podeReatribuir = admin || liderDeAlgo;
+      const souORequerente = a.recursoId === meuRecursoId;
       const tr = document.createElement('tr');
+      if (a.estado === 'pendente') tr.classList.add('linha-pendente');
       tr.innerHTML = `
-        <td><select data-campo="recursoId">${opcoesRecursos}</select></td>
+        <td><select data-campo="recursoId" ${podeReatribuir ? '' : 'disabled'}>${opcoesRecursos}</select></td>
         <td>
-          <select data-campo="tipo">
+          <select data-campo="tipo" ${podeGerir ? '' : 'disabled'}>
             ${['Férias', 'Baixa', 'Formação', 'Outro'].map(op => `<option ${a.tipo === op ? 'selected' : ''}>${op}</option>`).join('')}
           </select>
         </td>
-        <td><input type="date" value="${a.dataInicio}" data-campo="dataInicio"></td>
-        <td><input type="date" value="${a.dataFim}" data-campo="dataFim" min="${a.dataInicio}"></td>
-        <td><input type="text" value="${escapeAttr(a.notas)}" data-campo="notas" style="min-width:140px"></td>
-        <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+        <td><input type="date" value="${a.dataInicio}" data-campo="dataInicio" ${podeGerir ? '' : 'disabled'}></td>
+        <td><input type="date" value="${a.dataFim}" data-campo="dataFim" min="${a.dataInicio}" ${podeGerir ? '' : 'disabled'}></td>
+        <td><input type="text" value="${escapeAttr(a.notas)}" data-campo="notas" style="min-width:140px" ${podeGerir ? '' : 'disabled'}></td>
+        <td title="${a.estado === 'rejeitada' && a.motivoRejeicao ? escapeAttr('Motivo: ' + a.motivoRejeicao) : ''}">${ROTULOS_ESTADO[a.estado] || a.estado}</td>
+        <td class="col-acoes">
+          ${podeDecidir ? `<button class="btn btn-sm" data-acao="aprovar" title="Aprovar">✓ Aprovar</button> <button class="btn btn-sm" data-acao="rejeitar" title="Rejeitar" style="color:var(--vermelho)">✕ Rejeitar</button>` : ''}
+          ${podeGerir ? `<button class="btn-icon" data-acao="eliminar" title="${souORequerente ? 'Cancelar' : 'Eliminar'}">🗑</button>` : ''}
+        </td>`;
       tr.querySelector('[data-campo="recursoId"]').value = a.recursoId;
-      tr.querySelectorAll('[data-campo]').forEach(inp => {
-        inp.addEventListener('change', () => this.atualizarAusencia(a.id, inp.dataset.campo, inp.value));
-      });
-      tr.querySelector('button').addEventListener('click', () => this.eliminarAusencia(a.id));
+      if (podeGerir) {
+        tr.querySelectorAll('[data-campo]').forEach(inp => {
+          inp.addEventListener('change', () => this.atualizarAusencia(a.id, inp.dataset.campo, inp.value));
+        });
+      }
+      const btnAprovar = tr.querySelector('[data-acao="aprovar"]');
+      if (btnAprovar) btnAprovar.addEventListener('click', () => this.aprovarAusencia(a.id));
+      const btnRejeitar = tr.querySelector('[data-acao="rejeitar"]');
+      if (btnRejeitar) btnRejeitar.addEventListener('click', () => this.abrirModalRejeitarAusencia(a.id));
+      const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
+      if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarAusencia(a.id));
       tbody.appendChild(tr);
     });
   },
@@ -4353,15 +4567,16 @@ const App = {
     const feriado = this.state.feriados.find(f => f.data === iso);
     if (feriado) return feriado.descricao || 'Feriado';
     const ausencia = this.ausenciaNoDia(iso, recurso);
-    if (ausencia) return ausencia.tipo || 'Ausência';
+    if (ausencia) return (ausencia.tipo || 'Ausência') + (ausencia.estado === 'pendente' ? ' (pendente)' : '');
     return '';
   },
   // Ausência (férias, baixa, etc.) que cobre este dia para este recurso, ou null — usado tanto por
   // diaBloqueadoRegisto (motivo do bloqueio) como para saber, na grelha, se o motivo mostrado
   // corresponde a uma ausência de verdade (e por isso clicável para editar/eliminar) em vez de um
   // feriado/fim de semana (globais, não editáveis a partir daqui).
+  // "pendente" bloqueia tal como "aprovada" (ver Capacidade.ehAusente); só "rejeitada" já não conta.
   ausenciaNoDia(iso, recurso) {
-    return recurso ? this.state.ausencias.find(a => a.recursoId === recurso.id && iso >= a.dataInicio && iso <= a.dataFim) : null;
+    return recurso ? this.state.ausencias.find(a => a.recursoId === recurso.id && a.estado !== 'rejeitada' && iso >= a.dataInicio && iso <= a.dataFim) : null;
   },
   navegarMesRegistoDia(delta) {
     if (!this.mesRegistoDiaAtual) { const hoje = new Date(); this.mesRegistoDiaAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
@@ -4455,9 +4670,10 @@ const App = {
       const motivoBloqueio = this.diaBloqueadoRegisto(iso, recurso);
       const restante = denom > 0 ? Math.max(0, CAP - totalHoras) / denom * 100 : 100;
       const vazioHtml = (!motivoBloqueio && restante > 0) ? `<div class="dia-bloco-vazio-mini" style="width:${restante}%" data-novo-bloco="${iso}" title="Adicionar a ${DateUtil.formatShort(cursor)}">+</div>` : '';
-      // O motivo só é clicável quando vem de uma Ausência de verdade (editável/eliminável aqui) —
-      // um feriado ou um simples fim de semana não têm nada para editar nesta página.
-      const motivoHtml = !motivoBloqueio ? '' : ausenciaDoDia
+      // O motivo só é clicável quando vem de uma Ausência de verdade que eu possa gerir (editável/
+      // eliminável aqui) — um feriado, um fim de semana, ou a ausência de alguém fora do meu âmbito
+      // (ver possoGerirAusencia) não têm nada para editar nesta página.
+      const motivoHtml = !motivoBloqueio ? '' : (ausenciaDoDia && this.possoGerirAusencia(ausenciaDoDia))
         ? `<span class="dia-motivo-bloqueio dia-motivo-clicavel" data-editar-ausencia="${ausenciaDoDia.id}" title="${escapeAttr(motivoBloqueio + ' — clica para editar')}">${escapeHtml(motivoBloqueio)}</span>`
         : `<span class="dia-motivo-bloqueio" title="${escapeAttr(motivoBloqueio)}">${escapeHtml(motivoBloqueio)}</span>`;
       html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}${motivoBloqueio ? ' dia-bloqueado' : ''}">
@@ -4512,8 +4728,10 @@ const App = {
 
     // Um registo já existente nunca é de um tipo "cria ausência" (esses nunca chegam a virar
     // registos — ver ramo abaixo, que cria antes uma Ausência); por isso só se oferece esses tipos
-    // como opção quando se está mesmo a criar um bloco novo.
-    let tipos = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia || !registoExistente);
+    // como opção quando se está mesmo a criar um bloco novo, e só para quem pode gerir ausências
+    // desta pessoa (própria conta, ou a sua equipa/departamento — ver escopoAusenciasPermitido).
+    const podeMarcarAusenciaAqui = !!recurso && this.escopoAusenciasPermitido().some(r => r.id === recurso.id);
+    let tipos = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia || (!registoExistente && podeMarcarAusenciaAqui));
     const tipoInicialId = registoExistente ? (registoExistente.tipoTrabalhoId || '') : (tipoPreSelecionadoId || '');
     // Um tipo entretanto desativado continua a aparecer aqui, só para ESTE registo — senão a
     // edição ficava sempre a mostrar "Projeto" (o <select> cai na primeira opção quando nenhuma
@@ -4626,16 +4844,22 @@ const App = {
       const notas = m.querySelector('#blocoNotas').value.trim();
 
       if (tipo.criaAusencia) {
+        if (!this.escopoAusenciasPermitido().some(r => r.id === recurso.id)) { this.toast('Não podes marcar ausências para esta pessoa.'); return; }
         const dataFim = inpDataFim.value;
         if (!this.anoDataPlausivel(dataFim)) { this.toast('Indica uma data de fim válida.'); return; }
         if (DateUtil.parseISO(dataFim) < DateUtil.parseISO(data)) { this.toast('A data de fim não pode ser anterior à de início.'); return; }
-        this.state.ausencias.push(this.novoAusenciaObj(recurso.id, data, dataFim, tipo.nome, notas));
+        const novaAusencia = this.novoAusenciaObj(recurso.id, data, dataFim, tipo.nome, notas);
+        const meuRecursoId = this.perfilAtual()?.recursoId;
+        novaAusencia.criadoPor = meuRecursoId || null;
+        novaAusencia.estado = (novaAusencia.criadoPor === novaAusencia.recursoId && !this.souAdmin()) ? 'pendente' : 'aprovada';
+        this.state.ausencias.push(novaAusencia);
         this.persist();
         this.renderTabelaAusencias();
         this.renderTabelaTarefas();
         this.renderCapacidade();
         this.renderRegistoDia();
         this.fecharModal();
+        this.enviarEmailAusencia(novaAusencia, 'criada');
         return;
       }
 
@@ -4683,13 +4907,15 @@ const App = {
   abrirModalAusenciaDia(ausenciaId) {
     const ausencia = this.state.ausencias.find(a => a.id === ausenciaId);
     if (!ausencia) return;
-    if (!this.recursosPermitidosRegisto().some(r => r.id === ausencia.recursoId)) return;
+    if (!this.possoGerirAusencia(ausencia)) return;
 
     const tiposAusencia = this.state.tiposTrabalho.filter(tt => tt.criaAusencia);
     const nomesTipos = tiposAusencia.map(tt => tt.nome);
     if (!nomesTipos.includes(ausencia.tipo)) nomesTipos.push(ausencia.tipo); // preserva um tipo antigo/manual (ex.: vindo do separador Feriados & Ausências)
+    const ROTULOS_ESTADO = { pendente: '🟡 Pendente de aprovação', aprovada: '✅ Aprovada', rejeitada: '❌ Rejeitada' };
 
     const html = `
+      <p class="hint">Estado: ${ROTULOS_ESTADO[ausencia.estado] || ausencia.estado}${ausencia.estado === 'rejeitada' && ausencia.motivoRejeicao ? ' — ' + escapeHtml(ausencia.motivoRejeicao) : ''}</p>
       <div class="row-2">
         <label>Data início <input type="date" id="ausDataInicio" value="${ausencia.dataInicio}"></label>
         <label>Data fim <input type="date" id="ausDataFim" value="${ausencia.dataFim}"></label>
@@ -4710,15 +4936,7 @@ const App = {
       const dataFim = m.querySelector('#ausDataFim').value;
       if (!this.anoDataPlausivel(dataInicio) || !this.anoDataPlausivel(dataFim)) { this.toast('Indica datas válidas.'); return; }
       if (DateUtil.parseISO(dataFim) < DateUtil.parseISO(dataInicio)) { this.toast('A data de fim não pode ser anterior à de início.'); return; }
-      ausencia.dataInicio = dataInicio;
-      ausencia.dataFim = dataFim;
-      ausencia.tipo = m.querySelector('#ausTipo').value;
-      ausencia.notas = m.querySelector('#ausNotas').value.trim();
-      this.persist();
-      this.renderTabelaAusencias();
-      this.renderTabelaTarefas();
-      this.renderCapacidade();
-      this.renderRegistoDia();
+      this.guardarAusencia(ausencia.id, { dataInicio, dataFim, tipo: m.querySelector('#ausTipo').value, notas: m.querySelector('#ausNotas').value.trim() });
       this.fecharModal();
     });
     m.querySelector('#ausEliminar').addEventListener('click', () => {
@@ -5985,6 +6203,13 @@ const App = {
   },
   irParaGrupo(grupo) {
     if (this.gruposAbas[this.abaAtiva] === grupo) return;
+    // "Equipa" está sempre visível (ver aplicarPermissoesUI), mas o primeiro separador por omissão
+    // (Alocações) só é para quem gere algo — quem não gere nada entra antes em Feriados & Ausências
+    // (as suas próprias ausências), senão ficava a saltar logo para o Dashboard sem nunca lá chegar.
+    if (grupo === 'equipa' && !this.souGestorDeAlgumProjeto() && !this.souLiderDeAlgumaEquipa()) {
+      this.irParaAba('feriados');
+      return;
+    }
     this.irParaAba(this.primeiroTabDoGrupo[grupo]);
   },
   verFaturacaoDoProjeto() {
@@ -6084,6 +6309,7 @@ const App = {
     // enquanto o separador está aberto (renderTudo corre a cada alteração, em qualquer separador).
     if (document.activeElement !== e.defEmail1) e.defEmail1.value = c.emailViaturas1 || '';
     if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
+    if (document.activeElement !== e.defEmailRH) e.defEmailRH.value = c.emailRH || '';
     if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
     if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
     if (document.activeElement !== e.ocupLimiteCritico) e.ocupLimiteCritico.value = c.ocupacaoLimiteCritico ?? 100;
@@ -6092,11 +6318,12 @@ const App = {
     const e = this.els;
     const email1 = e.defEmail1.value.trim();
     const email2 = e.defEmail2.value.trim();
+    const emailRH = e.defEmailRH.value.trim();
     e.defMsg.style.color = 'var(--cinza-500)';
     e.defMsg.textContent = 'A guardar...';
     try {
-      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2 });
-      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2 });
+      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH });
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {
@@ -6761,7 +6988,9 @@ const App = {
     this.tornarColunasRedimensionaveis('tabelaFeriados', 'colunasFeriados');
     this.ligarOrdenacaoTabela('tabelaFeriados', { campo: 'data', dir: 'asc' }, () => this.renderTabelaFeriados());
     this.tornarColunasRedimensionaveis('tabelaAusencias', 'colunasAusencias');
-    this.ligarOrdenacaoTabela('tabelaAusencias', { campo: 'dataInicio', dir: 'asc' }, () => this.renderTabelaAusencias());
+    // Por omissão ordena por Estado (pendentes primeiro — são as que precisam de ação); clicar
+    // noutro cabeçalho ordena por essa coluna normalmente, como em qualquer outra tabela.
+    this.ligarOrdenacaoTabela('tabelaAusencias', { campo: 'estado', dir: 'asc' }, () => this.renderTabelaAusencias());
     // Faturação e Registo de Horas já tinham ordenação própria — só ganham colunas ajustáveis.
     this.tornarColunasRedimensionaveis('tabelaRegistos', 'colunasRegistos');
     this.tornarColunasRedimensionaveis('tabelaFaturas', 'colunasFaturas');
