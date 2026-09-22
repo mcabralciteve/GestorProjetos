@@ -68,6 +68,7 @@ const App = {
   // uma preferência de interface, faz sentido lembrar qual das duas vistas cada pessoa prefere.
   modoRegistoDia: 'pessoal',
   filtrosAlocacoes: { dept: '', equipa: '', pessoa: '', projeto: '', cliente: '' },
+  filtrosAusencias: { dept: '', equipa: '', pessoa: '' },
   alocMesAtual: null,
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
@@ -273,6 +274,10 @@ const App = {
       tabBtnAlocacoes: document.getElementById('tabBtnAlocacoes'),
       tabBtnCapacidade: document.getElementById('tabBtnCapacidade'),
       tabBtnFeriados: document.getElementById('tabBtnFeriados'),
+      tabBtnAusencias: document.getElementById('tabBtnAusencias'),
+      fAusDept: document.getElementById('fAusDept'),
+      fAusEquipa: document.getElementById('fAusEquipa'),
+      fAusPessoa: document.getElementById('fAusPessoa'),
       btnAddFeriado: document.getElementById('btnAddFeriado'),
       btnAddAusencia: document.getElementById('btnAddAusencia'),
       defEmail1: document.getElementById('defEmail1'),
@@ -2785,10 +2790,12 @@ const App = {
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = '';
     if (e.tabBtnAlocacoes) e.tabBtnAlocacoes.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
-    // "Feriados & Ausências" abre a toda a gente: cada um gere as suas próprias ausências (sujeitas
-    // a aprovação — ver App.adicionarAusencia/aprovarAusencia), Team Leader/Diretor gere também as
-    // da sua equipa/departamento. Os Feriados nacionais (tabela irmã no mesmo separador) continuam
-    // só para o Administrador editar — ver renderTabelaFeriados/btnAddFeriado.
+    // "Feriados" (nacionais/empresa, ficheiro central) é só do Administrador ver e editar — não tem
+    // nada de pessoal para mostrar a mais ninguém. "Ausências" (separador irmão) abre a toda a
+    // gente: cada um gere as suas próprias (sujeitas a aprovação — ver
+    // App.adicionarAusencia/aprovarAusencia), Team Leader/Diretor gere também as da sua equipa/
+    // departamento.
+    if (e.tabBtnFeriados) e.tabBtnFeriados.style.display = admin ? '' : 'none';
     if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
@@ -2798,7 +2805,7 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho', 'feriados'].includes(this.abaAtiva)) this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
     if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
@@ -3147,7 +3154,7 @@ const App = {
       this.irParaHojeDiaRegisto();
     });
     e.dashboardGrelha.querySelectorAll('[data-ir-aprovar-ausencia]').forEach(a => {
-      a.addEventListener('click', (ev) => { ev.preventDefault(); this.irParaAba('feriados'); });
+      a.addEventListener('click', (ev) => { ev.preventDefault(); this.irParaAba('ausencias'); });
     });
   },
 
@@ -3564,8 +3571,16 @@ const App = {
       tbody.appendChild(tr);
     });
   },
+  aplicarFiltrosAusencias() {
+    const e = this.els;
+    this.filtrosAusencias = this.reagirMudancaFiltroOrg(this.filtrosAusencias,
+      { dept: e.fAusDept.value, equipa: e.fAusEquipa.value, pessoa: e.fAusPessoa.value });
+    this.renderTabelaAusencias();
+  },
   renderTabelaAusencias() {
-    const tbody = this.els.corpoTabelaAusencias;
+    const e = this.els;
+    const tbody = e.corpoTabelaAusencias;
+    if (!tbody) return;
     tbody.innerHTML = '';
     const admin = this.souAdmin();
     const liderDeAlgo = this.souLiderDeAlgumaEquipa();
@@ -3575,8 +3590,16 @@ const App = {
     const escopo = this.escopoAusenciasPermitido();
     const opcoesRecursos = escopo.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const nomeRecursoDe = (a) => (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '';
-    const idsPermitidos = new Set(escopo.map(r => r.id));
-    const visiveis = admin ? this.state.ausencias : this.state.ausencias.filter(a => idsPermitidos.has(a.recursoId));
+    // Direção → Área → Colaborador — a mesma hierarquia de Alocações/Registo do Dia (vista de
+    // equipa), aqui só para NAVEGAR dentro do que já se pode ver, nunca para o alargar.
+    const recursosOrg = this.aplicarFiltroOrg(e.fAusDept, e.fAusEquipa, escopo, this.filtrosAusencias);
+    const valorPessoa = this.filtrosAusencias.pessoa;
+    const pessoasOrdenadas = [...recursosOrg].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    e.fAusPessoa.innerHTML = '<option value="">Todos</option>' + pessoasOrdenadas.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+    e.fAusPessoa.value = recursosOrg.some(r => r.id === valorPessoa) ? valorPessoa : '';
+    this.filtrosAusencias.pessoa = e.fAusPessoa.value;
+    const idsPermitidos = new Set((this.filtrosAusencias.pessoa ? recursosOrg.filter(r => r.id === this.filtrosAusencias.pessoa) : recursosOrg).map(r => r.id));
+    const visiveis = this.state.ausencias.filter(a => idsPermitidos.has(a.recursoId));
     const ROTULOS_ESTADO = { pendente: '🟡 Pendente', aprovada: '✅ Aprovada', rejeitada: '❌ Rejeitada' };
     const ausencias = this.aplicarOrdenacaoTabela('tabelaAusencias', visiveis, (a, campo) => {
       switch (campo) {
@@ -6178,7 +6201,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -6204,10 +6227,10 @@ const App = {
   irParaGrupo(grupo) {
     if (this.gruposAbas[this.abaAtiva] === grupo) return;
     // "Equipa" está sempre visível (ver aplicarPermissoesUI), mas o primeiro separador por omissão
-    // (Alocações) só é para quem gere algo — quem não gere nada entra antes em Feriados & Ausências
-    // (as suas próprias ausências), senão ficava a saltar logo para o Dashboard sem nunca lá chegar.
+    // (Alocações) só é para quem gere algo — quem não gere nada entra antes em Ausências (as suas
+    // próprias), senão ficava a saltar logo para o Dashboard sem nunca lá chegar.
     if (grupo === 'equipa' && !this.souGestorDeAlgumProjeto() && !this.souLiderDeAlgumaEquipa()) {
-      this.irParaAba('feriados');
+      this.irParaAba('ausencias');
       return;
     }
     this.irParaAba(this.primeiroTabDoGrupo[grupo]);
@@ -6840,6 +6863,8 @@ const App = {
     if (e.btnExportarBackup) e.btnExportarBackup.addEventListener('click', () => this.exportarBackup());
     [e.fAlocDept, e.fAlocEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosAlocacoes()); });
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
+    [e.fAusDept, e.fAusEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosAusencias()); });
+    if (e.fAusPessoa) e.fAusPessoa.addEventListener('change', () => this.aplicarFiltrosAusencias());
     if (e.fAlocProjeto) e.fAlocProjeto.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.fAlocCliente) e.fAlocCliente.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
     if (e.btnAlocMesAnt) e.btnAlocMesAnt.addEventListener('click', () => this.navegarMesAlocacoes(-1));

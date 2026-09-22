@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260922a">
+<link rel="stylesheet" href="css/style.css?v=20260922b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -82,7 +82,8 @@
   <div class="tabs-grupo" data-grupo="equipa">
     <button class="tab-btn" data-tab="alocacoes" id="tabBtnAlocacoes">Alocações</button>
     <button class="tab-btn" data-tab="capacidade" id="tabBtnCapacidade">Capacidade</button>
-    <button class="tab-btn" data-tab="feriados" id="tabBtnFeriados">Feriados &amp; Ausências</button>
+    <button class="tab-btn" data-tab="feriados" id="tabBtnFeriados">Feriados</button>
+    <button class="tab-btn" data-tab="ausencias" id="tabBtnAusencias">Ausências</button>
   </div>
   <div class="tabs-grupo" data-grupo="horas">
     <button class="tab-btn" data-tab="dia">Dia</button>
@@ -580,7 +581,7 @@
   </div>
 </section>
 
-<!-- ===================== TAB: FERIADOS & AUSÊNCIAS ===================== -->
+<!-- ===================== TAB: FERIADOS ===================== -->
 <section class="tab-panel" id="tab-feriados">
   <div class="pagina">
     <div class="pagina-head">
@@ -598,12 +599,22 @@
         <tbody id="corpoTabelaFeriados"></tbody>
       </table>
     </div>
+  </div>
+</section>
 
-    <div class="pagina-head" style="margin-top:28px;">
+<!-- ===================== TAB: AUSÊNCIAS ===================== -->
+<section class="tab-panel" id="tab-ausencias">
+  <div class="pagina">
+    <div class="pagina-head">
       <h2>Ausências</h2>
       <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
     </div>
     <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Direção <select id="fAusDept"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Área <select id="fAusEquipa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Colaborador <select id="fAusPessoa"><option value="">Todos</option></select></label>
+    </div>
     <div class="table-scroll">
       <table class="tabela-crud" id="tabelaAusencias">
         <thead><tr>
@@ -945,14 +956,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260922a"></script>
-<script src="js/auth.js?v=20260922a"></script>
-<script src="js/sync.js?v=20260922a"></script>
-<script src="js/gantt.js?v=20260922a"></script>
-<script src="js/capacidade.js?v=20260922a"></script>
-<script src="js/portfolio-gantt.js?v=20260922a"></script>
-<script src="js/reserva-viatura.js?v=20260922a"></script>
-<script src="js/backup.js?v=20260922a"></script>
-<script src="js/app.js?v=20260922a"></script>
+<script src="js/supabase-config.js?v=20260922b"></script>
+<script src="js/auth.js?v=20260922b"></script>
+<script src="js/sync.js?v=20260922b"></script>
+<script src="js/gantt.js?v=20260922b"></script>
+<script src="js/capacidade.js?v=20260922b"></script>
+<script src="js/portfolio-gantt.js?v=20260922b"></script>
+<script src="js/reserva-viatura.js?v=20260922b"></script>
+<script src="js/backup.js?v=20260922b"></script>
+<script src="js/app.js?v=20260922b"></script>
 </body>
 </html>
