@@ -276,6 +276,7 @@ const App = {
       reservaArea: document.getElementById('reservaArea'),
       reservaChefia: document.getElementById('reservaChefia'),
       reservaJustificacao: document.getElementById('reservaJustificacao'),
+      reservaDistanciaKm: document.getElementById('reservaDistanciaKm'),
       reservaDataPedido: document.getElementById('reservaDataPedido'),
       reservaDataInicio: document.getElementById('reservaDataInicio'),
       reservaHoraInicio: document.getElementById('reservaHoraInicio'),
@@ -5786,13 +5787,17 @@ const App = {
     const perfil = this.perfilAtual();
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
     const projeto = this.state.projetos[e.reservaProjeto.value];
+    const textoJustificacao = e.reservaJustificacao.value.trim();
+    const distanciaKm = e.reservaDistanciaKm.value.trim();
+    // A distância (ida e volta) não é um campo próprio no Mapa de Despesas oficial — junta-se à
+    // Justificação, com um hífen, porque é essa a única célula de texto livre do template.
     const dados = {
       area: e.reservaArea.value.trim(),
       requisitante: recurso ? recurso.nome : '',
       chefia: e.reservaChefia.value.trim(),
       gestor: e.reservaGestor.value.trim(),
       projeto: projeto ? `${projeto.idInterno ? projeto.idInterno + ' - ' : ''}${projeto.nome}` : '',
-      justificacao: e.reservaJustificacao.value.trim(),
+      justificacao: distanciaKm ? `${textoJustificacao} - ${distanciaKm}km no total previsto.` : textoJustificacao,
       data_pedido: e.reservaDataPedido.value,
       data_inicio: e.reservaDataInicio.value,
       hora_inicio: e.reservaHoraInicio.value,
@@ -5800,7 +5805,7 @@ const App = {
       hora_fim: e.reservaHoraFim.value
     };
     if (!recurso) { this.toast('A tua conta ainda não está associada a um consultor.'); return; }
-    if (!projeto || !dados.area || !dados.chefia || !dados.justificacao || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
+    if (!projeto || !dados.area || !dados.chefia || !textoJustificacao || !distanciaKm || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
       this.toast('Preenche todos os campos obrigatórios (*).'); return;
     }
     if (dados.data_fim < dados.data_inicio || (dados.data_fim === dados.data_inicio && dados.hora_fim <= dados.hora_inicio)) {
