@@ -241,6 +241,8 @@ const App = {
       modalTitulo: document.getElementById('modalTitulo'),
       modalCorpo: document.getElementById('modalCorpo'),
       toast: document.getElementById('toast'),
+      loadingOverlay: document.getElementById('loadingOverlay'),
+      loadingOverlayTexto: document.getElementById('loadingOverlayTexto'),
       relatorioHorasContainer: document.getElementById('relatorioHorasContainer'),
       resizerSidebar: document.getElementById('resizerSidebar'),
       resizerTabela: document.getElementById('resizerTabela'),
@@ -386,12 +388,15 @@ const App = {
     this.usuarioAtualId = autenticadoAgora ? session.user.id : null;
     if (autenticadoAgora && !this.sessaoAtiva) {
       this.sessaoAtiva = true;
+      this.mostrarCarregamento('A carregar dados…');
       try {
         await Sync.carregarDeSupabase();
       } catch (err) {
         console.error(err);
         this.toast('Erro ao carregar dados da nuvem: ' + err.message);
         this.state = this.estadoVazio();
+      } finally {
+        this.esconderCarregamento();
       }
       // O projeto ativo carregado nem sempre é um que diga respeito a este utilizador (Sync
       // carrega sempre o primeiro projeto da base de dados, por omissão — e um Administrador
@@ -430,6 +435,7 @@ const App = {
   async migrarDadosLocais() {
     if (!this._estadoLocalPreLogin) return;
     if (!confirm('Isto vai carregar todos os teus dados locais (projetos, consultores, equipas, etc.) para a base de dados partilhada. Só deves fazer isto uma vez — se já lá estiverem dados mais recentes de outra pessoa, corres o risco de os sobrescrever. Continuar?')) return;
+    this.mostrarCarregamento('A migrar dados locais…');
     try {
       await Sync.sincronizarComSupabase(null, JSON.stringify(this._estadoLocalPreLogin));
       await Sync.carregarDeSupabase();
@@ -442,6 +448,8 @@ const App = {
     } catch (err) {
       console.error(err);
       this.toast('Erro ao migrar dados locais: ' + err.message);
+    } finally {
+      this.esconderCarregamento();
     }
   },
   // Guarda o estado anterior no histórico de desfazer sempre que uma alteração relevante é
@@ -495,6 +503,7 @@ const App = {
     this._atualizandoDaNuvem = true;
     const btn = document.getElementById('btnAtualizarDados');
     if (btn) btn.disabled = true;
+    this.mostrarCarregamento('A atualizar dados…');
     // Sync.carregarDeSupabase() escolhe sempre o primeiro projeto por omissão — guarda o que
     // estava ativo antes de recarregar, para voltar a esse mesmo projeto, não para o primeiro.
     const projetoAnteriorId = this.state.projetoAtivoId;
@@ -521,6 +530,7 @@ const App = {
     } finally {
       this._atualizandoDaNuvem = false;
       if (btn) btn.disabled = false;
+      this.esconderCarregamento();
     }
   },
   _mudancaRelevante(strAntes, strDepois) {
@@ -1808,6 +1818,13 @@ const App = {
   horasAlocadas(t, recursoId) {
     if (t.alocacoesHoras && t.alocacoesHoras[recursoId] !== undefined) return t.alocacoesHoras[recursoId];
     return this.horasTempoInteiro(t);
+  },
+  // null quando ninguém ainda escreveu umas horas próprias para este par tarefa/recurso — usado só
+  // para decidir COMO MOSTRAR o campo no modal "Associar consultores" (vazio + placeholder, em vez
+  // de um número já preenchido que parece confirmado); os cálculos continuam todos a usar
+  // horasAlocadas, que resolve este null para "tempo inteiro" como sempre fez.
+  horasRecursoExplicita(t, recursoId) {
+    return (t.alocacoesHoras && t.alocacoesHoras[recursoId] !== undefined) ? t.alocacoesHoras[recursoId] : null;
   },
   // Índice de "registos" por tarefa (tarefaId -> horas somadas; e à parte, para registos sem
   // tarefaId, "projeto|pessoa|nome da tarefa" -> horas) — horasJaRegistadasTarefa era chamada uma
@@ -7026,21 +7043,29 @@ const App = {
   // abrirModalRecursos), sem recalcular nem tocar nas linhas dos outros consultores.
   montarLinhaModalRecursos(p, t, r) {
     const resultado = Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id));
-    const horas = this.horasAlocadas(t, r.id);
+    const horasExplicitas = this.horasRecursoExplicita(t, r.id);
+    const horasTempoInteiro = this.horasTempoInteiro(t);
     const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
     const disp = this.rotuloDisponibilidade(resultado);
     const dica = Capacidade.descreverProblema(r.nome, resultado) || 'Sem conflitos conhecidos neste período.';
     const marcado = t.recursoIds.includes(r.id);
     const livreHoras = Capacidade.capacidadeLivreHoras(r, t.id, t.inicio, t.fim);
+    // Só avisa quando ainda não há horas explícitas E a suposição de tempo inteiro já representa
+    // mais do que uns dias — em tarefas curtas (1-2 dias) a suposição costuma estar mesmo certa, não
+    // vale a pena incomodar; é em tarefas longas com pouco esforço real que o erro do utilizador
+    // (10 dias úteis × 8h em vez das 2h que a tarefa realmente precisa) passa despercebido.
+    const diasUteis = this.diasUteisTarefa(t);
+    const precisaConfirmar = marcado && horasExplicitas === null && diasUteis > 2;
     return `
-      <label class="rec-check" data-linha-recurso="${r.id}">
+      <label class="rec-check${precisaConfirmar ? ' rec-check-por-confirmar' : ''}" data-linha-recurso="${r.id}">
         <input type="checkbox" value="${r.id}" ${marcado ? 'checked' : ''}>
         <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:var(--cinza-500)">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
         <span class="rec-horas-wrap">
-          <input type="number" class="rec-horas" min="0" step="0.25" value="${horas}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
+          <input type="number" class="rec-horas${horasExplicitas === null ? ' rec-horas-por-omissao' : ''}" min="0" step="0.25" value="${horasExplicitas === null ? '' : horasExplicitas}" placeholder="${horasTempoInteiro}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
           ${livreHoras !== null ? `<span class="hint-livre" title="Horas livres deste consultor neste período, sem ultrapassar 100% em nenhum dia, dadas as outras tarefas desta pessoa">Livre: ${livreHoras.toFixed(1)}h</span>` : ''}
         </span>
         <span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dica)}">${disp.texto}</span>
+        ${precisaConfirmar ? `<span class="rec-horas-aviso">⚠ Sem horas próprias definidas — a assumir tempo inteiro: ${diasUteis} dias úteis × ${Capacidade.HORAS_DIA}h = ${horasTempoInteiro}h. Confirma (escreve ${horasTempoInteiro}) ou indica o esforço real.</span>` : ''}
       </label>`;
   },
   // Departamento por omissão do modal "Associar consultores": o do gestor do projeto (via
@@ -7080,7 +7105,7 @@ const App = {
       filtrosIniciais || {}
     );
     const html = `
-      <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. Por omissão a alocação é a tempo inteiro (${horasCheias}h, toda a duração útil da tarefa) — ajusta as horas totais previstas se a pessoa não for dedicar esse tempo todo.</p>
+      <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. As datas de início/fim e as horas de cada pessoa são coisas diferentes: as datas são quando a tarefa PODE decorrer; as horas são o esforço real que cada consultor vai dedicar. Deixa o campo "horas" em branco só se for mesmo a tempo inteiro (${horasCheias}h, toda a duração útil) — caso contrário, escreve as horas reais previstas.</p>
       <p id="recResumoAssociados" class="rec-resumo"></p>
       <div class="rec-filtros">
         <select id="recFiltroDepartamento">
@@ -7235,6 +7260,22 @@ const App = {
     el.classList.add('mostrar');
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => el.classList.remove('mostrar'), 2600);
+  },
+
+  // Sinal visual de "a carregar" para chamadas ao Supabase que podem demorar (login inicial,
+  // "Atualizar dados", migração de dados locais) — sem isto, o ecrã fica parado enquanto as várias
+  // tabelas chegam, e pode parecer que encravou. Chamadas encaixadas contam-se (mostrar/esconder em
+  // pares, sempre num try/finally do lado de quem chama) para não desaparecer cedo demais se, por
+  // algum motivo, duas operações destas alguma vez se sobrepuserem.
+  mostrarCarregamento(texto) {
+    this._carregamentosAtivos = (this._carregamentosAtivos || 0) + 1;
+    if (this.els.loadingOverlayTexto) this.els.loadingOverlayTexto.textContent = texto || 'A carregar dados…';
+    if (this.els.loadingOverlay) this.els.loadingOverlay.classList.add('aberto');
+  },
+  esconderCarregamento() {
+    this._carregamentosAtivos = Math.max(0, (this._carregamentosAtivos || 1) - 1);
+    if (this._carregamentosAtivos > 0) return;
+    if (this.els.loadingOverlay) this.els.loadingOverlay.classList.remove('aberto');
   },
 
   // ---------- Tooltip automático para texto cortado ----------

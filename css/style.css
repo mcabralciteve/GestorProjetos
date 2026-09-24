@@ -463,6 +463,25 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 }
 .auth-card form{display:flex;flex-direction:column;gap:10px;margin-top:14px;}
 
+/* Sinal de "a carregar" para operações de rede que podem demorar (login inicial, "Atualizar
+   dados", migração de dados locais) — sem isto, o ecrã fica visualmente parado/em branco enquanto
+   as várias tabelas do Supabase chegam, e parece ter encravado. Translúcido (não opaco) para não
+   esconder de repente o que já lá estava, ex.: ao clicar em "Atualizar". */
+.loading-overlay{
+  position:fixed;inset:0;z-index:90;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:rgba(255,255,255,0.72);
+}
+:root[data-tema="escuro"] .loading-overlay{background:rgba(15,23,32,0.72);}
+.loading-overlay.aberto{display:flex;}
+.loading-overlay p{font-size:13px;color:var(--cinza-700);font-weight:600;margin:0;}
+.loading-spinner{
+  width:34px;height:34px;border-radius:50%;
+  border:3px solid var(--cinza-200);border-top-color:var(--azul);
+  animation:girar-spinner .7s linear infinite;
+}
+@keyframes girar-spinner{to{transform:rotate(360deg);}}
+
 .modal-backdrop{
   /* Fundo quase transparente de propósito — só para capturar o clique "fora" e fechar o modal;
      o modal em si pode ser arrastado (pega no cabeçalho) para se ver o que está por trás. */
@@ -502,6 +521,11 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .rec-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
 .rec-filtros select,.rec-filtros input{flex:1;min-width:130px;padding:5px 7px;font-size:12px;}
 .rec-sem-resultado{font-size:12px;color:var(--cinza-500);padding:8px 0;}
+/* Campo de horas ainda por confirmar (sem valor explícito, a mostrar só o placeholder do "tempo
+   inteiro" calculado) — tracejado para não parecer um valor já decidido, ao contrário de um valor
+   escrito à mão (borda sólida normal). */
+.rec-horas.rec-horas-por-omissao{border-style:dashed;}
+.rec-horas-aviso{flex-basis:100%;font-size:11px;color:var(--laranja);background:#fff2e8;border-radius:6px;padding:4px 8px;}
 
 /* Registo do Dia (vista mensal — grelha .cal-* partilhada com o Calendário, ver renderRegistoDia) */
 .tipo-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;}
@@ -650,7 +674,7 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 @media print{
   .topbar, .grupos-nav, .tabs, .gantt-topbar, .toolbar,
   .sidebar, #resizerSidebar, .painel-tabela, #resizerTabela,
-  .toast, .modal-backdrop, #authGate{display:none !important;}
+  .toast, .modal-backdrop, #authGate, .loading-overlay{display:none !important;}
   html, body, .layout, .conteudo, .split, .painel-gantt{
     overflow:visible !important;height:auto !important;display:block !important;
   }
