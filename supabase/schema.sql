@@ -462,6 +462,33 @@ begin
 end $$;
 
 -- ============================================================================
+-- Grants da Data API — a partir de 30/10/2026 a Supabase deixa de os atribuir
+-- automaticamente a tabelas novas (aviso por email); sem isto, um projeto criado
+-- de raiz a partir deste schema.sql (recuperação de desastre, ambiente novo) ficava
+-- com todas as tabelas a devolver "permission denied" via supabase-js/PostgREST,
+-- mesmo com a RLS acima já a autorizar o acesso. As tabelas já existentes em
+-- produção não são afetadas (mantêm os grants automáticos de quando foram
+-- criadas) — isto é só para o dia em que este ficheiro tiver de recriar tudo.
+-- "authenticated" cobre tudo o que a app usa (login sempre exigido, nunca há
+-- acesso anónimo); "service_role" fica também coberto, por segurança, para uso
+-- futuro (Edge Functions, scripts). GRANT é idempotente — repetir não faz mal.
+-- ============================================================================
+do $$
+declare
+  t text;
+begin
+  for t in select unnest(array[
+    'departamentos','equipas','recursos','feriados','ausencias',
+    'projetos','tarefas','tarefa_recursos','faturas','registos',
+    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho'
+  ])
+  loop
+    execute format('grant select, insert, update, delete on public.%I to authenticated;', t);
+    execute format('grant select, insert, update, delete on public.%I to service_role;', t);
+  end loop;
+end $$;
+
+-- ============================================================================
 -- Passo manual único: tornar-te Administrador (não há ninguém para o fazer a
 -- partir da app na primeira vez). Substitui o email e corre uma única vez.
 -- ============================================================================
