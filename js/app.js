@@ -7272,12 +7272,17 @@ const App = {
   // algum motivo, duas operações destas alguma vez se sobrepuserem.
   mostrarCarregamento(texto) {
     this._carregamentosAtivos = (this._carregamentosAtivos || 0) + 1;
+    // aoMudarSessao pode disparar antes de App.init() correr (o listener de "auth-mudou" é
+    // registado logo na análise do script, de propósito, para não perder esse evento — ver o
+    // comentário junto a esse addEventListener) — nesse instante this.els ainda não existe.
+    if (!this.els) return;
     if (this.els.loadingOverlayTexto) this.els.loadingOverlayTexto.textContent = texto || 'A carregar dados…';
     if (this.els.loadingOverlay) this.els.loadingOverlay.classList.add('aberto');
   },
   esconderCarregamento() {
     this._carregamentosAtivos = Math.max(0, (this._carregamentosAtivos || 1) - 1);
     if (this._carregamentosAtivos > 0) return;
+    if (!this.els) return;
     if (this.els.loadingOverlay) this.els.loadingOverlay.classList.remove('aberto');
   },
 
