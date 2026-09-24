@@ -503,7 +503,10 @@ const App = {
     this._atualizandoDaNuvem = true;
     const btn = document.getElementById('btnAtualizarDados');
     if (btn) btn.disabled = true;
-    this.mostrarCarregamento('A atualizar dados…');
+    // "silencioso" (ao voltar à aba) tem de continuar mesmo invisível — como já não interrompe com
+    // confirm() nem toast, mostrar aqui o ecrã de carregamento tornava-o tudo menos silencioso: de
+    // cada vez que a pessoa voltava à aba via um overlay a bloquear o ecrã até a resposta chegar.
+    if (!opts.silencioso) this.mostrarCarregamento('A atualizar dados…');
     // Sync.carregarDeSupabase() escolhe sempre o primeiro projeto por omissão — guarda o que
     // estava ativo antes de recarregar, para voltar a esse mesmo projeto, não para o primeiro.
     const projetoAnteriorId = this.state.projetoAtivoId;
@@ -530,7 +533,7 @@ const App = {
     } finally {
       this._atualizandoDaNuvem = false;
       if (btn) btn.disabled = false;
-      this.esconderCarregamento();
+      if (!opts.silencioso) this.esconderCarregamento();
     }
   },
   _mudancaRelevante(strAntes, strDepois) {
