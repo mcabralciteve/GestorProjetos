@@ -348,6 +348,7 @@ const Sync = {
       emailViaturas1: cfg.data ? (cfg.data.email_viaturas_1 || '') : '',
       emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : '',
       emailRH: cfg.data ? (cfg.data.email_rh || '') : '',
+      lembreteHorasAtivo: cfg.data ? !!cfg.data.lembrete_horas_ativo : false,
       ocupacaoLimiteBaixo: cfg.data && cfg.data.ocupacao_limite_baixo != null ? Number(cfg.data.ocupacao_limite_baixo) : 60,
       ocupacaoLimiteAlto: cfg.data && cfg.data.ocupacao_limite_alto != null ? Number(cfg.data.ocupacao_limite_alto) : 80,
       ocupacaoLimiteCritico: cfg.data && cfg.data.ocupacao_limite_critico != null ? Number(cfg.data.ocupacao_limite_critico) : 100

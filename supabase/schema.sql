@@ -374,6 +374,9 @@ alter table public.configuracoes add column if not exists ocupacao_limite_critic
 -- Email de RH notificado (mailto, ver App.enviarEmailAusencia) sempre que uma ausência é criada,
 -- alterada, aprovada, rejeitada ou eliminada — a par do Team Leader/Diretor da pessoa.
 alter table public.configuracoes add column if not exists email_rh text not null default '';
+-- Interruptor geral dos lembretes automáticos de horas em falta (função do servidor
+-- supabase/functions/lembrete-horas) — desligado por omissão: nada é enviado até o Administrador o ligar.
+alter table public.configuracoes add column if not exists lembrete_horas_ativo boolean not null default false;
 insert into public.configuracoes (id) values (1) on conflict (id) do nothing;
 
 -- Depois de alterar colunas por SQL direto, força a API (PostgREST) a esquecer a "schema cache"

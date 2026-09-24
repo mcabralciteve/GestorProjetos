@@ -318,6 +318,7 @@ const App = {
       defEmail1: document.getElementById('defEmail1'),
       defEmail2: document.getElementById('defEmail2'),
       defEmailRH: document.getElementById('defEmailRH'),
+      defLembreteHoras: document.getElementById('defLembreteHoras'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
       ocupLimiteBaixo: document.getElementById('ocupLimiteBaixo'),
@@ -621,6 +622,7 @@ const App = {
     if (cfg.emailViaturas1 === undefined) cfg.emailViaturas1 = '';
     if (cfg.emailViaturas2 === undefined) cfg.emailViaturas2 = '';
     if (cfg.emailRH === undefined) cfg.emailRH = '';
+    if (cfg.lembreteHorasAtivo === undefined) cfg.lembreteHorasAtivo = false;
     if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
     if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
     if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
@@ -6907,6 +6909,7 @@ const App = {
     if (document.activeElement !== e.defEmail1) e.defEmail1.value = c.emailViaturas1 || '';
     if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
     if (document.activeElement !== e.defEmailRH) e.defEmailRH.value = c.emailRH || '';
+    if (e.defLembreteHoras && document.activeElement !== e.defLembreteHoras) e.defLembreteHoras.checked = !!c.lembreteHorasAtivo;
     if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
     if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
     if (document.activeElement !== e.ocupLimiteCritico) e.ocupLimiteCritico.value = c.ocupacaoLimiteCritico ?? 100;
@@ -6919,8 +6922,9 @@ const App = {
     e.defMsg.style.color = 'var(--cinza-500)';
     e.defMsg.textContent = 'A guardar...';
     try {
-      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH });
-      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH });
+      const lembreteHorasAtivo = !!(e.defLembreteHoras && e.defLembreteHoras.checked);
+      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH, lembrete_horas_ativo: lembreteHorasAtivo });
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {
