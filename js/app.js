@@ -1302,7 +1302,21 @@ const App = {
     this.selecionadaId = null;
     this.selecionadasIds = new Set();
     this.persist();
-    this.renderTudo();
+    // renderTudo() é síncrono e pode demorar visivelmente num projeto grande (o Gantt inteiro é
+    // reconstruído) — sem isto, o único sinal de "a carregar" que a app tem (mostrarCarregamento)
+    // nunca chegaria a aparecer no ecrã, porque o browser só pinta depois do JavaScript devolver o
+    // controlo, e o spinner apareceria e desapareceria no mesmo instante. setTimeout (não
+    // requestAnimationFrame — este pode nunca disparar numa aba em segundo plano) dá exatamente
+    // esse respiro: o browser pinta o spinner primeiro, só depois começa o render pesado. O
+    // try/finally garante que o spinner NUNCA fica preso no ecrã, mesmo que o render falhe.
+    this.mostrarCarregamento('A abrir projeto…');
+    setTimeout(() => {
+      try {
+        this.renderTudo();
+      } finally {
+        this.esconderCarregamento();
+      }
+    }, 20);
   },
   // Um filtro de Gestor ativo no Gantt (ver renderProjetoSelect) não pode impedir de abrir aqui um
   // projeto vindo de outro sítio (Alocações, Portefólio, tabela de Projetos) — sem repor o filtro
