@@ -173,6 +173,7 @@ const App = {
       projVersao: document.getElementById('projVersao'),
       projFaturacaoResumo: document.getElementById('projFaturacaoResumo'),
       projGestorId: document.getElementById('projGestorId'),
+      projEquipaId: document.getElementById('projEquipaId'),
       listaConsultoresProjeto: document.getElementById('listaConsultoresProjeto'),
       grupoBtnEquipa: document.getElementById('grupoBtnEquipa'),
       grupoBtnFaturacao: document.getElementById('grupoBtnFaturacao'),
@@ -627,6 +628,7 @@ const App = {
     // Compatibilidade com projetos guardados antes da introdução do Gestor de Projeto.
     Object.values(this.state.projetos).forEach(p => {
       if (p.gestorId === undefined) p.gestorId = null;
+      if (p.equipaId === undefined) p.equipaId = null;
       if (p.ativo === undefined) p.ativo = true;
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
       if (!p.pontosSituacao) p.pontosSituacao = [];
@@ -1076,6 +1078,7 @@ const App = {
       estado: 'Por iniciar',
       ativo: true,
       gestorId: gestorId || null,
+      equipaId: null,
       versao: new Date().toISOString(),
       tarefas: [],
       faturas: [],
@@ -3327,6 +3330,14 @@ const App = {
     e.projGestorId.innerHTML = opcoesGestor;
     e.projGestorId.value = p ? (p.gestorId || '') : '';
     e.projGestorId.disabled = !p || !this.souAdmin();
+
+    if (e.projEquipaId) {
+      const opcoesEquipa = '<option value="">Sem equipa atribuída</option>' +
+        [...this.state.equipas].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
+      e.projEquipaId.innerHTML = opcoesEquipa;
+      e.projEquipaId.value = p ? (p.equipaId || '') : '';
+      e.projEquipaId.disabled = !p || !this.souAdmin();
+    }
 
     const cardConsultores = document.getElementById('cardConsultores');
     if (!p) { if (cardConsultores) cardConsultores.style.display = 'none'; return; }
@@ -7085,11 +7096,23 @@ const App = {
         ${precisaConfirmar ? `<span class="rec-horas-aviso">⚠ Sem horas próprias definidas — a assumir tempo inteiro: ${diasUteis} dias úteis × ${Capacidade.HORAS_DIA}h = ${horasTempoInteiro}h. Confirma (escreve ${horasTempoInteiro}) ou indica o esforço real.</span>` : ''}
       </label>`;
   },
-  // Departamento por omissão do modal "Associar consultores": o do gestor do projeto (via
-  // recurso->equipa->departamento), para começar já filtrado no que mais provavelmente interessa.
-  // Cai em "Todos" (string vazia) se o gestor não tiver recurso/equipa/departamento associado —
-  // nunca esconde consultores por falta de dados, só quando há mesmo uma correspondência.
+  // Equipa por omissão do modal "Associar consultores": a equipa "dona" do próprio projeto
+  // (p.equipaId, definida no cartão "Dados do Projeto" — ver renderGestorConsultores), para a
+  // alocação ser mais rápida sem ter de se escolher isto à mão de cada vez. Cai em "Todas" (string
+  // vazia) se o projeto não tiver equipa atribuída.
+  equipaDefeitoAssociarConsultores(p) {
+    return (p && p.equipaId) || '';
+  },
+  // Departamento por omissão: o da equipa do projeto (equipaDefeitoAssociarConsultores) — só cai
+  // para o departamento do GESTOR do projeto (via recurso->equipa->departamento) se o projeto ainda
+  // não tiver equipa própria atribuída (compatibilidade com projetos antigos/sem equipa). Nunca
+  // esconde consultores por falta de dados, só quando há mesmo uma correspondência.
   departamentoDefeitoAssociarConsultores(p) {
+    const equipaId = this.equipaDefeitoAssociarConsultores(p);
+    if (equipaId) {
+      const equipaProjeto = this.state.equipas.find(eq => eq.id === equipaId);
+      return (equipaProjeto && equipaProjeto.departamentoId) || '';
+    }
     if (!p || !p.gestorId) return '';
     const recGestor = this.state.recursos.find(r => r.id === p.gestorId);
     const equipaGestor = recGestor && this.state.equipas.find(eq => eq.id === recGestor.equipaId);
@@ -7118,7 +7141,7 @@ const App = {
     const horasCheias = this.horasTempoInteiro(t);
     const departamentos = [...this.state.departamentos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
     const filtros = Object.assign(
-      { departamento: this.departamentoDefeitoAssociarConsultores(p), equipa: '', nome: '' },
+      { departamento: this.departamentoDefeitoAssociarConsultores(p), equipa: this.equipaDefeitoAssociarConsultores(p), nome: '' },
       filtrosIniciais || {}
     );
     const html = `
@@ -7369,6 +7392,7 @@ const App = {
     e.projHorasVendidas.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().horasVendidas = parseFloat(e.projHorasVendidas.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.projValorVendido.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().valorVendido = parseFloat(e.projValorVendido.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.projGestorId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().gestorId = e.projGestorId.value || null; this.persist(); this.renderTudo(); });
+    if (e.projEquipaId) e.projEquipaId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().equipaId = e.projEquipaId.value || null; this.persist(); this.renderTudo(); });
 
     document.getElementById('btnAddTarefa').addEventListener('click', () => this.adicionarTarefa(false));
     document.getElementById('btnAddSubtarefa').addEventListener('click', () => this.adicionarTarefa(true));

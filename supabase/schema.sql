@@ -157,6 +157,16 @@ alter table public.projetos add column if not exists gestor_id uuid references p
 -- as suas tarefas deixam de contar para a Capacidade/Alocações de quem lá está), sem o eliminar nem
 -- mexer no campo "estado" (que continua a descrever a fase do projeto, coisas diferentes).
 alter table public.projetos add column if not exists ativo boolean not null default true;
+-- Equipa "dona" do projeto (editável, só Administrador — ver App.renderGestorConsultores) — usada
+-- só para pré-selecionar Departamento/Equipa no modal "Associar consultores" (ver
+-- App.abrirModalRecursos), para não ter de se escolher isso à mão sempre que se associa alguém.
+-- Todos os projetos já existentes arrancam associados à equipa "DCS" (pedido explícito do
+-- utilizador); ajusta manualmente os que não forem mesmo dessa equipa, no cartão "Dados do
+-- Projeto" do Gantt. Se a equipa "DCS" não existir com este nome exato, a atualização abaixo não
+-- faz nada (fica null em todos, tal como ficaria sem esta migração).
+alter table public.projetos add column if not exists equipa_id uuid references public.equipas(id) on delete set null;
+update public.projetos set equipa_id = (select id from public.equipas where nome = 'DCS' limit 1)
+where equipa_id is null;
 
 -- Consultor de um projeto não é uma lista à parte: é quem já tem o recurso ligado ao seu login
 -- atribuído a alguma tarefa desse projeto (tabela "tarefa_recursos" já cobre isso).
