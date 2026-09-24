@@ -5,6 +5,8 @@
 // Parâmetros (querystring), úteis para testar sem incomodar ninguém:
 //   ?dry=1              não envia nada, devolve só a lista de quem receberia e o quê
 //   ?apenas=a@b.pt      só considera esse endereço (envia a essa pessoa, se tiver dias em falta)
+//   ?destino=eu@b.pt    envia TODOS os emails calculados para este endereço (com [TESTE] no assunto),
+//                       em vez de para cada pessoa — combina com ?apenas= para veres o email de um colega
 //   ?forcar=1           corre mesmo num fim de semana/feriado e mesmo com o interruptor desligado
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -62,6 +64,7 @@ Deno.serve(async (req) => {
   const dry = url.searchParams.get('dry') === '1';
   const forcar = url.searchParams.get('forcar') === '1';
   const apenas = (url.searchParams.get('apenas') ?? '').trim().toLowerCase();
+  const destino = (url.searchParams.get('destino') ?? '').trim();
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   const hoje = hojeEmLisboa();
@@ -92,7 +95,9 @@ Deno.serve(async (req) => {
     if (!dias.length) continue;
     if (dry) { resultado.push({ nome: r.nome, email: r.email, diasEmFalta: dias.length, estado: 'não enviado (dry)' }); continue; }
     try {
-      await enviar(r.email.trim(), montarEmail(r.nome, dias));
+      const email = montarEmail(r.nome, dias);
+      if (destino) email.assunto = `[TESTE para ${r.nome}] ${email.assunto}`;
+      await enviar(destino || r.email.trim(), email);
       resultado.push({ nome: r.nome, email: r.email, diasEmFalta: dias.length, estado: 'enviado' });
     } catch (err) {
       resultado.push({ nome: r.nome, email: r.email, diasEmFalta: dias.length, estado: 'erro: ' + String((err as Error).message) });

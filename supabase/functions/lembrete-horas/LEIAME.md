@@ -48,6 +48,7 @@ email** estiver desligado (vem desligado por omissão).
 |---|---|
 | `dry=1` | não envia; devolve a lista |
 | `apenas=a@b.pt` | só considera esse endereço |
+| `destino=eu@b.pt` | envia os emails calculados para este endereço (com `[TESTE]` no assunto) em vez de para cada pessoa; usa com `apenas=` para ver o email de um colega sem o incomodar |
 | `forcar=1` | ignora "hoje não é dia útil" e o interruptor desligado |
 
 O horário do agendamento está em UTC (Lisboa = UTC+0 no inverno, +1 no verão).
