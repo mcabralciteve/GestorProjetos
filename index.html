@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260925e">
+<link rel="stylesheet" href="css/style.css?v=20260925f">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -244,6 +244,7 @@
         <button id="btnDesfazer" class="btn btn-sm" title="Desfazer (Ctrl+Z)" disabled>↶ Desfazer</button>
         <button id="btnRefazer" class="btn btn-sm" title="Refazer (Ctrl+Y)" disabled>↷ Refazer</button>
         <span class="spacer"></span>
+        <label class="zoom-label" title="Ao mover uma tarefa (arrastar a barra ou mudar a data de início), as tarefas que dependem dela (predecessoras) deslocam-se o mesmo número de dias, mantendo as folgas entre elas."><input type="checkbox" id="chkMoverDependentes" checked> Mover dependentes</label>
         <label class="zoom-label">Zoom: <span id="zoomLabel">Semanas</span>
           <input type="range" id="selZoom" class="zoom-slider" min="2" max="60" step="1" value="14" title="Arrasta para ajustar o zoom do Gantt">
         </label>
@@ -1029,14 +1030,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260925e"></script>
-<script src="js/auth.js?v=20260925e"></script>
-<script src="js/sync.js?v=20260925e"></script>
-<script src="js/gantt.js?v=20260925e"></script>
-<script src="js/capacidade.js?v=20260925e"></script>
-<script src="js/portfolio-gantt.js?v=20260925e"></script>
-<script src="js/reserva-viatura.js?v=20260925e"></script>
-<script src="js/backup.js?v=20260925e"></script>
-<script src="js/app.js?v=20260925e"></script>
+<script src="js/supabase-config.js?v=20260925f"></script>
+<script src="js/auth.js?v=20260925f"></script>
+<script src="js/sync.js?v=20260925f"></script>
+<script src="js/gantt.js?v=20260925f"></script>
+<script src="js/capacidade.js?v=20260925f"></script>
+<script src="js/portfolio-gantt.js?v=20260925f"></script>
+<script src="js/reserva-viatura.js?v=20260925f"></script>
+<script src="js/backup.js?v=20260925f"></script>
+<script src="js/app.js?v=20260925f"></script>
 </body>
 </html>

@@ -126,6 +126,7 @@ const App = {
     this.cacheEls();
     this.aplicarTema(this.lerPrefsUI().tema || 'claro');
     this.modoRegistoDia = this.lerPrefsUI().modoRegistoDia || 'pessoal';
+    this.moverDependentes = this.lerPrefsUI().moverDependentes !== false;
     this.aplicarModoRegistoDia();
     this.capturarEstadoLocalPreLogin();
     this.state = this.estadoVazio();
@@ -242,6 +243,7 @@ const App = {
       modalTitulo: document.getElementById('modalTitulo'),
       modalCorpo: document.getElementById('modalCorpo'),
       toast: document.getElementById('toast'),
+      chkMoverDependentes: document.getElementById('chkMoverDependentes'),
       loadingOverlay: document.getElementById('loadingOverlay'),
       loadingOverlayTexto: document.getElementById('loadingOverlayTexto'),
       relatorioHorasContainer: document.getElementById('relatorioHorasContainer'),
@@ -1661,12 +1663,18 @@ const App = {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, id);
     if (!t) return;
-    if (campo === 'inicio' || campo === 'fim') {
+    if (campo === 'inicio') {
+      // Mudar o início DESLOCA a tarefa (mantém a duração), como arrastar a barra — em vez de a
+      // encurtar/alongar deixando o fim onde estava. Para mudar a duração há "Fim" e "Dias".
       if (!this.anoDataPlausivel(valor)) return;
-      t[campo] = valor;
-      if (DateUtil.parseISO(t.fim) < DateUtil.parseISO(t.inicio)) {
-        if (campo === 'inicio') t.fim = t.inicio; else t.inicio = t.fim;
-      }
+      const duracao = DateUtil.diffDays(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim));
+      this.moverTarefa(id, valor, DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(valor), duracao)));
+      return;
+    }
+    if (campo === 'fim') {
+      if (!this.anoDataPlausivel(valor)) return;
+      t.fim = valor;
+      if (DateUtil.parseISO(t.fim) < DateUtil.parseISO(t.inicio)) t.inicio = t.fim;
     } else if (campo === 'duracao') {
       const dias = Math.max(1, parseInt(valor, 10) || 1);
       t.fim = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.inicio), dias - 1));
@@ -1710,15 +1718,46 @@ const App = {
       document.getElementById('fmtCor').value = '#12222f';
     });
   },
+  // Tarefas-folha que dependem (direta ou indiretamente, por predecessoras) da tarefa "id".
+  dependentesDe(p, id) {
+    const vistos = new Set();
+    const fila = [id];
+    const folhas = [];
+    while (fila.length) {
+      const atual = fila.shift();
+      p.tarefas.forEach(t => {
+        if (vistos.has(t.id) || !t.predecessores.some(pr => pr.id === atual)) return;
+        vistos.add(t.id);
+        if (!this.temFilhos(p, t.id)) folhas.push(t);
+        fila.push(t.id);
+      });
+    }
+    return folhas;
+  },
   moverTarefa(id, novoInicioISO, novoFimISO) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, id);
     if (!t) return;
+    // Deslocar a tarefa INTEIRA (mesma duração, início diferente) leva consigo, pelo mesmo número
+    // de dias, todas as que dependem dela — mantendo as folgas entre elas. Mudar só um dos lados
+    // (redimensionar) é mudar a duração, não atrasar: aí só valem as regras normais das
+    // predecessoras (empurrar o que colide, ver relaxarPredecessoras).
+    const delta = DateUtil.diffDays(DateUtil.parseISO(t.inicio), DateUtil.parseISO(novoInicioISO));
+    const mesmaDuracao = DateUtil.diffDays(DateUtil.parseISO(novoInicioISO), DateUtil.parseISO(novoFimISO)) === DateUtil.diffDays(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim));
+    let deslocadas = 0;
+    if (this.moverDependentes && delta !== 0 && mesmaDuracao) {
+      this.dependentesDe(p, id).forEach(d => {
+        d.inicio = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(d.inicio), delta));
+        d.fim = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(d.fim), delta));
+        deslocadas++;
+      });
+    }
     t.inicio = novoInicioISO;
     t.fim = novoFimISO;
     this.recalcularAgendamento(p);
     this.persist();
     this.renderTudo();
+    if (deslocadas) this.toast(`${deslocadas} tarefa(s) dependente(s) também deslocada(s) ${Math.abs(delta)} dia(s).`);
   },
 
   // ---------- Predecessoras ----------
@@ -7604,6 +7643,13 @@ const App = {
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.btnAlocSemHoras) e.btnAlocSemHoras.addEventListener('click', () => this.abrirModalAlocacoesSemHoras());
+    if (e.chkMoverDependentes) {
+      e.chkMoverDependentes.checked = this.moverDependentes;
+      e.chkMoverDependentes.addEventListener('change', () => {
+        this.moverDependentes = e.chkMoverDependentes.checked;
+        this.gravarPrefUI('moverDependentes', this.moverDependentes);
+      });
+    }
     if (e.btnExportarBackup) e.btnExportarBackup.addEventListener('click', () => this.exportarBackup());
     [e.fAlocDept, e.fAlocEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosAlocacoes()); });
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
