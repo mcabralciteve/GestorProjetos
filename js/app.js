@@ -2024,64 +2024,78 @@ const App = {
     });
     return itens;
   },
-  // Rotina de manutenção (só Administrador — mexe em todos os projetos): mostra o que seria
-  // alterado e só grava depois de confirmar. Uma única persist() → um único passo no ↶ Desfazer.
+  // Rotina de manutenção (só Administrador — mexe em todos os projetos): lista as alocações sem
+  // horas e deixa corrigir UMA A UMA — nada é alterado em bloco. Cada linha grava logo ao escrever
+  // as horas (ou com "✓ Xh", para confirmar de propósito o tempo inteiro que a app já assume) e sai
+  // da lista; cada gravação é um passo no ↶ Desfazer.
   abrirModalAlocacoesSemHoras() {
     if (!this.souAdmin()) return;
     Capacidade.limparCaches();
     this.limparCacheDiasUteisEntre();
     const html = `
       <div class="row-2">
-        <label>Horas a registar por alocação
-          <input type="number" id="asHoras" min="0" step="0.25" value="1">
-        </label>
+        <label>Filtrar <input type="text" id="asFiltro" placeholder="projeto, cliente, tarefa ou consultor..."></label>
         <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;">
           <input type="checkbox" id="asSoAtivos" checked> Só projetos ativos
         </label>
       </div>
       <p id="asResumo" class="rec-resumo"></p>
-      <div id="asLista"></div>
-      <button class="btn btn-primary" id="btnAsAplicar" style="margin-top:10px;">Registar horas</button>`;
+      <div id="asLista"></div>`;
     this.abrirModal('Alocações sem horas definidas', html, { largo: true });
     const m = this.els.modalCorpo;
-    const inpHoras = m.querySelector('#asHoras');
+    const filtro = m.querySelector('#asFiltro');
     const chkAtivos = m.querySelector('#asSoAtivos');
-    const btn = m.querySelector('#btnAsAplicar');
+    const lista = m.querySelector('#asLista');
     const LIMITE_LINHAS = 300;
+    const rotuloProjeto = (p) => `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`;
+    let itens = [];
     const render = () => {
-      const itens = this.alocacoesSemHoras(chkAtivos.checked);
-      const horas = Math.max(0, Number(inpHoras.value) || 0);
+      const termo = filtro.value.trim().toLowerCase();
+      const todos = this.alocacoesSemHoras(chkAtivos.checked);
+      itens = todos
+        .filter(i => !termo || `${rotuloProjeto(i.p)} ${i.t.nome} ${i.consultor}`.toLowerCase().includes(termo))
+        .sort((a, b) => rotuloProjeto(a.p).localeCompare(rotuloProjeto(b.p), 'pt') || a.t.inicio.localeCompare(b.t.inicio) || a.consultor.localeCompare(b.consultor, 'pt'));
       const projetos = new Set(itens.map(i => i.p.id)).size;
       m.querySelector('#asResumo').textContent = itens.length
-        ? `${itens.length} alocação(ões) sem horas, em ${projetos} projeto(s) — cada uma passaria de "tempo inteiro" a ${horas}h.`
-        : '✅ Nenhuma alocação sem horas definidas.';
-      const linhas = itens.slice(0, LIMITE_LINHAS).map(i => `<tr>
-        <td>${escapeHtml(i.p.idInterno ? i.p.idInterno + ' — ' : '')}${escapeHtml(i.p.nome)}${i.p.cliente ? ` (${escapeHtml(i.p.cliente)})` : ''}</td>
+        ? `${itens.length} alocação(ões) sem horas, em ${projetos} projeto(s). Escreve as horas reais de cada uma (grava ao sair do campo) ou confirma o tempo inteiro com o botão ✓.`
+        : (todos.length ? `Nenhum resultado para este filtro (há ${todos.length} alocação(ões) por resolver).` : '✅ Nenhuma alocação sem horas definidas.');
+      const linhas = itens.slice(0, LIMITE_LINHAS).map((i, idx) => `<tr>
+        <td>${escapeHtml(rotuloProjeto(i.p))}</td>
         <td>${escapeHtml(i.t.nome)}</td><td>${escapeHtml(i.consultor)}</td>
-        <td>${DateUtil.formatShort(DateUtil.parseISO(i.t.inicio))}</td><td>${i.dias}</td><td>${i.horasAssumidas}h</td></tr>`).join('');
-      m.querySelector('#asLista').innerHTML = itens.length ? `
-        <div class="table-scroll" style="max-height:40vh;"><table class="tabela-crud">
-          <thead><tr><th>Projeto</th><th>Tarefa</th><th>Consultor</th><th>Início</th><th>Dias</th><th>Hoje assume</th></tr></thead>
+        <td>${DateUtil.formatShort(DateUtil.parseISO(i.t.inicio))}</td><td>${i.dias}</td>
+        <td style="white-space:nowrap;"><input type="number" class="rec-horas rec-horas-por-omissao" min="0" step="0.25" placeholder="${i.horasAssumidas}" data-as-horas="${idx}">h</td>
+        <td><button type="button" class="btn btn-sm" data-as-confirmar="${idx}" title="Confirmar tempo inteiro (${i.horasAssumidas}h)">✓ ${i.horasAssumidas}h</button></td></tr>`).join('');
+      lista.innerHTML = itens.length ? `
+        <div class="table-scroll" style="max-height:50vh;"><table class="tabela-crud">
+          <thead><tr><th>Projeto</th><th>Tarefa</th><th>Consultor</th><th>Início</th><th>Dias</th><th>Horas reais</th><th></th></tr></thead>
           <tbody>${linhas}</tbody></table></div>
-        ${itens.length > LIMITE_LINHAS ? `<p class="hint">A mostrar as primeiras ${LIMITE_LINHAS} de ${itens.length} — todas serão alteradas.</p>` : ''}` : '';
-      btn.disabled = !itens.length;
-      btn.textContent = itens.length ? `Registar ${horas}h em ${itens.length} alocação(ões)` : 'Nada a registar';
+        ${itens.length > LIMITE_LINHAS ? `<p class="hint">A mostrar as primeiras ${LIMITE_LINHAS} de ${itens.length} — à medida que resolves, entram as seguintes.</p>` : ''}` : '';
     };
-    inpHoras.addEventListener('input', render);
-    chkAtivos.addEventListener('change', render);
-    btn.addEventListener('click', () => {
-      const itens = this.alocacoesSemHoras(chkAtivos.checked);
-      const horas = Math.max(0, Number(inpHoras.value) || 0);
-      if (!itens.length) return;
-      itens.forEach(i => {
-        if (!i.t.alocacoesHoras) i.t.alocacoesHoras = {};
-        i.t.alocacoesHoras[i.rid] = horas;
-      });
-      this.persist();
-      this.fecharModal();
-      this.renderTudo();
-      this.toast(`${itens.length} alocação(ões) atualizada(s) para ${horas}h. Podes desfazer com ↶.`);
+    // Grava esta linha (a alocação sai da lista porque já tem horas explícitas) e volta a desenhar,
+    // mantendo a posição de scroll para não "saltar" a cada linha resolvida.
+    const gravar = (idx, valor) => {
+      const i = itens[idx];
+      if (!i) return;
+      const sc = lista.querySelector('.table-scroll');
+      const topo = sc ? sc.scrollTop : 0;
+      this.definirHorasRecursoTarefa(i.p, i.t.id, i.rid, valor);
+      render();
+      const novo = lista.querySelector('.table-scroll');
+      if (novo) novo.scrollTop = topo;
+    };
+    lista.addEventListener('change', (ev) => {
+      const inp = ev.target.closest('[data-as-horas]');
+      if (!inp || inp.value === '') return; // vazio = ainda não decidido, nunca grava 0 por engano
+      gravar(Number(inp.dataset.asHoras), inp.value);
     });
+    lista.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-as-confirmar]');
+      if (!b) return;
+      const i = itens[Number(b.dataset.asConfirmar)];
+      if (i) gravar(Number(b.dataset.asConfirmar), i.horasAssumidas);
+    });
+    filtro.addEventListener('input', render);
+    chkAtivos.addEventListener('change', render);
     render();
   },
   // Percentagem MÉDIA de ocupação diária, derivada das horas totais planeadas espalhadas pelos
