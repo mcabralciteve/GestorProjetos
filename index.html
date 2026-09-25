@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260925g">
+<link rel="stylesheet" href="css/style.css?v=20260925i">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -149,9 +149,12 @@
           </label>
         </div>
         <div class="card-aviso-suspenso" id="projSuspensoAviso" style="display:none;">⏸ Suspenso — ninguém (nem o Gestor) edita ou regista horas aqui enquanto estiver assim. Só o Administrador pode reativar.</div>
+        <label>Tipo de referência <span class="hint">(GIAF = sistema de faturação; Interno = gerada pela app)</span>
+          <select id="projTipoRef"><option value="giaf">GIAF</option><option value="interno">Interno (INT-AAAA-NNN)</option></select>
+        </label>
         <div class="row-2">
-          <label>ID interno
-            <input type="text" id="projIdInterno" placeholder="ex.: PRJ-2026-014" autocomplete="new-password" spellcheck="false" readonly>
+          <label>Referência
+            <input type="text" id="projIdInterno" placeholder="ex.: 2026/384" autocomplete="new-password" spellcheck="false" readonly>
           </label>
           <label>Estado
             <select id="projEstado">
@@ -289,6 +292,7 @@
     </div>
     <p class="pagina-sub">Projetos partilhados por toda a equipa, guardados na base de dados. "Abrir" para editar o Gantt.</p>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Referência <select id="fProjTipoRef"><option value="">Todas</option><option value="giaf">GIAF</option><option value="interno">Interno</option></select></label>
       <label class="zoom-label">Gestor <select id="fProjGestor"><option value="">Todos</option></select></label>
       <label class="zoom-label">Cliente <select id="fProjCliente"><option value="">Todos</option></select></label>
       <label class="zoom-label">Estado <select id="fProjEstado">
@@ -752,6 +756,12 @@
     </div>
 
     <div class="card" style="max-width:480px;margin-top:16px;">
+      <h3 style="margin-top:0;">Auditoria dos códigos de projeto</h3>
+      <p class="pagina-sub" style="margin-top:0;">Lista, só para leitura, os projetos sem referência, com referência repetida ou fora do formato (GIAF: AAAA/NNN; Interno: INT-AAAA-NNN). Nada é alterado.</p>
+      <button class="btn" id="btnAuditoriaCodigos">Auditar códigos…</button>
+    </div>
+
+    <div class="card" style="max-width:480px;margin-top:16px;">
       <h3 style="margin-top:0;">Alocações sem horas definidas</h3>
       <p class="pagina-sub" style="margin-top:0;">Quando um consultor é associado a uma tarefa sem se indicar as horas, a app assume tempo inteiro (dias úteis × 8h), o que gera sobre-alocações falsas (⚠ a vermelho no Gantt), sobretudo em reuniões recorrentes de 1 dia. Esta rotina lista esses casos e deixa-te corrigir um a um, linha a linha, escrevendo as horas reais de cada consultor (nada é alterado em bloco). Cada alteração pode ser desfeita com ↶ Desfazer.</p>
       <button class="btn" id="btnAlocSemHoras">Detetar alocações sem horas…</button>
@@ -1030,14 +1040,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260925g"></script>
-<script src="js/auth.js?v=20260925g"></script>
-<script src="js/sync.js?v=20260925g"></script>
-<script src="js/gantt.js?v=20260925g"></script>
-<script src="js/capacidade.js?v=20260925g"></script>
-<script src="js/portfolio-gantt.js?v=20260925g"></script>
-<script src="js/reserva-viatura.js?v=20260925g"></script>
-<script src="js/backup.js?v=20260925g"></script>
-<script src="js/app.js?v=20260925g"></script>
+<script src="js/supabase-config.js?v=20260925i"></script>
+<script src="js/auth.js?v=20260925i"></script>
+<script src="js/sync.js?v=20260925i"></script>
+<script src="js/gantt.js?v=20260925i"></script>
+<script src="js/capacidade.js?v=20260925i"></script>
+<script src="js/portfolio-gantt.js?v=20260925i"></script>
+<script src="js/reserva-viatura.js?v=20260925i"></script>
+<script src="js/backup.js?v=20260925i"></script>
+<script src="js/app.js?v=20260925i"></script>
 </body>
 </html>

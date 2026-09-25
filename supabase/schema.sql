@@ -168,6 +168,20 @@ alter table public.projetos add column if not exists equipa_id uuid references p
 update public.projetos set equipa_id = (select id from public.equipas where nome = 'DCS' limit 1)
 where equipa_id is null;
 
+-- Tipo da referência (id_interno): 'giaf' = referência do sistema de faturação (escrita à mão);
+-- 'interno' = projeto sem GIAF, com código gerado pela app (INT-AAAA-NNN). Os 6 internos que já
+-- existiam (2026/001 a 2026/006) são marcados 'interno' UMA ÚNICA VEZ — só na execução que cria a
+-- coluna — para correr este ficheiro outra vez nunca repor o tipo de um projeto entretanto mudado.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'projetos' and column_name = 'tipo_referencia') then
+    alter table public.projetos add column tipo_referencia text not null default 'giaf' check (tipo_referencia in ('giaf', 'interno'));
+    update public.projetos set tipo_referencia = 'interno'
+    where id_interno in ('2026/001', '2026/002', '2026/003', '2026/004', '2026/005', '2026/006');
+  end if;
+end $$;
+
 -- Consultor de um projeto não é uma lista à parte: é quem já tem o recurso ligado ao seu login
 -- atribuído a alguma tarefa desse projeto (tabela "tarefa_recursos" já cobre isso).
 drop table if exists public.projeto_consultores;

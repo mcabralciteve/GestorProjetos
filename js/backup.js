@@ -56,6 +56,7 @@ const Backup = {
       id: p.id, id_interno: p.idInterno || '', nome: p.nome, cliente: p.cliente || '', descricao: p.descricao || '',
       data_inicio: p.dataInicio || null, data_fim: p.dataFim || null, horas_vendidas: p.horasVendidas || 0,
       valor_vendido: p.valorVendido || 0, estado: p.estado || 'Por iniciar', gestor_id: p.gestorId || null,
+      tipo_referencia: p.tipoReferencia === 'interno' ? 'interno' : 'giaf',
       atualizado_em: p.versao || null
     }));
 

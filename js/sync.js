@@ -152,6 +152,10 @@ const Sync = {
       horas_vendidas: projeto.horasVendidas, valor_vendido: projeto.valorVendido, estado: projeto.estado,
       gestor_id: projeto.gestorId || null, equipa_id: projeto.equipaId || null, ativo: projeto.ativo !== false, atualizado_em: new Date().toISOString()
     };
+    // Só se envia se a coluna já existir na base de dados (detetado ao carregar — ver
+    // carregarDeSupabase); sem isto, publicar esta versão antes de correr o SQL impedia gravar
+    // QUALQUER projeto ("could not find the column").
+    if (this.temTipoReferencia !== false) linhaProjeto.tipo_referencia = projeto.tipoReferencia === 'interno' ? 'interno' : 'giaf';
     let r = await supabaseClient.from('projetos').upsert(linhaProjeto);
     if (r.error) throw r.error;
 
@@ -287,9 +291,11 @@ const Sync = {
       horas: Number(r.horas) || 0, notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em
     }));
 
+    this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
     const projetos = {};
     proj.data.forEach(p => {
       projetos[p.id] = {
+        tipoReferencia: p.tipo_referencia === 'interno' ? 'interno' : 'giaf',
         id: p.id, idInterno: p.id_interno, nome: p.nome, cliente: p.cliente, descricao: p.descricao,
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,

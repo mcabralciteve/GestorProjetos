@@ -160,6 +160,9 @@ const App = {
       btnModoDiaEquipa: document.getElementById('btnModoDiaEquipa'),
       selProjeto: document.getElementById('selProjeto'),
       projIdInterno: document.getElementById('projIdInterno'),
+      projTipoRef: document.getElementById('projTipoRef'),
+      fProjTipoRef: document.getElementById('fProjTipoRef'),
+      btnAuditoriaCodigos: document.getElementById('btnAuditoriaCodigos'),
       projEstado: document.getElementById('projEstado'),
       projAtivo: document.getElementById('projAtivo'),
       projSuspensoAviso: document.getElementById('projSuspensoAviso'),
@@ -636,6 +639,7 @@ const App = {
     Object.values(this.state.projetos).forEach(p => {
       if (p.gestorId === undefined) p.gestorId = null;
       if (p.equipaId === undefined) p.equipaId = null;
+      if (p.tipoReferencia !== 'interno') p.tipoReferencia = 'giaf';
       if (p.ativo === undefined) p.ativo = true;
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
       if (!p.pontosSituacao) p.pontosSituacao = [];
@@ -1086,6 +1090,7 @@ const App = {
       ativo: true,
       gestorId: gestorId || null,
       equipaId: null,
+      tipoReferencia: 'giaf',
       versao: new Date().toISOString(),
       tarefas: [],
       faturas: [],
@@ -1199,15 +1204,44 @@ const App = {
       <label>Gestor de Projeto
         <select id="novoProjGestor">${opcoesGestor}</select>
       </label>
+      <div class="row-2">
+        <label>Tipo de referência
+          <select id="novoProjTipoRef"><option value="giaf">GIAF (faturação)</option><option value="interno">Interno (sem GIAF)</option></select>
+        </label>
+        <label id="novoProjRefWrap">Referência GIAF <span class="hint">(AAAA/NNN)</span>
+          <input type="text" id="novoProjRef" placeholder="ex.: 2026/384" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <p id="novoProjRefInfo" class="hint" style="margin:0;"></p>
       <button class="btn btn-primary" id="btnConfirmarNovoProjeto" style="margin-top:10px;">Criar Projeto</button>`;
     this.abrirModal('Novo Projeto', html);
     const inpNome = this.els.modalCorpo.querySelector('#novoProjNome');
     const selGestor = this.els.modalCorpo.querySelector('#novoProjGestor');
+    const selTipoRef = this.els.modalCorpo.querySelector('#novoProjTipoRef');
+    const inpRef = this.els.modalCorpo.querySelector('#novoProjRef');
+    const infoRef = this.els.modalCorpo.querySelector('#novoProjRefInfo');
+    const atualizarRef = () => {
+      const interno = selTipoRef.value === 'interno';
+      this.els.modalCorpo.querySelector('#novoProjRefWrap').style.display = interno ? 'none' : '';
+      infoRef.textContent = interno ? `Referência gerada automaticamente: ${this.proximoCodigoInterno()}` : '';
+    };
+    selTipoRef.addEventListener('change', atualizarRef);
+    atualizarRef();
     inpNome.focus();
     this.els.modalCorpo.querySelector('#btnConfirmarNovoProjeto').addEventListener('click', () => {
       const nome = inpNome.value.trim();
       if (!nome) { inpNome.focus(); return; }
       const p = this.novoProjetoBase(nome, selGestor.value || null);
+      p.tipoReferencia = selTipoRef.value === 'interno' ? 'interno' : 'giaf';
+      if (p.tipoReferencia === 'interno') {
+        p.idInterno = this.proximoCodigoInterno();
+      } else {
+        const ref = inpRef.value.trim();
+        const outro = ref ? this.projetoComCodigo(ref, null) : null;
+        if (outro) { infoRef.style.color = 'var(--vermelho)'; infoRef.textContent = `A referência "${ref}" já é usada por ${this.rotuloProjetoCompleto(outro)}.`; inpRef.focus(); return; }
+        if (ref && !this.FORMATO_GIAF.test(ref) && !confirm(`"${ref}" não tem o formato GIAF habitual (AAAA/NNN, ex.: 2026/384). Criar com esta referência na mesma?`)) { inpRef.focus(); return; }
+        p.idInterno = ref;
+      }
       this.state.projetos[p.id] = p;
       this.state.projetoAtivoId = p.id;
       this.persist();
@@ -1225,7 +1259,10 @@ const App = {
     const copia = JSON.parse(JSON.stringify(atual));
     copia.id = this.novoIdProjeto();
     copia.nome = atual.nome + ' (cópia)';
+    // Nunca herda a referência do original (duas iguais). Uma cópia de um interno recebe já o
+    // próximo INT-…; a de um GIAF fica vazia até se escrever a referência GIAF verdadeira.
     copia.idInterno = '';
+    if (copia.tipoReferencia === 'interno') copia.idInterno = this.proximoCodigoInterno();
     copia.ativo = true; // uma cópia nova nunca nasce suspensa, mesmo que o original esteja
     copia.versao = new Date().toISOString();
     // Tarefas e faturas precisam de IDs novos e globalmente únicos — copiar os do original
@@ -1306,6 +1343,107 @@ const App = {
     this.renderProjetoSelect();
     this.renderTudo();
     this.toast('Projeto eliminado.');
+  },
+  // ---------- Referência (código) dos projetos: GIAF vs Interno ----------
+  // GIAF: referência do sistema de faturação, escrita à mão (AAAA/NNN, ex.: 2026/384). Interno:
+  // projeto sem referência GIAF — o código é gerado pela app (INT-AAAA-NNN), num espaço próprio, para
+  // nunca colidir com um GIAF. Os internos anteriores a isto (2026/001…2026/006) mantêm o código que
+  // já tinham (registos de horas apontam para ele) e contam para a numeração seguinte.
+  FORMATO_GIAF: /^\d{4}\/\d{3,}$/,
+  FORMATO_INTERNO: /^INT-\d{4}-\d{3,}$/,
+  FORMATO_INTERNO_ANTIGO: /^\d{4}\/\d{3,}$/,
+  // Sem maiúsculas/minúsculas nem espaços: "2026/007", " 2026/007 " e "2026 / 007" são a mesma referência.
+  normalizarCodigoProjeto(c) { return String(c || '').toLowerCase().replace(/\s+/g, ''); },
+  rotuloProjetoCompleto(p) {
+    return `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`;
+  },
+  projetoComCodigo(codigo, exetoId) {
+    const alvo = this.normalizarCodigoProjeto(codigo);
+    if (!alvo) return null;
+    return Object.values(this.state.projetos).find(p => p.id !== exetoId && this.normalizarCodigoProjeto(p.idInterno) === alvo) || null;
+  },
+  // Próximo INT-AAAA-NNN livre do ano corrente: 1 + o maior número já usado por projetos internos
+  // nesse ano (nos dois formatos: INT-AAAA-NNN e o antigo AAAA/NNN).
+  proximoCodigoInterno() {
+    const ano = DateUtil.todayISO().slice(0, 4);
+    let max = 0;
+    Object.values(this.state.projetos).forEach(p => {
+      if (p.tipoReferencia !== 'interno') return;
+      const m = String(p.idInterno || '').trim().match(/^(?:INT-)?(\d{4})[-\/](\d+)$/i);
+      if (m && m[1] === ano) max = Math.max(max, parseInt(m[2], 10));
+    });
+    let n = max + 1;
+    let codigo;
+    do { codigo = `INT-${ano}-${String(n++).padStart(3, '0')}`; } while (this.projetoComCodigo(codigo, null));
+    return codigo;
+  },
+  // Aplica um código escrito à mão a um projeto. Duplicados são recusados (dizendo quem já o usa);
+  // um GIAF fora do formato AAAA/NNN é aceite mas devolve um aviso. Vazio é permitido (a auditoria
+  // apanha-o), porque um projeto acabado de criar ainda pode não ter referência.
+  aplicarCodigoProjeto(p, valorBruto) {
+    const codigo = String(valorBruto || '').trim();
+    if (codigo === (p.idInterno || '')) return { ok: true };
+    const outro = this.projetoComCodigo(codigo, p.id);
+    if (outro) return { ok: false, mensagem: `A referência "${codigo}" já é usada por ${this.rotuloProjetoCompleto(outro)}.` };
+    p.idInterno = codigo;
+    const aviso = (codigo && p.tipoReferencia !== 'interno' && !this.FORMATO_GIAF.test(codigo))
+      ? `Referência gravada, mas fora do formato GIAF habitual (AAAA/NNN, ex.: 2026/384) — confirma "${codigo}".` : '';
+    return { ok: true, aviso };
+  },
+  // Só leitura: tudo o que está fora do sítio nos códigos dos projetos existentes.
+  problemasCodigosProjetos() {
+    const projetos = Object.values(this.state.projetos);
+    const problemas = [];
+    const grupos = new Map();
+    projetos.forEach(p => {
+      const chave = this.normalizarCodigoProjeto(p.idInterno);
+      if (chave) grupos.set(chave, [...(grupos.get(chave) || []), p]);
+    });
+    projetos.forEach(p => {
+      const codigo = String(p.idInterno || '').trim();
+      const interno = p.tipoReferencia === 'interno';
+      if (!codigo) { problemas.push({ p, tipo: 'vazio', texto: 'Sem referência' }); return; }
+      const grupo = grupos.get(this.normalizarCodigoProjeto(codigo)) || [];
+      if (grupo.length > 1) {
+        const outros = grupo.filter(x => x.id !== p.id).map(x => this.rotuloProjetoCompleto(x)).join('; ');
+        problemas.push({ p, tipo: 'repetido', texto: `Referência repetida — também em: ${outros}` });
+      }
+      if (!interno && !this.FORMATO_GIAF.test(codigo)) {
+        problemas.push({ p, tipo: 'formato', texto: 'GIAF fora do formato AAAA/NNN' });
+      }
+      if (interno && !this.FORMATO_INTERNO.test(codigo) && !this.FORMATO_INTERNO_ANTIGO.test(codigo)) {
+        problemas.push({ p, tipo: 'formato', texto: 'Interno fora do formato INT-AAAA-NNN (ou AAAA/NNN antigo)' });
+      }
+    });
+    return problemas;
+  },
+  abrirModalAuditoriaCodigos() {
+    if (!this.souAdmin()) return;
+    const projetos = Object.values(this.state.projetos);
+    const problemas = this.problemasCodigosProjetos();
+    const nGiaf = projetos.filter(p => p.tipoReferencia !== 'interno').length;
+    const nInt = projetos.length - nGiaf;
+    const linhas = problemas
+      .sort((a, b) => a.tipo.localeCompare(b.tipo) || this.rotuloProjetoCompleto(a.p).localeCompare(this.rotuloProjetoCompleto(b.p), 'pt'))
+      .map((x, i) => `<tr>
+        <td>${escapeHtml(x.p.idInterno || '—')}</td><td>${escapeHtml(x.p.nome)}${x.p.cliente ? ` (${escapeHtml(x.p.cliente)})` : ''}</td>
+        <td>${x.p.tipoReferencia === 'interno' ? 'Interno' : 'GIAF'}</td>
+        <td><b>${escapeHtml(x.texto.split(' — ')[0])}</b>${x.texto.includes(' — ') ? ' — ' + escapeHtml(x.texto.split(' — ').slice(1).join(' — ')) : ''}</td>
+        <td><button type="button" class="btn btn-sm" data-abrir-proj="${i}">Abrir</button></td></tr>`).join('');
+    this.abrirModal('Auditoria dos códigos de projeto', `
+      <p class="rec-resumo">${projetos.length} projeto(s): ${nGiaf} GIAF, ${nInt} interno(s). ${problemas.length ? `⚠ ${problemas.length} problema(s) encontrado(s).` : '✅ Nenhum problema encontrado.'}</p>
+      ${problemas.length ? `<div class="table-scroll" style="max-height:50vh;"><table class="tabela-crud">
+        <thead><tr><th>Referência</th><th>Projeto</th><th>Tipo</th><th>Problema</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : ''}
+      <p class="hint" style="margin-top:8px;">Só leitura — nada foi alterado. Não mudes referências de projetos que já têm horas registadas sem avisar: os registos apontam para ela.</p>`, { largo: true });
+    const ordenados = problemas;
+    this.els.modalCorpo.querySelectorAll('[data-abrir-proj]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const alvo = ordenados[Number(btn.dataset.abrirProj)];
+        if (!alvo) return;
+        this.fecharModal();
+        this.abrirProjetoNoGantt(alvo.p.id);
+      });
+    });
   },
   selecionarProjeto(id) {
     this.state.projetoAtivoId = id;
@@ -3398,6 +3536,7 @@ const App = {
     this.renderGestorConsultores(p);
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
+      if (e.projTipoRef) e.projTipoRef.disabled = true;
       if (e.projAtivo) { e.projAtivo.checked = false; e.projAtivo.disabled = true; }
       if (e.projSuspensoAviso) e.projSuspensoAviso.style.display = 'none';
       e.projValorHoraMedio.textContent = '—';
@@ -3418,6 +3557,9 @@ const App = {
     if (e.projAtivo) { e.projAtivo.checked = p.ativo !== false; e.projAtivo.disabled = !this.souAdmin(); }
     if (e.projSuspensoAviso) e.projSuspensoAviso.style.display = (p.ativo === false) ? '' : 'none';
     e.projIdInterno.value = p.idInterno || '';
+    // Interno: o código é gerado pela app, nunca escrito à mão. O tipo só o Administrador muda.
+    if (e.projTipoRef) { e.projTipoRef.value = p.tipoReferencia === 'interno' ? 'interno' : 'giaf'; e.projTipoRef.disabled = !this.souAdmin(); }
+    if (p.tipoReferencia === 'interno') e.projIdInterno.disabled = true;
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
     e.projCliente.value = p.cliente || '';
@@ -3511,6 +3653,7 @@ const App = {
       if (f.cliente && p.cliente !== f.cliente) return false;
       if (f.estado && p.estado !== f.estado) return false;
       if (f.estadoOrc && orc.nivel !== f.estadoOrc) return false;
+      if (f.tipoRef && (p.tipoReferencia === 'interno' ? 'interno' : 'giaf') !== f.tipoRef) return false;
       return true;
     });
     const ordenadas = this.aplicarOrdenacaoTabela('tabelaProjetos', linhas, (l, campo) => {
@@ -3540,7 +3683,7 @@ const App = {
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${dis}></td>
+        <td style="white-space:nowrap;"><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${p.tipoReferencia === 'interno' ? 'disabled' : dis} style="width:${p.tipoReferencia === 'interno' ? '78' : '100'}%;">${p.tipoReferencia === 'interno' ? ' <span class="badge-interno" title="Projeto interno — sem referência GIAF">INT</span>' : ''}</td>
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
         <td>${admin
@@ -3583,7 +3726,13 @@ const App = {
       this.bloquearPreenchimentoAutomatico(inpIdInterno);
       tr.querySelectorAll('input[data-campo]:not([data-campo="ativo"]),select[data-campo="estado"]').forEach(inp => {
         inp.addEventListener('change', () => {
-          p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value.trim();
+          if (inp.dataset.campo === 'idInterno') {
+            const r = this.aplicarCodigoProjeto(p, inp.value);
+            if (!r.ok) { this.toast(r.mensagem); this.renderTabelaProjetos(); return; }
+            if (r.aviso) this.toast(r.aviso);
+          } else {
+            p[inp.dataset.campo] = (inp.type === 'number') ? (parseFloat(inp.value) || 0) : inp.value.trim();
+          }
           this.persist();
           this.renderTabelaProjetos();
           if (p.id === this.state.projetoAtivoId) { this.renderInfoProjeto(); this.renderProjetoSelect(); }
@@ -3600,7 +3749,8 @@ const App = {
     const e = this.els;
     this.filtrosProjetos = {
       gestorId: e.fProjGestor.value, cliente: e.fProjCliente.value,
-      estado: e.fProjEstado.value, estadoOrc: e.fProjEstadoOrc.value
+      estado: e.fProjEstado.value, estadoOrc: e.fProjEstadoOrc.value,
+      tipoRef: e.fProjTipoRef ? e.fProjTipoRef.value : ''
     };
     this.renderTabelaProjetos();
   },
@@ -7578,7 +7728,25 @@ const App = {
     // preenchimento não fidedigno (trava extensões como o RoboForm — ver bloquearPreenchimentoAutomatico).
     e.projIdInterno.addEventListener('focus', () => e.projIdInterno.removeAttribute('readonly'), { once: true });
     this.bloquearPreenchimentoAutomatico(e.projIdInterno);
-    e.projIdInterno.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().idInterno = e.projIdInterno.value.trim(); e.projIdInterno.value = this.projetoAtivo().idInterno; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
+    e.projIdInterno.addEventListener('change', () => {
+      const p = this.projetoAtivo();
+      if (!p) return;
+      const r = this.aplicarCodigoProjeto(p, e.projIdInterno.value);
+      e.projIdInterno.value = p.idInterno || '';
+      if (!r.ok) { this.toast(r.mensagem); return; }
+      if (r.aviso) this.toast(r.aviso);
+      this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos();
+    });
+    if (e.projTipoRef) e.projTipoRef.addEventListener('change', () => {
+      const p = this.projetoAtivo();
+      if (!p || !this.souAdmin()) return;
+      p.tipoReferencia = e.projTipoRef.value === 'interno' ? 'interno' : 'giaf';
+      // Passar a Interno sem referência gera já o INT-…; quem já tem uma mantém-na (os registos
+      // de horas apontam para ela). Passar a GIAF nunca apaga nada.
+      if (p.tipoReferencia === 'interno' && !String(p.idInterno || '').trim()) p.idInterno = this.proximoCodigoInterno();
+      this.persist(); this.renderProjetoSelect(); this.renderTudo();
+    });
+    if (e.btnAuditoriaCodigos) e.btnAuditoriaCodigos.addEventListener('click', () => this.abrirModalAuditoriaCodigos());
     e.projEstado.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().estado = e.projEstado.value; this.persist(); this.renderTabelaProjetos(); });
     if (e.projAtivo) e.projAtivo.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.atualizarProjetoAtivo(this.projetoAtivo().id, e.projAtivo.checked); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
@@ -7707,9 +7875,10 @@ const App = {
     if (e.btnAlocMesAnt) e.btnAlocMesAnt.addEventListener('click', () => this.navegarMesAlocacoes(-1));
     if (e.btnAlocMesSeg) e.btnAlocMesSeg.addEventListener('click', () => this.navegarMesAlocacoes(1));
     if (e.btnAlocHoje) e.btnAlocHoje.addEventListener('click', () => this.irParaHojeAlocacoes());
-    [e.fProjGestor, e.fProjCliente, e.fProjEstado, e.fProjEstadoOrc].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosProjetos()));
+    [e.fProjGestor, e.fProjCliente, e.fProjEstado, e.fProjEstadoOrc, e.fProjTipoRef].filter(Boolean).forEach(el => el.addEventListener('change', () => this.aplicarFiltrosProjetos()));
     document.getElementById('btnLimparFiltrosProjetos').addEventListener('click', () => {
       e.fProjGestor.value = ''; e.fProjCliente.value = ''; e.fProjEstado.value = ''; e.fProjEstadoOrc.value = '';
+      if (e.fProjTipoRef) e.fProjTipoRef.value = '';
       this.aplicarFiltrosProjetos();
     });
     e.btnColunasProjetos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelColunasProjetos(); });
