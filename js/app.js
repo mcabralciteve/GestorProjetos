@@ -247,6 +247,13 @@ const App = {
       modalCorpo: document.getElementById('modalCorpo'),
       toast: document.getElementById('toast'),
       chkMoverDependentes: document.getElementById('chkMoverDependentes'),
+      tabBtnAnalise: document.getElementById('tabBtnAnalise'),
+      anKpis: document.getElementById('anKpis'), anPeriodo: document.getElementById('anPeriodo'), anDe: document.getElementById('anDe'), anAte: document.getElementById('anAte'),
+      anAgrupar: document.getElementById('anAgrupar'), anGran: document.getElementById('anGran'), anDept: document.getElementById('anDept'), anEquipa: document.getElementById('anEquipa'),
+      anPessoa: document.getElementById('anPessoa'), anTipo: document.getElementById('anTipo'), anProjeto: document.getElementById('anProjeto'),
+      anBarras: document.getElementById('anBarras'), anEvolucao: document.getElementById('anEvolucao'), anLegenda: document.getElementById('anLegenda'),
+      anTituloBarras: document.getElementById('anTituloBarras'), anTabela: document.getElementById('anTabela'),
+      btnAnaliseExportar: document.getElementById('btnAnaliseExportar'), btnAnaliseLimpar: document.getElementById('btnAnaliseLimpar'),
       loadingOverlay: document.getElementById('loadingOverlay'),
       loadingOverlayTexto: document.getElementById('loadingOverlayTexto'),
       relatorioHorasContainer: document.getElementById('relatorioHorasContainer'),
@@ -3139,6 +3146,7 @@ const App = {
     this.renderTabelaReservasViatura();
     this.renderDefinicoes();
     this.renderAcompanhamento();
+    if (this.abaAtiva === 'analise') this.renderAnalise();
   },
 
   // Esconde/mostra grupos de navegação, separadores e botões consoante o papel do utilizador
@@ -3164,6 +3172,9 @@ const App = {
     // App.adicionarAusencia/aprovarAusencia), Team Leader/Diretor gere também as da sua equipa/
     // departamento.
     if (e.tabBtnFeriados) e.tabBtnFeriados.style.display = admin ? '' : 'none';
+    // "Análise" de horas: só Administradores e Team Leaders/Diretores (cada um vê o seu âmbito).
+    if (e.tabBtnAnalise) e.tabBtnAnalise.style.display = this.podeVerAnalise() ? '' : 'none';
+    if (!this.podeVerAnalise() && this.abaAtiva === 'analise') this.irParaAba('dashboard');
     if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
     // "Vista de Equipa" (calendário de ausências por dia, colorido por pessoa) só para quem lidera/
     // dirige alguma coisa, ou Admin — para os outros não há aqui equipa nenhuma para ver.
@@ -7107,8 +7118,216 @@ const App = {
     window.print();
   },
 
+  // ---------- Horas → Análise ----------
+  // Onde as equipas registam horas (por equipa/departamento/pessoa/projeto/tipo de trabalho), com
+  // período e filtros, mais a exportação CSV dos registos de um período. Só para Administradores e
+  // Team Leaders/Diretores: um Administrador vê tudo; os outros só os registos das pessoas das
+  // equipas que lideram (recursosDaMinhaLideranca), em qualquer projeto. Só leitura; as contas
+  // vivem em js/analise-horas.js (testado à parte).
+  filtrosAnalise: { preset: 'mes', de: '', ate: '', dept: '', equipa: '', pessoa: '', tipo: '', projeto: '', agrupar: 'equipa', gran: 'semana' },
+  ANALISE_DIMENSOES: {
+    equipa: { chave: i => i.equipaId || '__sem__', filtro: 'equipa', titulo: 'equipa' },
+    departamento: { chave: i => i.deptId || '__sem__', filtro: 'dept', titulo: 'departamento' },
+    pessoa: { chave: i => i.pessoa, filtro: 'pessoa', titulo: 'pessoa' },
+    projeto: { chave: i => i.projetoKey || '__sem__', filtro: 'projeto', titulo: 'projeto' },
+    tipo: { chave: i => i.tipoKey, filtro: 'tipo', titulo: 'tipo de trabalho' }
+  },
+  podeVerAnalise() { return this.souAdmin() || this.souLiderDeAlgumaEquipa(); },
+  analiseRecursosEscopo() { return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca(); },
+  // Registos do período (dentro do que o papel deixa ver), já com departamento/equipa/tipo/projeto
+  // resolvidos. "comFiltros" aplica também os filtros do ecrã (Direção/Área/Pessoa/Tipo/Projeto).
+  itensAnalise({ de, ate, comFiltros }) {
+    const f = this.filtrosAnalise;
+    const admin = this.souAdmin();
+    const idsEscopo = new Set(this.analiseRecursosEscopo().map(r => r.id));
+    const porNome = new Map(this.state.recursos.map(r => [r.nome, r]));
+    const rotulos = { equipa: new Map(), departamento: new Map(), pessoa: new Map(), projeto: new Map(), tipo: new Map() };
+    const itens = [];
+    this.state.registos.forEach(r => {
+      if (!r.data || r.data < de || r.data > ate) return;
+      const rec = porNome.get(r.pessoa) || null;
+      if (!admin && !(rec && idsEscopo.has(rec.id))) return;
+      const org = this.orgDoRecurso(rec);
+      const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
+      const emProjeto = !!(r.projetoIdInterno || r.projetoId);
+      const projetoRotulo = emProjeto ? `${r.projetoIdInterno ? r.projetoIdInterno + ' — ' : ''}${r.projetoNome || ''}${r.cliente ? ` (${r.cliente})` : ''}` : 'Sem projeto';
+      const i = {
+        registo: r, data: r.data, horas: parseFloat(r.horas) || 0, pessoa: r.pessoa,
+        equipaId: org.equipaId, equipa: org.equipaNome, deptId: org.deptId, dept: org.deptNome,
+        projetoKey: emProjeto ? (r.projetoId || r.projetoIdInterno) : '', projeto: projetoRotulo, emProjeto,
+        tipoKey: tipo.id || '__projeto__', tipo: tipo.nome
+      };
+      if (comFiltros) {
+        if (f.dept && (i.deptId || '__sem__') !== f.dept) return;
+        if (f.equipa && i.equipaId !== f.equipa) return;
+        if (f.pessoa && i.pessoa !== f.pessoa) return;
+        if (f.tipo && i.tipoKey !== f.tipo) return;
+        if (f.projeto && (i.projetoKey || '__sem__') !== f.projeto) return;
+      }
+      itens.push(i);
+      rotulos.equipa.set(i.equipaId || '__sem__', i.equipa);
+      rotulos.departamento.set(i.deptId || '__sem__', i.dept);
+      rotulos.pessoa.set(i.pessoa, i.pessoa);
+      rotulos.projeto.set(i.projetoKey || '__sem__', i.projeto);
+      rotulos.tipo.set(i.tipoKey, i.tipo);
+    });
+    return { itens, rotulos };
+  },
+  formatarHorasAnalise(h) { return (Math.round(h * 10) / 10).toLocaleString('pt-PT') + 'h'; },
+  renderAnalise() {
+    const e = this.els;
+    if (!e.anKpis || !this.podeVerAnalise()) return;
+    const f = this.filtrosAnalise;
+    const hoje = DateUtil.todayISO();
+    if (f.preset !== 'custom') { const iv = AnaliseHoras.intervaloPreset(f.preset, hoje); f.de = iv.de; f.ate = iv.ate; }
+    else if (!f.de || !f.ate) { const iv = AnaliseHoras.intervaloPreset('mes', hoje); f.de = f.de || iv.de; f.ate = f.ate || iv.ate; }
+    e.anPeriodo.value = f.preset; e.anDe.value = f.de; e.anAte.value = f.ate; e.anAgrupar.value = f.agrupar; e.anGran.value = f.gran;
+    const rec = this.aplicarFiltroOrg(e.anDept, e.anEquipa, this.analiseRecursosEscopo(), f);
+    f.dept = e.anDept.value; f.equipa = e.anEquipa.value;
+    e.anPessoa.innerHTML = '<option value="">Todas</option>' + this.opcoesPessoasPorDepartamento(rec, r => r.nome);
+    e.anPessoa.value = rec.some(r => r.nome === f.pessoa) ? f.pessoa : ''; f.pessoa = e.anPessoa.value;
+    // Opções de Tipo/Projeto: tudo o que existe nos registos deste âmbito (independente do período).
+    const base = this.itensAnalise({ de: '0000-01-01', ate: '9999-12-31', comFiltros: false }).rotulos;
+    const ordenar = (m) => [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+    e.anTipo.innerHTML = '<option value="">Todos</option>' + ordenar(base.tipo).map(([k, n]) => `<option value="${escapeAttr(k)}">${escapeHtml(n)}</option>`).join('');
+    e.anTipo.value = base.tipo.has(f.tipo) ? f.tipo : ''; f.tipo = e.anTipo.value;
+    e.anProjeto.innerHTML = '<option value="">Todos</option>' + ordenar(base.projeto).map(([k, n]) => `<option value="${escapeAttr(k)}">${escapeHtml(n)}</option>`).join('');
+    e.anProjeto.value = base.projeto.has(f.projeto) ? f.projeto : ''; f.projeto = e.anProjeto.value;
+
+    const dim = this.ANALISE_DIMENSOES[f.agrupar] || this.ANALISE_DIMENSOES.equipa;
+    e.anTituloBarras.textContent = `Horas por ${dim.titulo}`;
+    if (f.de > f.ate) {
+      e.anKpis.innerHTML = '<p class="hint">A data inicial é depois da final.</p>';
+      e.anBarras.innerHTML = e.anEvolucao.innerHTML = e.anLegenda.innerHTML = e.anTabela.innerHTML = '';
+      return;
+    }
+    const { itens, rotulos } = this.itensAnalise({ de: f.de, ate: f.ate, comFiltros: true });
+    const rotulo = (chave) => chave === 'Outros' ? 'Outros' : (rotulos[f.agrupar].get(chave) || chave);
+    const k = AnaliseHoras.kpis(itens);
+    const kpi = (valor, texto) => `<div class="an-kpi"><b>${valor}</b><span>${texto}</span></div>`;
+    e.anKpis.innerHTML = kpi(this.formatarHorasAnalise(k.horas), 'Horas registadas') + kpi(k.pessoas, 'Pessoas') + kpi(k.projetos, 'Projetos') +
+      kpi(Math.round(k.pctProjeto * 100) + '%', 'Horas em projeto');
+    if (!itens.length) {
+      const vazio = '<p class="hint">Sem registos neste período/filtro.</p>';
+      e.anBarras.innerHTML = vazio; e.anEvolucao.innerHTML = ''; e.anLegenda.innerHTML = ''; e.anTabela.innerHTML = '';
+      return;
+    }
+    const serie = AnaliseHoras.seriePorCategoria(itens, f.gran, dim.chave, f.de, f.ate);
+    const cor = new Map(serie.categorias.map(c => [c.chave, c.cor]));
+
+    // Barras: o que cada categoria pesa no total — clicar filtra por ela.
+    const totais = AnaliseHoras.totaisPor(itens, dim.chave);
+    const maximo = totais[0].horas || 1;
+    const MAX_LINHAS = 12;
+    e.anBarras.innerHTML = totais.slice(0, MAX_LINHAS).map(t => `
+      <div class="an-linha" role="button" tabindex="0" data-an-chave="${escapeAttr(t.chave)}" title="${escapeAttr(rotulo(t.chave))} — ${this.formatarHorasAnalise(t.horas)}. Clica para filtrar.">
+        <span class="an-rot">${escapeHtml(rotulo(t.chave))}</span>
+        <span class="an-barra"><i style="width:${Math.max(2, t.horas / maximo * 100)}%;background:${cor.get(t.chave) || AnaliseHoras.COR_OUTROS}"></i></span>
+        <span class="an-val">${this.formatarHorasAnalise(t.horas)} · ${Math.round(t.horas / k.horas * 100)}%</span>
+      </div>`).join('') + (totais.length > MAX_LINHAS ? `<p class="hint" style="margin:6px 6px 0;">+ ${totais.length - MAX_LINHAS} mais na tabela abaixo.</p>` : '');
+
+    // Evolução: colunas empilhadas por período, pela mesma dimensão e cores das barras.
+    const teto = Math.max(...serie.periodos.map(p => serie.totais[p]), 1);
+    e.anEvolucao.innerHTML = `<div class="an-evol">${serie.periodos.map(p => {
+      const segs = serie.categorias.filter(c => serie.valores[p][c.chave]).map(c => {
+        const h = serie.valores[p][c.chave];
+        return `<div class="an-seg" style="height:${h / teto * 100}%;background:${c.cor}" title="${escapeAttr(AnaliseHoras.rotuloPeriodo(p, f.gran))} · ${escapeAttr(rotulo(c.chave))}: ${this.formatarHorasAnalise(h)}"></div>`;
+      }).join('');
+      return `<div class="an-col" title="${escapeAttr(AnaliseHoras.rotuloPeriodo(p, f.gran))}: ${this.formatarHorasAnalise(serie.totais[p])}">${segs}</div>`;
+    }).join('')}</div>
+      <div class="an-eixo">${serie.periodos.map((p, idx) => `<span>${idx % Math.ceil(serie.periodos.length / 12) === 0 ? AnaliseHoras.rotuloPeriodo(p, f.gran) : ''}</span>`).join('')}</div>`;
+    e.anLegenda.innerHTML = serie.categorias.map(c => `<span><i style="background:${c.cor}"></i>${escapeHtml(rotulo(c.chave))}</span>`).join('');
+
+    // Tabela de detalhe: todas as categorias, com pessoas e projetos distintos.
+    const linhas = totais.map(t => {
+      const doGrupo = itens.filter(i => dim.chave(i) === t.chave);
+      return `<tr><td>${escapeHtml(rotulo(t.chave))}</td><td>${this.formatarHorasAnalise(t.horas)}</td><td>${Math.round(t.horas / k.horas * 1000) / 10}%</td>
+        <td>${new Set(doGrupo.map(i => i.pessoa)).size}</td><td>${new Set(doGrupo.filter(i => i.emProjeto).map(i => i.projetoKey)).size}</td></tr>`;
+    }).join('');
+    e.anTabela.innerHTML = `<thead><tr><th>${escapeHtml(dim.titulo.charAt(0).toUpperCase() + dim.titulo.slice(1))}</th><th>Horas</th><th>% do total</th><th>Pessoas</th><th>Projetos</th></tr></thead>
+      <tbody>${linhas}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td><b>${this.formatarHorasAnalise(k.horas)}</b></td><td>100%</td><td>${k.pessoas}</td><td>${k.projetos}</td></tr></tfoot>`;
+  },
+  aplicarFiltrosAnalise(origem) {
+    const e = this.els;
+    const f = this.filtrosAnalise;
+    const anterior = { dept: f.dept, equipa: f.equipa, pessoa: f.pessoa };
+    f.preset = e.anPeriodo.value;
+    if (origem === e.anDe || origem === e.anAte) f.preset = 'custom';
+    if (f.preset === 'custom') { f.de = e.anDe.value || f.de; f.ate = e.anAte.value || f.ate; }
+    f.agrupar = e.anAgrupar.value; f.gran = e.anGran.value;
+    Object.assign(f, this.reagirMudancaFiltroOrg(anterior, { dept: e.anDept.value, equipa: e.anEquipa.value, pessoa: e.anPessoa.value }));
+    f.tipo = e.anTipo.value; f.projeto = e.anProjeto.value;
+    this.renderAnalise();
+  },
+  // Clicar numa barra passa a filtrar por essa categoria (uma equipa também fixa o seu departamento).
+  filtrarPelaBarra(chave) {
+    const f = this.filtrosAnalise;
+    const dim = this.ANALISE_DIMENSOES[f.agrupar];
+    if (!dim || chave === '__sem__') { this.toast('Esta linha não se pode usar como filtro.'); return; }
+    if (dim.filtro === 'equipa') {
+      const eq = this.state.equipas.find(x => x.id === chave);
+      f.dept = eq && eq.departamentoId ? eq.departamentoId : '__sem__'; f.pessoa = '';
+    } else if (dim.filtro === 'dept') { f.equipa = ''; f.pessoa = ''; }
+    f[dim.filtro] = chave;
+    this.renderAnalise();
+  },
+  limparFiltrosAnalise() {
+    Object.assign(this.filtrosAnalise, { preset: 'mes', dept: '', equipa: '', pessoa: '', tipo: '', projeto: '' });
+    this.renderAnalise();
+  },
+  // Texto livre de um CSV: neutraliza células que o Excel interpretaria como fórmula (=, +, -, @).
+  csvTexto(v) {
+    const s = String(v === undefined || v === null ? '' : v);
+    return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+  },
+  // Exportação CSV dos registos de um período à escolha (default: o do ecrã), dentro do que o
+  // papel deixa ver. Por omissão TODOS os registos do período; os filtros do ecrã só se
+  // aplicam se a pessoa o pedir.
+  abrirModalExportarRegistos() {
+    if (!this.podeVerAnalise()) return;
+    const f = this.filtrosAnalise;
+    const html = `
+      <div class="row-2">
+        <label>De <input type="date" id="expDe" value="${escapeAttr(f.de)}"></label>
+        <label>Até <input type="date" id="expAte" value="${escapeAttr(f.ate)}"></label>
+      </div>
+      <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="expComFiltros"> Aplicar também os filtros do ecrã (Direção, Área, Pessoa, Tipo, Projeto)</label>
+      <p id="expResumo" class="rec-resumo"></p>
+      <button class="btn btn-primary" id="btnExpDescarregar">Descarregar CSV</button>`;
+    this.abrirModal('Exportar registos de horas', html);
+    const m = this.els.modalCorpo;
+    const resumo = () => {
+      const de = m.querySelector('#expDe').value, ate = m.querySelector('#expAte').value;
+      const btn = m.querySelector('#btnExpDescarregar');
+      if (!de || !ate || de > ate) { m.querySelector('#expResumo').textContent = 'Indica um período válido (a data inicial não pode ser depois da final).'; btn.disabled = true; return null; }
+      const { itens } = this.itensAnalise({ de, ate, comFiltros: m.querySelector('#expComFiltros').checked });
+      m.querySelector('#expResumo').textContent = `${itens.length} registo(s), ${this.formatarHorasAnalise(itens.reduce((s, i) => s + i.horas, 0))} entre ${DateUtil.formatShort(DateUtil.parseISO(de))} e ${DateUtil.formatShort(DateUtil.parseISO(ate))}.`;
+      btn.disabled = !itens.length;
+      return { de, ate, itens };
+    };
+    ['#expDe', '#expAte', '#expComFiltros'].forEach(sel => m.querySelector(sel).addEventListener('change', resumo));
+    resumo();
+    m.querySelector('#btnExpDescarregar').addEventListener('click', () => {
+      const r = resumo();
+      if (!r || !r.itens.length) return;
+      const linhas = [['Data', 'Departamento', 'Equipa', 'Pessoa', 'Tipo de Trabalho', 'Referência', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
+      r.itens.slice().sort((a, b) => a.data.localeCompare(b.data) || a.pessoa.localeCompare(b.pessoa, 'pt')).forEach(i => {
+        const reg = i.registo;
+        linhas.push([
+          reg.data, this.csvTexto(i.dept), this.csvTexto(i.equipa), this.csvTexto(i.pessoa), this.csvTexto(i.tipo),
+          this.csvTexto(reg.projetoIdInterno || ''), this.csvTexto(reg.projetoNome || ''), this.csvTexto(reg.cliente || ''),
+          this.csvTexto(this.rotuloTarefaRegisto(reg)), String(i.horas).replace('.', ','), this.csvTexto(reg.notas || ''), reg.origem || ''
+        ]);
+      });
+      this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${r.de}_a_${r.ate}.csv`);
+      this.fecharModal();
+      this.toast(`${r.itens.length} registo(s) exportado(s).`);
+    });
+  },
+
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -7122,6 +7341,7 @@ const App = {
     if (nome === 'dia') { this.renderRegistoDia(); this.renderCalendarioRegisto(); this.centrarHojeCalendario(); }
     if (nome === 'alocacoes') { this.renderCalendarioAlocacoes(); this.centrarHojeCalendario(); }
     if (nome === 'ausencias') this.aplicarModoAusencias();
+    if (nome === 'analise') this.renderAnalise();
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
   // (se o mês mostrado o incluir) fica centrado no ecrã — nem encostado ao fundo nem ao topo.
@@ -7858,6 +8078,18 @@ const App = {
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.btnAlocSemHoras) e.btnAlocSemHoras.addEventListener('click', () => this.abrirModalAlocacoesSemHoras());
+    if (e.anKpis) {
+      [e.anPeriodo, e.anDe, e.anAte, e.anAgrupar, e.anGran, e.anDept, e.anEquipa, e.anPessoa, e.anTipo, e.anProjeto]
+        .forEach(el => el.addEventListener('change', () => this.aplicarFiltrosAnalise(el)));
+      e.btnAnaliseLimpar.addEventListener('click', () => this.limparFiltrosAnalise());
+      e.btnAnaliseExportar.addEventListener('click', () => this.abrirModalExportarRegistos());
+      const aoEscolherBarra = (ev) => {
+        const linha = ev.target.closest('[data-an-chave]');
+        if (linha && (ev.type === 'click' || ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); this.filtrarPelaBarra(linha.dataset.anChave); }
+      };
+      e.anBarras.addEventListener('click', aoEscolherBarra);
+      e.anBarras.addEventListener('keydown', aoEscolherBarra);
+    }
     if (e.chkMoverDependentes) {
       e.chkMoverDependentes.checked = this.moverDependentes;
       e.chkMoverDependentes.addEventListener('change', () => {

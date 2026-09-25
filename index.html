@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260925i">
+<link rel="stylesheet" href="css/style.css?v=20260926a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -93,6 +93,7 @@
   <div class="tabs-grupo" data-grupo="horas">
     <button class="tab-btn" data-tab="dia">Dia</button>
     <button class="tab-btn" data-tab="registo">Registo</button>
+    <button class="tab-btn" data-tab="analise" id="tabBtnAnalise">Análise</button>
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Registo</button>
@@ -822,6 +823,43 @@
   </div>
 </section>
 
+<!-- ===================== TAB: ANÁLISE DE HORAS ===================== -->
+<section class="tab-panel" id="tab-analise">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>📊 Análise de horas</h2>
+      <button class="btn btn-primary btn-sm" id="btnAnaliseExportar">⬇ Exportar registos (CSV)…</button>
+    </div>
+    <p class="pagina-sub">Onde as equipas registam horas — por equipa, pessoa, projeto ou tipo de trabalho. Clica numa barra para filtrar por ela. Só leitura; o Administrador vê tudo, um Team Leader/Diretor vê as suas equipas.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
+      <label class="zoom-label">Período <select id="anPeriodo">
+        <option value="mes">Este mês</option><option value="mesAnt">Mês anterior</option><option value="trimestre">Este trimestre</option>
+        <option value="ano">Este ano</option><option value="custom">Personalizado</option></select></label>
+      <label class="zoom-label">De <input type="date" id="anDe"></label>
+      <label class="zoom-label">Até <input type="date" id="anAte"></label>
+      <label class="zoom-label">Ver por <select id="anAgrupar">
+        <option value="equipa">Equipa</option><option value="departamento">Departamento</option><option value="pessoa">Pessoa</option>
+        <option value="projeto">Projeto</option><option value="tipo">Tipo de trabalho</option></select></label>
+      <label class="zoom-label">Evolução <select id="anGran"><option value="semana">por semana</option><option value="mes">por mês</option></select></label>
+    </div>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Direção <select id="anDept"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Área <select id="anEquipa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Pessoa <select id="anPessoa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Tipo <select id="anTipo"><option value="">Todos</option></select></label>
+      <label class="zoom-label">Projeto <select id="anProjeto"><option value="">Todos</option></select></label>
+      <button class="btn btn-sm" id="btnAnaliseLimpar">Limpar filtros</button>
+    </div>
+    <div id="anKpis" class="an-kpis"></div>
+    <div class="an-grelha">
+      <div class="card"><h3 id="anTituloBarras" style="margin-top:0;">Horas por equipa</h3><div id="anBarras"></div></div>
+      <div class="card"><h3 style="margin-top:0;">Evolução</h3><div id="anEvolucao"></div><div id="anLegenda" class="an-legenda"></div></div>
+    </div>
+    <h3 style="margin-top:20px;">Detalhe</h3>
+    <div class="table-scroll" style="max-height:45vh;"><table class="tabela-crud" id="anTabela"></table></div>
+  </div>
+</section>
+
 <!-- ===================== TAB: REGISTO DE HORAS ===================== -->
 <section class="tab-panel" id="tab-registo">
   <div class="pagina">
@@ -1040,14 +1078,15 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260925i"></script>
-<script src="js/auth.js?v=20260925i"></script>
-<script src="js/sync.js?v=20260925i"></script>
-<script src="js/gantt.js?v=20260925i"></script>
-<script src="js/capacidade.js?v=20260925i"></script>
-<script src="js/portfolio-gantt.js?v=20260925i"></script>
-<script src="js/reserva-viatura.js?v=20260925i"></script>
-<script src="js/backup.js?v=20260925i"></script>
-<script src="js/app.js?v=20260925i"></script>
+<script src="js/supabase-config.js?v=20260926a"></script>
+<script src="js/auth.js?v=20260926a"></script>
+<script src="js/sync.js?v=20260926a"></script>
+<script src="js/gantt.js?v=20260926a"></script>
+<script src="js/capacidade.js?v=20260926a"></script>
+<script src="js/portfolio-gantt.js?v=20260926a"></script>
+<script src="js/reserva-viatura.js?v=20260926a"></script>
+<script src="js/backup.js?v=20260926a"></script>
+<script src="js/analise-horas.js?v=20260926a"></script>
+<script src="js/app.js?v=20260926a"></script>
 </body>
 </html>
