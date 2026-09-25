@@ -4740,7 +4740,7 @@ const App = {
     const e = this.els;
     const p = Object.values(this.state.projetos).find(pr => pr.idInterno === e.regProjeto.value);
     const recurso = this.state.recursos.find(r => r.nome === e.regPessoa.value);
-    const opcoes = (p && recurso) ? this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => `<option value="${escapeAttr(x.tarefa.nome)}">${escapeHtml(x.tarefa.nome)}</option>`).join('') : '';
+    const opcoes = (p && recurso) ? this.opcoesTarefasRegisto(p.idInterno, this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa)) : '';
     e.regTarefa.innerHTML = `<option value="">${p ? 'Seleciona…' : 'Seleciona primeiro o projeto…'}</option>` + opcoes;
     e.regTarefa.disabled = !p;
   },
@@ -4758,6 +4758,31 @@ const App = {
     const recurso = this.state.recursos.find(r => r.nome === nomePessoa);
     if (!p || !recurso) return [];
     return this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa);
+  },
+  // "Pai › Filha" — a cadeia de tarefas-resumo acima desta tarefa. Duas tarefas com o mesmo nome em
+  // grupos diferentes (ex.: "Atividades de Preparação" em cada sessão) só se distinguem por aqui.
+  rotuloTarefaComPai(p, t) {
+    const nomes = [t.nome];
+    let atual = t;
+    for (let guarda = 0; atual.parentId && guarda < 20; guarda++) {
+      const pai = this.tarefaPorId(p, atual.parentId);
+      if (!pai) break;
+      nomes.unshift(pai.nome);
+      atual = pai;
+    }
+    return nomes.join(' › ');
+  },
+  // <option>s das tarefas para os selects do Registo de Horas: o VALOR é o id da tarefa (nunca o
+  // nome — com nomes repetidos, escolher a segunda gravava horas na primeira), o texto inclui o pai.
+  opcoesTarefasRegisto(idInternoProjeto, tarefas) {
+    const p = Object.values(this.state.projetos).find(pr => pr.idInterno === idInternoProjeto);
+    return tarefas.map(t => `<option value="${escapeAttr(t.id)}">${escapeHtml(p ? this.rotuloTarefaComPai(p, t) : t.nome)}</option>`).join('');
+  },
+  // Texto de um registo já gravado: com o pai, se a referência direta à tarefa (tarefaId) ainda existir.
+  rotuloTarefaRegisto(r) {
+    const p = r.projetoId ? this.state.projetos[r.projetoId] : null;
+    const t = p && r.tarefaId ? this.tarefaPorId(p, r.tarefaId) : null;
+    return t ? this.rotuloTarefaComPai(p, t) : (r.tarefaNome || '');
   },
   // Edição direta de um registo já existente (Administrador, ou o Gestor do projeto a que o
   // registo pertence — ver possoEditarRegisto) — ao contrário da criação, isto não passa pelo
@@ -4830,6 +4855,14 @@ const App = {
       campos.projeto_id = r.projetoId;
       campos.cliente = r.cliente;
     }
+    // "tarefaId" (escolha num <select>) identifica a tarefa sem ambiguidade — o nome vem dela. Só
+    // depois de pessoa/projeto já aplicados acima, porque a tarefa tem de pertencer a essa combinação.
+    let tarefaIdEscolhida;
+    if ('tarefaId' in alteracoes) {
+      const t = this.tarefasDoProjetoParaPessoaRegisto(r.projetoIdInterno, r.pessoa).find(x => x.id === alteracoes.tarefaId);
+      tarefaIdEscolhida = t ? t.id : null;
+      alteracoes = { ...alteracoes, tarefaNome: t ? t.nome : '' };
+    }
     if ('tarefaNome' in alteracoes) { r.tarefaNome = alteracoes.tarefaNome || ''; campos.tarefa_nome = r.tarefaNome; }
     // Sempre que pessoa/projeto/tarefa mudam, tenta re-resolver a referência direta à tarefa (só
     // usada para saber quanto já foi feito dela — ver App.horasJaRegistadasTarefa); fica null se a
@@ -4837,7 +4870,7 @@ const App = {
     // registo sem projeto, que nunca corresponde a nenhuma, mas não bloqueia).
     if ('pessoa' in alteracoes || 'projetoIdInterno' in alteracoes || 'tarefaNome' in alteracoes) {
       const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(r.projetoIdInterno, r.pessoa).find(t => t.nome === r.tarefaNome);
-      r.tarefaId = tarefaReal ? tarefaReal.id : null;
+      r.tarefaId = tarefaIdEscolhida !== undefined ? tarefaIdEscolhida : (tarefaReal ? tarefaReal.id : null);
       campos.tarefa_id = r.tarefaId;
     }
     this.invalidarIndiceRegistos();
@@ -4854,7 +4887,7 @@ const App = {
     const pessoa = e.regPessoa.value;
     const data = e.regData.value;
     const projetoIdInterno = e.regProjeto.value;
-    const tarefaNome = e.regTarefa.value;
+    const tarefaSelecionadaId = e.regTarefa.value;
     const horas = parseFloat(e.regHoras.value);
     const notas = e.regNotas.value.trim();
     const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
@@ -4883,7 +4916,7 @@ const App = {
       return;
     }
 
-    if (!pessoa || !data || !projetoIdInterno || !tarefaNome || !horas || horas <= 0) {
+    if (!pessoa || !data || !projetoIdInterno || !tarefaSelecionadaId || !horas || horas <= 0) {
       e.regMsg.textContent = 'Preenche pessoa, data, projeto, tarefa e horas.';
       e.regMsg.style.color = 'var(--vermelho)';
       return;
@@ -4897,7 +4930,14 @@ const App = {
     }
     const proj = Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno);
     const projetoNome = proj ? proj.nome : projetoIdInterno;
-    const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.nome === tarefaNome);
+    const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.id === tarefaSelecionadaId);
+    if (!tarefaReal) {
+      e.regMsg.textContent = 'A tarefa escolhida já não está disponível — escolhe-a outra vez.';
+      e.regMsg.style.color = 'var(--vermelho)';
+      this.renderTarefasRegisto();
+      return;
+    }
+    const tarefaNome = tarefaReal.nome;
     // A tarefa já está dada como concluída — não é um erro (pode haver um saldo real por acertar,
     // ou o registo ser de antes de a marcarem concluída), só um aviso: avança se confirmar.
     if (tarefaReal && tarefaReal.progresso >= 100) {
@@ -5008,7 +5048,7 @@ const App = {
           <td>${tipoHtml}</td>
           <td>${r.projetoIdInterno ? `${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}` : '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
-          <td>${escapeHtml(r.tarefaNome) || '<span style="color:var(--cinza-500)">—</span>'}</td>
+          <td>${escapeHtml(this.rotuloTarefaRegisto(r)) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
           <td>${escapeHtml(r.notas)}</td>
           <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
@@ -5086,8 +5126,10 @@ const App = {
           return;
         }
         selTarefa.disabled = false;
-        selTarefa.innerHTML = tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
-        selTarefa.value = tarefas.some(t => t.nome === r.tarefaNome) ? r.tarefaNome : tarefas[0].nome;
+        selTarefa.innerHTML = this.opcoesTarefasRegisto(idInternoProjeto, tarefas);
+        // Prefere a referência direta (tarefaId); só recorre ao nome em registos antigos sem ela.
+        const atual = tarefas.find(t => r.tarefaId && t.id === r.tarefaId) || tarefas.find(t => t.nome === r.tarefaNome) || tarefas[0];
+        selTarefa.value = atual.id;
       };
       preencherProjetos(true);
       tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => {
@@ -5095,17 +5137,17 @@ const App = {
         const selProjeto = tr.querySelector('[data-campo="projetoIdInterno"]');
         const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
         if (!selProjeto.value || !selTarefa.value) { this.toast('Esta pessoa não tem tarefas atribuídas em nenhum projeto — o registo não pode ficar sem tarefa.'); this.renderTabelaRegistos(); return; }
-        this.gravarLinhaRegisto(r.id, { pessoa: ev.target.value, projetoIdInterno: selProjeto.value, tarefaNome: selTarefa.value });
+        this.gravarLinhaRegisto(r.id, { pessoa: ev.target.value, projetoIdInterno: selProjeto.value, tarefaId: selTarefa.value });
       });
       tr.querySelector('[data-campo="projetoIdInterno"]').addEventListener('change', (ev) => {
         preencherTarefas();
         const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
         if (!selTarefa.value) { this.toast('Este projeto não tem tarefas atribuídas a esta pessoa — o registo não pode ficar sem tarefa.'); this.renderTabelaRegistos(); return; }
-        this.gravarLinhaRegisto(r.id, { projetoIdInterno: ev.target.value, tarefaNome: selTarefa.value });
+        this.gravarLinhaRegisto(r.id, { projetoIdInterno: ev.target.value, tarefaId: selTarefa.value });
       });
       tr.querySelector('[data-campo="tarefaNome"]').addEventListener('change', (ev) => {
         if (!ev.target.value) { this.toast('Tem de escolher uma tarefa.'); this.renderTabelaRegistos(); return; }
-        this.gravarLinhaRegisto(r.id, { tarefaNome: ev.target.value });
+        this.gravarLinhaRegisto(r.id, { tarefaId: ev.target.value });
       });
       // data/horas/notas/eliminar já ficaram ligados mais acima (comuns aos dois casos, com/sem
       // projeto) — nada a repetir aqui.
@@ -5448,7 +5490,7 @@ const App = {
       this.abrirModal('Bloco de trabalho', `
         <p><b>Data:</b> ${DateUtil.formatShort(DateUtil.parseISO(registoExistente.data))}</p>
         <p><b>Tipo:</b> ${escapeHtml(tipoRO.nome)}</p>
-        ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(registoExistente.tarefaNome || '—')}</p>` : ''}
+        ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(this.rotuloTarefaRegisto(registoExistente) || '—')}</p>` : ''}
         <p><b>Horas:</b> ${registoExistente.horas}h</p>
         ${registoExistente.notas ? `<p><b>Notas:</b> ${escapeHtml(registoExistente.notas)}</p>` : ''}
         <p class="hint">Só o Administrador (ou o Gestor do projeto, quando aplicável) pode editar este registo.</p>`);
@@ -5529,8 +5571,11 @@ const App = {
 
     const preencherTarefas = () => {
       const tarefas = recurso ? this.tarefasDoProjetoParaPessoaRegisto(selProjeto.value, pessoa) : [];
-      selTarefa.innerHTML = '<option value="">Seleciona…</option>' + tarefas.map(t => `<option value="${escapeAttr(t.nome)}">${escapeHtml(t.nome)}</option>`).join('');
-      if (registoExistente && tarefas.some(t => t.nome === registoExistente.tarefaNome)) selTarefa.value = registoExistente.tarefaNome;
+      selTarefa.innerHTML = '<option value="">Seleciona…</option>' + this.opcoesTarefasRegisto(selProjeto.value, tarefas);
+      if (registoExistente) {
+        const atual = tarefas.find(t => registoExistente.tarefaId && t.id === registoExistente.tarefaId) || tarefas.find(t => t.nome === registoExistente.tarefaNome);
+        if (atual) selTarefa.value = atual.id;
+      }
     };
     const preencherProjetos = () => {
       const projetosDaPessoa = recurso ? this.projetosRegistoPermitidos().filter(p => p.tarefas.some(t => t.recursoIds.includes(recurso.id))) : [];
@@ -5601,19 +5646,21 @@ const App = {
       }
       const horas = parseFloat(m.querySelector('#blocoHoras').value);
       if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
-      let projetoIdInterno = '', tarefaNome = '';
+      let projetoIdInterno = '', tarefaSelecionadaId = '';
       if (tipo.requerProjeto) {
         projetoIdInterno = selProjeto.value;
-        tarefaNome = selTarefa.value;
-        if (!projetoIdInterno || !tarefaNome) { this.toast('Escolhe projeto e tarefa.'); return; }
+        tarefaSelecionadaId = selTarefa.value;
+        if (!projetoIdInterno || !tarefaSelecionadaId) { this.toast('Escolhe projeto e tarefa.'); return; }
       }
       const proj = projetoIdInterno ? Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno) : null;
-      const tarefaReal = proj ? this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.nome === tarefaNome) : null;
+      const tarefaReal = proj ? this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.id === tarefaSelecionadaId) : null;
+      if (tipo.requerProjeto && !tarefaReal) { this.toast('A tarefa escolhida já não está disponível — escolhe-a outra vez.'); return; }
+      const tarefaNome = tarefaReal ? tarefaReal.nome : '';
       if (tarefaReal && tarefaReal.progresso >= 100 && !confirm(`A tarefa "${tarefaReal.nome}" já está marcada como concluída (100%). Registar horas nela na mesma?`)) return;
 
       if (registoExistente) {
         this.gravarLinhaRegisto(registoExistente.id, {
-          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, tarefaNome: projetoIdInterno ? tarefaNome : ''
+          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' })
         });
       } else {
         this.submeterRegisto({
@@ -6370,7 +6417,7 @@ const App = {
     this.renderProjetosRegisto();
     e.regProjeto.value = p.idInterno || '';
     this.renderTarefasRegisto();
-    if (tarefa) e.regTarefa.value = tarefa.nome;
+    if (tarefa) e.regTarefa.value = tarefa.id;
     e.regHoras.focus();
   },
   renderAcompanhamento() {
