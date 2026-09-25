@@ -377,6 +377,10 @@ alter table public.configuracoes add column if not exists email_rh text not null
 -- Interruptor geral dos lembretes automáticos de horas em falta (função do servidor
 -- supabase/functions/lembrete-horas) — desligado por omissão: nada é enviado até o Administrador o ligar.
 alter table public.configuracoes add column if not exists lembrete_horas_ativo boolean not null default false;
+-- Idem para a agenda do dia por email (função supabase/functions/lembrete-agenda).
+alter table public.configuracoes add column if not exists lembrete_agenda_ativo boolean not null default false;
+-- Cada pessoa pode desligar os lembretes automáticos que lhe são enviados ("A minha conta").
+alter table public.recursos add column if not exists lembretes_email boolean not null default true;
 insert into public.configuracoes (id) values (1) on conflict (id) do nothing;
 
 -- Depois de alterar colunas por SQL direto, força a API (PostgREST) a esquecer a "schema cache"

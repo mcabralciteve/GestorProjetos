@@ -35,7 +35,7 @@ const Backup = {
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel || '', equipa_id: r.equipaId || null,
       preco_custo: r.precoCusto || 0, preco_venda: r.precoVenda || 0,
       auth_user_id: null, // ver nota grande no topo do ficheiro — religa-se sozinho por email
-      acesso: r.acesso || 'user'
+      acesso: r.acesso || 'user', lembretes_email: r.lembretesEmail !== false
     }));
 
     linhas.departamentos = (state.departamentos || []).map(d => ({
@@ -116,7 +116,7 @@ const Backup = {
     const cfg = state.configuracoes || {};
     linhas.configuracoes = [{
       id: 1, email_viaturas_1: cfg.emailViaturas1 || '', email_viaturas_2: cfg.emailViaturas2 || '',
-      email_rh: cfg.emailRH || '', lembrete_horas_ativo: !!cfg.lembreteHorasAtivo,
+      email_rh: cfg.emailRH || '', lembrete_horas_ativo: !!cfg.lembreteHorasAtivo, lembrete_agenda_ativo: !!cfg.lembreteAgendaAtivo,
       ocupacao_limite_baixo: cfg.ocupacaoLimiteBaixo ?? 60, ocupacao_limite_alto: cfg.ocupacaoLimiteAlto ?? 80,
       ocupacao_limite_critico: cfg.ocupacaoLimiteCritico ?? 100
     }];
@@ -206,7 +206,7 @@ const Backup = {
     partes.push(`\n-- ---------- configuracoes (linha única, id=1 — já existe por omissão, por isso "update") ----------`);
     partes.push(
       `update public.configuracoes set email_viaturas_1 = ${this.sqlValor(cfg.email_viaturas_1)}, ` +
-      `email_viaturas_2 = ${this.sqlValor(cfg.email_viaturas_2)}, email_rh = ${this.sqlValor(cfg.email_rh)}, lembrete_horas_ativo = ${this.sqlValor(cfg.lembrete_horas_ativo)}, ` +
+      `email_viaturas_2 = ${this.sqlValor(cfg.email_viaturas_2)}, email_rh = ${this.sqlValor(cfg.email_rh)}, lembrete_horas_ativo = ${this.sqlValor(cfg.lembrete_horas_ativo)}, lembrete_agenda_ativo = ${this.sqlValor(cfg.lembrete_agenda_ativo)}, ` +
       `ocupacao_limite_baixo = ${this.sqlValor(cfg.ocupacao_limite_baixo)}, ` +
       `ocupacao_limite_alto = ${this.sqlValor(cfg.ocupacao_limite_alto)}, ocupacao_limite_critico = ${this.sqlValor(cfg.ocupacao_limite_critico)} where id = 1;`
     );

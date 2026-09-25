@@ -319,6 +319,7 @@ const App = {
       defEmail2: document.getElementById('defEmail2'),
       defEmailRH: document.getElementById('defEmailRH'),
       defLembreteHoras: document.getElementById('defLembreteHoras'),
+      defLembreteAgenda: document.getElementById('defLembreteAgenda'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
       ocupLimiteBaixo: document.getElementById('ocupLimiteBaixo'),
@@ -623,6 +624,7 @@ const App = {
     if (cfg.emailViaturas2 === undefined) cfg.emailViaturas2 = '';
     if (cfg.emailRH === undefined) cfg.emailRH = '';
     if (cfg.lembreteHorasAtivo === undefined) cfg.lembreteHorasAtivo = false;
+    if (cfg.lembreteAgendaAtivo === undefined) cfg.lembreteAgendaAtivo = false;
     if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
     if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
     if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
@@ -6857,11 +6859,16 @@ const App = {
   abrirModalMinhaConta() {
     const perfil = this.perfilAtual();
     if (!perfil) return;
+    const meuRecurso = this.state.recursos.find(r => r.id === perfil.recursoId);
+    const receberLembretes = !meuRecurso || meuRecurso.lembretesEmail !== false;
     const html = `
       <label>Nome
         <input type="text" id="contaNome" value="${escapeAttr(perfil.nome || '')}">
       </label>
       <div class="calc-line">Email: <b>${escapeHtml(perfil.email || '')}</b></div>
+      <label style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="contaLembretes" ${receberLembretes ? 'checked' : ''}> Receber lembretes automáticos por email (horas em falta, agenda do dia)
+      </label>
       <label>Nova password <span class="hint">(deixa em branco para não alterar)</span>
         <input type="password" id="contaPassword" minlength="6" placeholder="••••••" autocomplete="new-password">
       </label>
@@ -6885,10 +6892,14 @@ const App = {
       msg.style.color = 'var(--cinza-500)';
       msg.textContent = 'A guardar...';
       try {
-        await Sync.atualizarConta({ nome, password: password || null, recursoId: perfil.recursoId });
+        // Só se envia se a pessoa mexeu na opção — assim gravar só o nome/password continua a
+        // funcionar mesmo antes de a coluna lembretes_email existir na base de dados.
+        const querLembretes = m.querySelector('#contaLembretes').checked;
+        const mudouLembretes = querLembretes !== receberLembretes;
+        await Sync.atualizarConta({ nome, password: password || null, recursoId: perfil.recursoId, lembretesEmail: mudouLembretes ? querLembretes : undefined });
         perfil.nome = nome;
         const recurso = this.state.recursos.find(r => r.id === perfil.recursoId);
-        if (recurso) recurso.nome = nome;
+        if (recurso) { recurso.nome = nome; if (mudouLembretes) recurso.lembretesEmail = querLembretes; }
         this.fecharModal();
         this.renderTudo();
         this.toast('Conta atualizada.');
@@ -6910,6 +6921,7 @@ const App = {
     if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
     if (document.activeElement !== e.defEmailRH) e.defEmailRH.value = c.emailRH || '';
     if (e.defLembreteHoras && document.activeElement !== e.defLembreteHoras) e.defLembreteHoras.checked = !!c.lembreteHorasAtivo;
+    if (e.defLembreteAgenda && document.activeElement !== e.defLembreteAgenda) e.defLembreteAgenda.checked = !!c.lembreteAgendaAtivo;
     if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
     if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
     if (document.activeElement !== e.ocupLimiteCritico) e.ocupLimiteCritico.value = c.ocupacaoLimiteCritico ?? 100;
@@ -6923,8 +6935,9 @@ const App = {
     e.defMsg.textContent = 'A guardar...';
     try {
       const lembreteHorasAtivo = !!(e.defLembreteHoras && e.defLembreteHoras.checked);
-      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH, lembrete_horas_ativo: lembreteHorasAtivo });
-      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo });
+      const lembreteAgendaAtivo = !!(e.defLembreteAgenda && e.defLembreteAgenda.checked);
+      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH, lembrete_horas_ativo: lembreteHorasAtivo, lembrete_agenda_ativo: lembreteAgendaAtivo });
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo, lembreteAgendaAtivo });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {

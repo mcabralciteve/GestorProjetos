@@ -266,7 +266,7 @@ const Sync = {
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
-      authUserId: r.auth_user_id, acesso: r.acesso
+      authUserId: r.auth_user_id, acesso: r.acesso, lembretesEmail: r.lembretes_email !== false
     }));
     // "Utilizadores" não é uma tabela à parte — é só os recursos que já têm conta na plataforma
     // (auth_user_id preenchido), vistos com a forma que o resto da app já espera (perfilAtual,
@@ -349,6 +349,7 @@ const Sync = {
       emailViaturas2: cfg.data ? (cfg.data.email_viaturas_2 || '') : '',
       emailRH: cfg.data ? (cfg.data.email_rh || '') : '',
       lembreteHorasAtivo: cfg.data ? !!cfg.data.lembrete_horas_ativo : false,
+      lembreteAgendaAtivo: cfg.data ? !!cfg.data.lembrete_agenda_ativo : false,
       ocupacaoLimiteBaixo: cfg.data && cfg.data.ocupacao_limite_baixo != null ? Number(cfg.data.ocupacao_limite_baixo) : 60,
       ocupacaoLimiteAlto: cfg.data && cfg.data.ocupacao_limite_alto != null ? Number(cfg.data.ocupacao_limite_alto) : 80,
       ocupacaoLimiteCritico: cfg.data && cfg.data.ocupacao_limite_critico != null ? Number(cfg.data.ocupacao_limite_critico) : 100
@@ -375,7 +376,7 @@ const Sync = {
   // "nome" vive em dois sítios: user_metadata (é o que a topbar mostra, via Auth.atualizarUI) e
   // recursos.nome (é o que o resto da app usa — tabelas, seletor de gestor, etc.). Escrevem-se os
   // dois; a password só se mexe se vier preenchida.
-  async atualizarConta({ nome, password, recursoId }) {
+  async atualizarConta({ nome, password, recursoId, lembretesEmail }) {
     const payloadAuth = {};
     if (password) payloadAuth.password = password;
     if (nome) payloadAuth.data = { nome };
@@ -385,6 +386,12 @@ const Sync = {
     }
     if (nome && recursoId) {
       const { error } = await supabaseClient.from('recursos').update({ nome }).eq('id', recursoId);
+      if (error) throw error;
+    }
+    // Escreve-se aqui, e só aqui, logo na Supabase (não passa pelo sincronizarComSupabase normal) —
+    // assim uma edição de Pessoas feita por um Administrador nunca repõe a escolha de outra pessoa.
+    if (lembretesEmail !== undefined && recursoId) {
+      const { error } = await supabaseClient.from('recursos').update({ lembretes_email: !!lembretesEmail }).eq('id', recursoId);
       if (error) throw error;
     }
   },

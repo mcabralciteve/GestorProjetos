@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260925a">
+<link rel="stylesheet" href="css/style.css?v=20260925b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -732,6 +732,8 @@
       <h3>Lembretes automáticos por email</h3>
       <p class="pagina-sub" style="margin-top:0;">Todos os dias úteis de manhã, cada pessoa com conta que tenha dias por preencher nos últimos 10 dias úteis recebe um email com esses dias. Só funciona depois de a função do servidor estar instalada (ver supabase/functions/lembrete-horas/LEIAME.md); enquanto isto estiver desligado, nada é enviado.</p>
       <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="defLembreteHoras"> Enviar lembretes de horas em falta</label>
+      <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="defLembreteAgenda"> Enviar a agenda do dia (tarefas previstas para hoje)</label>
+      <p class="pagina-sub" style="margin:0;">Cada pessoa pode desligar estes emails em "A minha conta". A agenda do dia tem a sua própria função no servidor (supabase/functions/lembrete-agenda).</p>
       <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
       <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
@@ -1021,14 +1023,14 @@
      em todas as tags abaixo (não precisa de bater certo com a data real, só tem de mudar). -->
 <script src="lib/supabase.js"></script>
 <script src="lib/jszip.min.js"></script>
-<script src="js/supabase-config.js?v=20260925a"></script>
-<script src="js/auth.js?v=20260925a"></script>
-<script src="js/sync.js?v=20260925a"></script>
-<script src="js/gantt.js?v=20260925a"></script>
-<script src="js/capacidade.js?v=20260925a"></script>
-<script src="js/portfolio-gantt.js?v=20260925a"></script>
-<script src="js/reserva-viatura.js?v=20260925a"></script>
-<script src="js/backup.js?v=20260925a"></script>
-<script src="js/app.js?v=20260925a"></script>
+<script src="js/supabase-config.js?v=20260925b"></script>
+<script src="js/auth.js?v=20260925b"></script>
+<script src="js/sync.js?v=20260925b"></script>
+<script src="js/gantt.js?v=20260925b"></script>
+<script src="js/capacidade.js?v=20260925b"></script>
+<script src="js/portfolio-gantt.js?v=20260925b"></script>
+<script src="js/reserva-viatura.js?v=20260925b"></script>
+<script src="js/backup.js?v=20260925b"></script>
+<script src="js/app.js?v=20260925b"></script>
 </body>
 </html>
