@@ -326,6 +326,7 @@ const App = {
       ocupLimiteAlto: document.getElementById('ocupLimiteAlto'),
       ocupLimiteCritico: document.getElementById('ocupLimiteCritico'),
       btnGuardarOcupacao: document.getElementById('btnGuardarOcupacao'),
+      btnAlocSemHoras: document.getElementById('btnAlocSemHoras'),
       ocupMsg: document.getElementById('ocupMsg'),
       btnExportarBackup: document.getElementById('btnExportarBackup'),
       backupMsg: document.getElementById('backupMsg'),
@@ -2003,6 +2004,85 @@ const App = {
     t.alocacoesHoras[recursoId] = horas;
     this.persist();
     this.renderTudo();
+  },
+  // Pares tarefa×consultor em que ninguém indicou horas (a app assume tempo inteiro — ver
+  // horasAlocadas). Só tarefas-folha: uma tarefa com subtarefas é só um agrupador. "soAtivos" deixa
+  // de fora projetos suspensos/fechados.
+  alocacoesSemHoras(soAtivos) {
+    const itens = [];
+    Object.values(this.state.projetos).forEach(p => {
+      if (soAtivos && p.ativo === false) return;
+      const paisIds = new Set(p.tarefas.map(t => t.parentId).filter(Boolean));
+      p.tarefas.forEach(t => {
+        if (paisIds.has(t.id)) return;
+        (t.recursoIds || []).forEach(rid => {
+          if (this.horasRecursoExplicita(t, rid) !== null) return;
+          const r = this.state.recursos.find(x => x.id === rid);
+          itens.push({ p, t, rid, consultor: r ? r.nome : '—', dias: this.diasUteisTarefa(t), horasAssumidas: this.horasTempoInteiro(t) });
+        });
+      });
+    });
+    return itens;
+  },
+  // Rotina de manutenção (só Administrador — mexe em todos os projetos): mostra o que seria
+  // alterado e só grava depois de confirmar. Uma única persist() → um único passo no ↶ Desfazer.
+  abrirModalAlocacoesSemHoras() {
+    if (!this.souAdmin()) return;
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
+    const html = `
+      <div class="row-2">
+        <label>Horas a registar por alocação
+          <input type="number" id="asHoras" min="0" step="0.25" value="1">
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;">
+          <input type="checkbox" id="asSoAtivos" checked> Só projetos ativos
+        </label>
+      </div>
+      <p id="asResumo" class="rec-resumo"></p>
+      <div id="asLista"></div>
+      <button class="btn btn-primary" id="btnAsAplicar" style="margin-top:10px;">Registar horas</button>`;
+    this.abrirModal('Alocações sem horas definidas', html, { largo: true });
+    const m = this.els.modalCorpo;
+    const inpHoras = m.querySelector('#asHoras');
+    const chkAtivos = m.querySelector('#asSoAtivos');
+    const btn = m.querySelector('#btnAsAplicar');
+    const LIMITE_LINHAS = 300;
+    const render = () => {
+      const itens = this.alocacoesSemHoras(chkAtivos.checked);
+      const horas = Math.max(0, Number(inpHoras.value) || 0);
+      const projetos = new Set(itens.map(i => i.p.id)).size;
+      m.querySelector('#asResumo').textContent = itens.length
+        ? `${itens.length} alocação(ões) sem horas, em ${projetos} projeto(s) — cada uma passaria de "tempo inteiro" a ${horas}h.`
+        : '✅ Nenhuma alocação sem horas definidas.';
+      const linhas = itens.slice(0, LIMITE_LINHAS).map(i => `<tr>
+        <td>${escapeHtml(i.p.idInterno ? i.p.idInterno + ' — ' : '')}${escapeHtml(i.p.nome)}${i.p.cliente ? ` (${escapeHtml(i.p.cliente)})` : ''}</td>
+        <td>${escapeHtml(i.t.nome)}</td><td>${escapeHtml(i.consultor)}</td>
+        <td>${DateUtil.formatShort(DateUtil.parseISO(i.t.inicio))}</td><td>${i.dias}</td><td>${i.horasAssumidas}h</td></tr>`).join('');
+      m.querySelector('#asLista').innerHTML = itens.length ? `
+        <div class="table-scroll" style="max-height:40vh;"><table class="tabela-crud">
+          <thead><tr><th>Projeto</th><th>Tarefa</th><th>Consultor</th><th>Início</th><th>Dias</th><th>Hoje assume</th></tr></thead>
+          <tbody>${linhas}</tbody></table></div>
+        ${itens.length > LIMITE_LINHAS ? `<p class="hint">A mostrar as primeiras ${LIMITE_LINHAS} de ${itens.length} — todas serão alteradas.</p>` : ''}` : '';
+      btn.disabled = !itens.length;
+      btn.textContent = itens.length ? `Registar ${horas}h em ${itens.length} alocação(ões)` : 'Nada a registar';
+    };
+    inpHoras.addEventListener('input', render);
+    chkAtivos.addEventListener('change', render);
+    btn.addEventListener('click', () => {
+      const itens = this.alocacoesSemHoras(chkAtivos.checked);
+      const horas = Math.max(0, Number(inpHoras.value) || 0);
+      if (!itens.length) return;
+      itens.forEach(i => {
+        if (!i.t.alocacoesHoras) i.t.alocacoesHoras = {};
+        i.t.alocacoesHoras[i.rid] = horas;
+      });
+      this.persist();
+      this.fecharModal();
+      this.renderTudo();
+      this.toast(`${itens.length} alocação(ões) atualizada(s) para ${horas}h. Podes desfazer com ↶.`);
+    });
+    render();
   },
   // Percentagem MÉDIA de ocupação diária, derivada das horas totais planeadas espalhadas pelos
   // dias úteis da tarefa — é o que o motor de capacidade (heatmap, deteção de conflitos em
@@ -7509,6 +7589,7 @@ const App = {
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
+    if (e.btnAlocSemHoras) e.btnAlocSemHoras.addEventListener('click', () => this.abrirModalAlocacoesSemHoras());
     if (e.btnExportarBackup) e.btnExportarBackup.addEventListener('click', () => this.exportarBackup());
     [e.fAlocDept, e.fAlocEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosAlocacoes()); });
     if (e.fAlocPessoa) e.fAlocPessoa.addEventListener('change', () => this.aplicarFiltrosAlocacoes());
