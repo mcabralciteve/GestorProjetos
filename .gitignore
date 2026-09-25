@@ -2,6 +2,9 @@
 # desde que os dados passaram a viver no Supabase; não devem ir para o repositório nem para produção.
 Base de Dados/
 
+# Ficheiros temporários do Supabase CLI (ligação local ao projeto) — não são código
+supabase/.temp/
+
 # Ficheiros de sistema
 .DS_Store
 Thumbs.db
