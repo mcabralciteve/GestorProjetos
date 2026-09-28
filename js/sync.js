@@ -141,10 +141,10 @@ const Sync = {
     }
   },
 
-  // Substitui por completo as tarefas/faturas/alocações de UM projeto — apaga tudo o que lá
-  // estava e insere a lista atual. Simples e correto ao tamanho real de um projeto (dezenas de
-  // tarefas, não milhares); o preço é uma janela curtíssima em que o projeto fica sem tarefas na
-  // base de dados, inofensivo com uma pessoa a editar de cada vez.
+  // Grava um projeto inteiro: a linha do próprio projeto aqui (upsert simples, uma linha, já
+  // atómico sozinho); tarefas/associações/faturas/pontos de situação/next steps dentro da função
+  // gravar_filhos_projeto (ver supabase/schema.sql), numa única transação — ver o comentário
+  // grande aí para o histórico de porque isto deixou de ser feito com pedidos separados.
   async sincronizarUmProjeto(projeto) {
     const linhaProjeto = {
       id: projeto.id, id_interno: projeto.idInterno, nome: projeto.nome, cliente: projeto.cliente,
@@ -159,83 +159,54 @@ const Sync = {
     let r = await supabaseClient.from('projetos').upsert(linhaProjeto);
     if (r.error) throw r.error;
 
-    r = await supabaseClient.from('tarefas').delete().eq('projeto_id', projeto.id);
-    if (r.error) throw r.error;
+    // Tarefas, associações a consultores, faturas, pontos de situação e next steps são todos
+    // substituídos por completo (apaga tudo o que lá estava, escreve a lista atual) — mas isso
+    // acontece TODO DE UMA VEZ, dentro da função gravar_filhos_projeto (ver supabase/schema.sql),
+    // que corre inteira numa única transação do Postgres. Antes disto, cada tabela era um pedido
+    // separado ao Supabase, sem nada a juntá-los: sair a meio (rede lenta, aba fechada) podia
+    // deixar o apagar gravado sem o reescrever, perdendo dados em definitivo — foi o que aconteceu
+    // ao projeto 2026/765 em 2026-09-28 (perdeu-se toda a "tarefa_recursos" desse projeto). Com uma
+    // função da base de dados, ou fica tudo gravado, ou (rede caiu a meio) fica tudo como estava.
     const tarefas = projeto.tarefas || [];
-    if (tarefas.length) {
-      // Duas passagens por causa da auto-referência tarefas.parent_id → tarefas.id: insere tudo
-      // com parent_id nulo primeiro (ordem do array não importa), só depois liga cada tarefa à
-      // sua mãe — evita ter de ordenar topologicamente a árvore antes de gravar.
-      const linhasBase = tarefas.map((t, idx) => ({
-        id: t.id, projeto_id: projeto.id, parent_id: null, nome: t.nome, ordem: idx,
-        inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || [],
-        negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
-      }));
-      r = await supabaseClient.from('tarefas').upsert(linhasBase);
-      if (r.error) throw r.error;
-
-      const comPai = tarefas.filter(t => t.parentId);
-      if (comPai.length) {
-        const resultados = await Promise.all(
-          comPai.map(t => supabaseClient.from('tarefas').update({ parent_id: t.parentId }).eq('id', t.id))
-        );
-        const falhou = resultados.find(x => x.error);
-        if (falhou) throw falhou.error;
-      }
-
-      const linhasTR = [];
-      tarefas.forEach(t => {
-        (t.recursoIds || []).forEach(rid => {
-          const horas = (t.alocacoesHoras && t.alocacoesHoras[rid] !== undefined) ? t.alocacoesHoras[rid] : null;
-          linhasTR.push({ tarefa_id: t.id, recurso_id: rid, horas });
-        });
+    const linhasTarefas = tarefas.map((t, idx) => ({
+      id: t.id, parent_id: t.parentId || null, nome: t.nome, ordem: idx,
+      inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || [],
+      negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
+    }));
+    const linhasTarefaRecursos = [];
+    tarefas.forEach(t => {
+      (t.recursoIds || []).forEach(rid => {
+        const horas = (t.alocacoesHoras && t.alocacoesHoras[rid] !== undefined) ? t.alocacoesHoras[rid] : null;
+        linhasTarefaRecursos.push({ tarefa_id: t.id, recurso_id: rid, horas });
       });
-      if (linhasTR.length) {
-        r = await supabaseClient.from('tarefa_recursos').upsert(linhasTR, { onConflict: 'tarefa_id,recurso_id' });
-        if (r.error) throw r.error;
+    });
+    const linhasFaturas = (projeto.faturas || []).map(f => ({
+      id: f.id, data_prevista: f.dataPrevista || null, tipo: f.tipo,
+      percentagem: f.percentagem, valor: f.valor, emitida: !!f.emitida,
+      data_emissao: f.dataEmissao || null, emitido_por: f.emitidoPor, numero_registo: f.numeroRegisto
+    }));
+    const linhasPontosSituacao = (projeto.pontosSituacao || []).map(ps => ({
+      id: ps.id, data: ps.data, feedback: ps.feedback, criado_por: ps.criadoPor || null, criado_em: ps.criadoEm
+    }));
+    const linhasProximosPassos = (projeto.proximosPassos || []).map(pp => ({
+      id: pp.id, tarefa_id: pp.tarefaId || null, ponto_situacao_id: pp.pontoSituacaoId || null,
+      responsavel_id: pp.responsavelId || null, data_prevista: pp.dataPrevista || null, data_real: pp.dataReal || null,
+      descricao: pp.descricao, estado: pp.estado, notas: pp.notas, fechado: !!pp.fechado, fechado_em: pp.fechadoEm || null,
+      criado_por: pp.criadoPor || null, criado_em: pp.criadoEm, atualizado_em: pp.atualizadoEm
+    }));
+    r = await supabaseClient.rpc('gravar_filhos_projeto', {
+      p_projeto_id: projeto.id,
+      p_tarefas: linhasTarefas, p_tarefa_recursos: linhasTarefaRecursos, p_faturas: linhasFaturas,
+      p_pontos_situacao: linhasPontosSituacao, p_proximos_passos: linhasProximosPassos
+    });
+    if (r.error) {
+      // Mensagem mais clara enquanto a função ainda não tiver sido criada (falta correr o SQL de
+      // supabase/schema.sql) — recusa-se a gravar em vez de cair para o caminho antigo (o próprio
+      // que perdeu dados), para nunca voltar a arriscar o mesmo problema silenciosamente.
+      if (/gravar_filhos_projeto/i.test(r.error.message || '')) {
+        throw new Error('Falta instalar a função "gravar_filhos_projeto" no Supabase (ver supabase/schema.sql) — sem ela, tarefas/associações deste projeto não são gravadas, de propósito, para não arriscar perder dados.');
       }
-    }
-
-    r = await supabaseClient.from('faturas').delete().eq('projeto_id', projeto.id);
-    if (r.error) throw r.error;
-    const faturas = projeto.faturas || [];
-    if (faturas.length) {
-      const linhasFat = faturas.map(f => ({
-        id: f.id, projeto_id: projeto.id, data_prevista: f.dataPrevista || null, tipo: f.tipo,
-        percentagem: f.percentagem, valor: f.valor, emitida: !!f.emitida,
-        data_emissao: f.dataEmissao || null, emitido_por: f.emitidoPor, numero_registo: f.numeroRegisto
-      }));
-      r = await supabaseClient.from('faturas').upsert(linhasFat);
-      if (r.error) throw r.error;
-    }
-
-    // "proximos_passos" referencia "pontos_situacao" — apaga-se primeiro (não deixa fk pendurada
-    // por um instante) e insere-se depois de "pontos_situacao" já lá estar.
-    r = await supabaseClient.from('proximos_passos').delete().eq('projeto_id', projeto.id);
-    if (r.error) throw r.error;
-    r = await supabaseClient.from('pontos_situacao').delete().eq('projeto_id', projeto.id);
-    if (r.error) throw r.error;
-
-    const pontosSituacao = projeto.pontosSituacao || [];
-    if (pontosSituacao.length) {
-      const linhasPS = pontosSituacao.map(ps => ({
-        id: ps.id, projeto_id: projeto.id, data: ps.data, feedback: ps.feedback,
-        criado_por: ps.criadoPor || null, criado_em: ps.criadoEm
-      }));
-      r = await supabaseClient.from('pontos_situacao').insert(linhasPS);
-      if (r.error) throw r.error;
-    }
-
-    const proximosPassos = projeto.proximosPassos || [];
-    if (proximosPassos.length) {
-      const linhasPP = proximosPassos.map(pp => ({
-        id: pp.id, projeto_id: projeto.id, tarefa_id: pp.tarefaId || null, ponto_situacao_id: pp.pontoSituacaoId || null,
-        responsavel_id: pp.responsavelId || null, data_prevista: pp.dataPrevista || null, data_real: pp.dataReal || null,
-        descricao: pp.descricao, estado: pp.estado, notas: pp.notas, fechado: !!pp.fechado, fechado_em: pp.fechadoEm || null,
-        criado_por: pp.criadoPor || null, criado_em: pp.criadoEm, atualizado_em: pp.atualizadoEm
-      }));
-      r = await supabaseClient.from('proximos_passos').insert(linhasPP);
-      if (r.error) throw r.error;
+      throw r.error;
     }
   },
 

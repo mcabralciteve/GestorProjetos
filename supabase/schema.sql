@@ -341,6 +341,85 @@ alter table public.proximos_passos drop constraint if exists proximos_passos_est
 alter table public.proximos_passos add constraint proximos_passos_estado_check check (estado in ('aberto', 'em_curso', 'concluido', 'abandonado'));
 
 -- ============================================================================
+-- Gravar de um projeto (tarefas/tarefa_recursos/faturas/pontos_situacao/
+-- proximos_passos) numa ÚNICA transação — ver App/js/sync.js, Sync.sincronizarUmProjeto.
+--
+-- Antes disto, a app apagava e voltava a inserir cada tabela com pedidos SEPARADOS
+-- (delete tarefas -> insert tarefas -> insert tarefa_recursos -> ...), sem nada a
+-- juntá-los: se a ligação caísse ou a pessoa saísse a meio (ex.: com o Supabase
+-- lento), o apagar já tinha sido gravado mas o reescrever não, perdendo dados de
+-- forma permanente e silenciosa. Foi exatamente isto que aconteceu ao projeto
+-- 2026/765 em 2026-09-28 — perdeu-se toda a "tarefa_recursos" desse projeto.
+--
+-- Uma função do Postgres corre sempre dentro de UMA transação implícita: ou tudo
+-- o que está lá dentro fica gravado, ou (se cair a ligação, ou a função levantar
+-- um erro) nada fica — nunca um resultado a meio. Chamada via supabaseClient.rpc(...).
+-- ============================================================================
+create or replace function public.gravar_filhos_projeto(
+  p_projeto_id uuid,
+  p_tarefas jsonb,           -- [{id,parent_id,nome,ordem,inicio,fim,progresso,predecessores,negrito,italico,cor}]
+  p_tarefa_recursos jsonb,   -- [{tarefa_id,recurso_id,horas}]
+  p_faturas jsonb,           -- [{id,data_prevista,tipo,percentagem,valor,emitida,data_emissao,emitido_por,numero_registo}]
+  p_pontos_situacao jsonb,   -- [{id,data,feedback,criado_por,criado_em}]
+  p_proximos_passos jsonb    -- [{id,tarefa_id,ponto_situacao_id,responsavel_id,data_prevista,data_real,descricao,estado,notas,fechado,fechado_em,criado_por,criado_em,atualizado_em}]
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Ordem de apagar: "proximos_passos" antes de "pontos_situacao" (referencia-o), e antes de
+  -- "tarefas" (também o referencia) — nunca deixa uma FK pendurada, mesmo por um instante.
+  delete from proximos_passos where projeto_id = p_projeto_id;
+  delete from pontos_situacao where projeto_id = p_projeto_id;
+  delete from faturas where projeto_id = p_projeto_id;
+  delete from tarefas where projeto_id = p_projeto_id; -- cascata: apaga também tarefa_recursos
+
+  -- Tarefas em duas fases (como já era do lado da app): parent_id fica de fora na primeira
+  -- inserção porque pode referenciar outra tarefa do mesmo lote, ainda por criar.
+  insert into tarefas (id, projeto_id, parent_id, nome, ordem, inicio, fim, progresso, predecessores, negrito, italico, cor)
+  select
+    (x->>'id')::uuid, p_projeto_id, null, x->>'nome', coalesce((x->>'ordem')::int, 0),
+    (x->>'inicio')::date, (x->>'fim')::date, coalesce((x->>'progresso')::int, 0),
+    coalesce(x->'predecessores', '[]'::jsonb),
+    coalesce((x->>'negrito')::boolean, false), coalesce((x->>'italico')::boolean, false), x->>'cor'
+  from jsonb_array_elements(coalesce(p_tarefas, '[]'::jsonb)) as x;
+
+  update tarefas t set parent_id = (x->>'parent_id')::uuid
+  from jsonb_array_elements(coalesce(p_tarefas, '[]'::jsonb)) as x
+  where t.id = (x->>'id')::uuid and x->>'parent_id' is not null;
+
+  insert into tarefa_recursos (tarefa_id, recurso_id, horas)
+  select (x->>'tarefa_id')::uuid, (x->>'recurso_id')::uuid, nullif(x->>'horas', '')::numeric
+  from jsonb_array_elements(coalesce(p_tarefa_recursos, '[]'::jsonb)) as x;
+
+  insert into faturas (id, projeto_id, data_prevista, tipo, percentagem, valor, emitida, data_emissao, emitido_por, numero_registo)
+  select
+    (x->>'id')::uuid, p_projeto_id, nullif(x->>'data_prevista', '')::date, x->>'tipo',
+    coalesce((x->>'percentagem')::numeric, 0), coalesce((x->>'valor')::numeric, 0), coalesce((x->>'emitida')::boolean, false),
+    nullif(x->>'data_emissao', '')::date, coalesce(x->>'emitido_por', ''), coalesce(x->>'numero_registo', '')
+  from jsonb_array_elements(coalesce(p_faturas, '[]'::jsonb)) as x;
+
+  insert into pontos_situacao (id, projeto_id, data, feedback, criado_por, criado_em)
+  select
+    (x->>'id')::uuid, p_projeto_id, (x->>'data')::date, coalesce(x->>'feedback', ''),
+    nullif(x->>'criado_por', '')::uuid, coalesce((x->>'criado_em')::timestamptz, now())
+  from jsonb_array_elements(coalesce(p_pontos_situacao, '[]'::jsonb)) as x;
+
+  insert into proximos_passos (id, projeto_id, tarefa_id, ponto_situacao_id, responsavel_id, data_prevista, data_real,
+    descricao, estado, notas, fechado, fechado_em, criado_por, criado_em, atualizado_em)
+  select
+    (x->>'id')::uuid, p_projeto_id, nullif(x->>'tarefa_id', '')::uuid, nullif(x->>'ponto_situacao_id', '')::uuid,
+    nullif(x->>'responsavel_id', '')::uuid, nullif(x->>'data_prevista', '')::date, nullif(x->>'data_real', '')::date,
+    x->>'descricao', coalesce(x->>'estado', 'aberto'), coalesce(x->>'notas', ''), coalesce((x->>'fechado')::boolean, false),
+    nullif(x->>'fechado_em', '')::timestamptz, nullif(x->>'criado_por', '')::uuid,
+    coalesce((x->>'criado_em')::timestamptz, now()), coalesce((x->>'atualizado_em')::timestamptz, now())
+  from jsonb_array_elements(coalesce(p_proximos_passos, '[]'::jsonb)) as x;
+end;
+$$;
+grant execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated;
+
+-- ============================================================================
 -- Reserva de Viatura: qualquer utilizador envolvido num projeto pode pedir a
 -- reserva de uma viatura para esse projeto. A app gera o Excel oficial
 -- (DFRH-008/12) e abre o cliente de email; esta tabela é só o histórico do
