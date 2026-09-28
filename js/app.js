@@ -1051,8 +1051,14 @@ const App = {
   // Gestor de Projeto. Usado no cartão "Registos incompletos da equipa" do Dashboard: sem isto, um
   // Team Leader que também gerisse um projeto via outras equipas via essas pessoas aparecerem ali
   // também, dando a impressão errada de estar a ver "o departamento todo".
+  // Um Administrador que TAMBÉM lidera uma equipa vê só essa equipa (é a própria pessoa a pedir
+  // isto — sem esta condição, "sou admin" sobrepunha-se sempre a "lidero a DCS", devolvendo a
+  // empresa toda). Um Administrador que não lidera equipa nenhuma continua a ver toda a gente, para
+  // este cartão não ficar vazio e inútil para quem só administra, sem liderar ninguém.
   recursosDaMinhaEquipaLideranca() {
-    return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca();
+    const minhaEquipa = this.recursosDaMinhaLideranca();
+    if (minhaEquipa.length) return minhaEquipa;
+    return this.souAdmin() ? this.state.recursos : [];
   },
   recursosDaMinhaEquipaGestao() {
     if (this.souAdmin()) return this.state.recursos;
