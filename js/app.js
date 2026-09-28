@@ -1046,6 +1046,14 @@ const App = {
   // e as pessoas dos projetos que giro (consultoresDoProjeto, só esses projetos). O mesmo âmbito
   // usado pelos vários cartões de equipa do Dashboard (ausências, registos incompletos, sobre-
   // alocação), pelo contador de notificações, e por Capacidade/Alocações.
+  // Só a equipa que lidero (o departamento inteiro, se for Diretor — souLiderDe já trata disso) —
+  // ao contrário de recursosDaMinhaEquipaGestao, NÃO soma os consultores dos projetos que giro como
+  // Gestor de Projeto. Usado no cartão "Registos incompletos da equipa" do Dashboard: sem isto, um
+  // Team Leader que também gerisse um projeto via outras equipas via essas pessoas aparecerem ali
+  // também, dando a impressão errada de estar a ver "o departamento todo".
+  recursosDaMinhaEquipaLideranca() {
+    return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca();
+  },
   recursosDaMinhaEquipaGestao() {
     if (this.souAdmin()) return this.state.recursos;
     const ids = new Set(this.recursosDaMinhaLideranca().map(r => r.id));
@@ -3214,11 +3222,11 @@ const App = {
     { key: 'ausenciasParaAprovar', label: 'Pedidos de ausência para aprovar (Team Leader/Diretor/Admin)' },
     { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
     { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
-    { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Gestor/Admin)' },
+    { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Team Leader/Diretor/Admin)' },
     { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' }
   ],
-  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'equipaDiasIncompletos', 'consultoresRisco'],
-  WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar'],
+  WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'consultoresRisco'],
+  WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar', 'equipaDiasIncompletos'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
   // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
   dashboardWidgetsOcultosSet() {
@@ -3283,10 +3291,10 @@ const App = {
     Capacidade.limparCaches();
     return this.recursosDaMinhaEquipaGestao().filter(r => Capacidade.intervalosCriticos({ id: r.id }).length > 0).length;
   },
-  // Quantas pessoas da minha equipa de gestão têm pelo menos um dia por preencher na janela — mesmo
-  // critério do cartão "Registos incompletos da equipa".
+  // Quantas pessoas da minha equipa (liderança, não gestão de projeto) têm pelo menos um dia por
+  // preencher na janela — mesmo critério do cartão "Registos incompletos da equipa".
   equipaDiasIncompletosCount() {
-    return this.recursosDaMinhaEquipaGestao().filter(r => this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length > 0).length;
+    return this.recursosDaMinhaEquipaLideranca().filter(r => this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length > 0).length;
   },
   // Soma tudo o que já é mostrado nos cartões do Dashboard num único número, para o sino da topbar
   // — não introduz nenhum critério novo, só agrega os já existentes (registo incompleto, next
@@ -3300,9 +3308,11 @@ const App = {
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       n += this.faturasAVencerCount();
       n += this.consultoresRiscoCount();
+    }
+    if (this.souAdmin() || this.souLiderDeAlgumaEquipa()) {
+      n += this.ausenciasParaAprovarCount();
       n += this.equipaDiasIncompletosCount();
     }
-    if (this.souAdmin() || this.souLiderDeAlgumaEquipa()) n += this.ausenciasParaAprovarCount();
     return n;
   },
   // Quantos pedidos de ausência (das pessoas que posso decidir) estão pendentes — mesmo critério do
@@ -3487,8 +3497,8 @@ const App = {
       html += this.cartaoDashboard('🌴 Ausências da equipa (próx. 7 dias)', corpo);
     }
 
-    if (gestorOuAdmin && !ocultos.has('equipaDiasIncompletos')) {
-      const recursosEquipa = this.recursosDaMinhaEquipaGestao();
+    if (liderOuAdmin && !ocultos.has('equipaDiasIncompletos')) {
+      const recursosEquipa = this.recursosDaMinhaEquipaLideranca();
       const comFalhas = recursosEquipa
         .map(r => ({ r, nDias: this.diasIncompletosRecurso(r.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length }))
         .filter(x => x.nDias > 0)
