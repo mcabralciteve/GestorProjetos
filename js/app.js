@@ -56,7 +56,10 @@ const App = {
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
-  filtrosCalendarioRegisto: { dept: '', equipa: '', pessoa: '', projeto: '' },
+  // Sem "dept" de propósito (ao contrário dos outros filtros Direção/Área/Colaborador) — ver
+  // aplicarFiltroEquipaSimples: escolher aqui um departamento inteiro juntava várias equipas de
+  // uma vez no mesmo mês, e um calendário com gente a mais deixa de se conseguir ler.
+  filtrosCalendarioRegisto: { equipa: '', pessoa: '', projeto: '' },
   calMesAtual: null,
   // Estado do Registo do Dia — só do lado do cliente, tal como filtrosCalendarioRegisto/calMesAtual
   // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
@@ -365,7 +368,6 @@ const App = {
       btnAlocHoje: document.getElementById('btnAlocHoje'),
       alocMesLabel: document.getElementById('alocMesLabel'),
       calendarioAlocacoes: document.getElementById('calendarioAlocacoes'),
-      fCalDept: document.getElementById('fCalDept'),
       fCalEquipa: document.getElementById('fCalEquipa'),
       fCalPessoa: document.getElementById('fCalPessoa'),
       fCalProjeto: document.getElementById('fCalProjeto'),
@@ -932,6 +934,20 @@ const App = {
     selEquipa.value = equipas.has(f.equipa) ? f.equipa : '';
     return orgs.filter(({ o }) => (!selDept.value || (o.deptId || '__sem__') === selDept.value) && (!selEquipa.value || o.equipaId === selEquipa.value)).map(({ r }) => r);
   },
+  // Versão sem o nível de Departamento — só Equipa (lista plana de todas as equipas presentes nos
+  // recursos possíveis). Usada onde escolher um departamento inteiro juntaria várias equipas de
+  // uma vez, deixando um calendário mensal com gente a mais para se conseguir ler (ver Vista de
+  // Equipa do Registo de Horas — filtrosCalendarioRegisto não tem "dept" de propósito).
+  aplicarFiltroEquipaSimples(selEquipa, recursos, f) {
+    if (!selEquipa) return recursos;
+    const orgs = recursos.map(r => ({ r, o: this.orgDoRecurso(r) }));
+    const equipas = new Map();
+    orgs.forEach(({ o }) => equipas.set(o.equipaId, o.equipaNome));
+    const lista = [...equipas.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+    selEquipa.innerHTML = '<option value="">Todas</option>' + lista.map(([id, nome]) => `<option value="${escapeAttr(id)}">${escapeHtml(nome)}</option>`).join('');
+    selEquipa.value = equipas.has(f.equipa) ? f.equipa : '';
+    return orgs.filter(({ o }) => !selEquipa.value || o.equipaId === selEquipa.value).map(({ r }) => r);
+  },
   // <option>s de pessoas agrupadas por departamento (<optgroup>), depois por nome.
   opcoesPessoasPorDepartamento(recursos, valorDe) {
     const grupos = new Map();
@@ -954,11 +970,11 @@ const App = {
     const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
     if (!meuRecurso) return;
     // Os dois calendários de equipa (Alocações e Registo do Dia > Vista de equipa) abrem já na
-    // equipa/departamento da própria pessoa, com "Todas" as pessoas dessa equipa.
+    // equipa da própria pessoa, com "Todas" as pessoas dessa equipa (Alocações também herda o
+    // departamento — Registo do Dia não tem esse nível, ver filtrosCalendarioRegisto).
     const org = this.orgDoRecurso(meuRecurso);
     this.filtrosAlocacoes.dept = org.deptId;
     this.filtrosAlocacoes.equipa = org.equipaId;
-    this.filtrosCalendarioRegisto.dept = org.deptId;
     this.filtrosCalendarioRegisto.equipa = org.equipaId;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
     this.diaRegistoPessoa = meuRecurso.nome;
@@ -5495,7 +5511,7 @@ const App = {
   aplicarFiltrosCalendarioRegisto() {
     const e = this.els;
     this.filtrosCalendarioRegisto = this.reagirMudancaFiltroOrg(this.filtrosCalendarioRegisto,
-      { dept: e.fCalDept.value, equipa: e.fCalEquipa.value, pessoa: e.fCalPessoa.value, projeto: e.fCalProjeto.value });
+      { equipa: e.fCalEquipa.value, pessoa: e.fCalPessoa.value, projeto: e.fCalProjeto.value });
     this.renderCalendarioRegisto();
   },
   // Vista mensal tipo Outlook: uma grelha de semanas/dias, com uma barra por registo em cada dia
@@ -5518,9 +5534,11 @@ const App = {
     });
     projetosDisponiveis.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
 
-    // Departamento → Equipa → Pessoa (pessoas agrupadas por departamento no próprio select).
+    // Só Equipa → Pessoa, sem Departamento (ver filtrosCalendarioRegisto/aplicarFiltroEquipaSimples)
+    // — pessoas continuam agrupadas por departamento no próprio select, só não dá para escolher um
+    // departamento inteiro de uma vez.
     const recursosCal = pessoasDisponiveis.map(n => this.state.recursos.find(r => r.nome === n) || { id: '', nome: n, equipaId: null });
-    const recursosOrg = this.aplicarFiltroOrg(e.fCalDept, e.fCalEquipa, recursosCal, this.filtrosCalendarioRegisto);
+    const recursosOrg = this.aplicarFiltroEquipaSimples(e.fCalEquipa, recursosCal, this.filtrosCalendarioRegisto);
     if (e.fCalPessoa) {
       const valorPessoa = this.filtrosCalendarioRegisto.pessoa;
       e.fCalPessoa.innerHTML = '<option value="">Todas</option>' + this.opcoesPessoasPorDepartamento(recursosOrg, r => r.nome);
@@ -7306,9 +7324,11 @@ const App = {
   podeVerAnalise() { return this.souAdmin() || this.souLiderDeAlgumaEquipa(); },
   analiseRecursosEscopo() { return this.souAdmin() ? this.state.recursos : this.recursosDaMinhaLideranca(); },
   // Registos do período (dentro do que o papel deixa ver), já com departamento/equipa/tipo/projeto
-  // resolvidos. "comFiltros" aplica também os filtros do ecrã (Direção/Área/Pessoa/Tipo/Projeto).
-  itensAnalise({ de, ate, comFiltros }) {
-    const f = this.filtrosAnalise;
+  // resolvidos. "comFiltros" aplica os filtros de Direção/Área/Pessoa/Tipo/Projeto — por omissão os
+  // do ecrã (filtrosAnalise), mas abrirModalExportarRegistos passa aqui os seus próprios (filtros
+  // independentes, só para a exportação, sem mexer no que está visível no ecrã de Análise).
+  itensAnalise({ de, ate, comFiltros, filtros }) {
+    const f = filtros || this.filtrosAnalise;
     const admin = this.souAdmin();
     const idsEscopo = new Set(this.analiseRecursosEscopo().map(r => r.id));
     const porNome = new Map(this.state.recursos.map(r => [r.nome, r]));
@@ -7452,48 +7472,130 @@ const App = {
     const s = String(v === undefined || v === null ? '' : v);
     return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
   },
-  // Exportação CSV dos registos de um período à escolha (default: o do ecrã), dentro do que o
-  // papel deixa ver. Por omissão TODOS os registos do período; os filtros do ecrã só se
-  // aplicam se a pessoa o pedir.
+  // Exportação para Excel (não CSV — pedido explícito) dos registos de horas de um período e
+  // critérios à escolha, dentro do que o papel deixa ver (ver podeVerAnalise/analiseRecursosEscopo).
+  // Os mesmos cinco filtros do ecrã de Análise (Direção/Área/Pessoa/Tipo/Projeto), só que numa cópia
+  // independente ("filtros", não this.filtrosAnalise) — abre já com os valores atuais do ecrã como
+  // ponto de partida cómodo, mas mexer aqui nunca faz o ecrã de Análise por trás mudar, nem vice-
+  // versa. Mesmo padrão de dois níveis (renderSelects só mostra; aoMudarOrg decide os resets em
+  // cascata) que o próprio ecrã usa em renderAnalise/aplicarFiltrosAnalise — ver reagirMudancaFiltroOrg.
   abrirModalExportarRegistos() {
     if (!this.podeVerAnalise()) return;
-    const f = this.filtrosAnalise;
+    const fEcra = this.filtrosAnalise;
+    const filtros = { dept: fEcra.dept, equipa: fEcra.equipa, pessoa: fEcra.pessoa, tipo: fEcra.tipo, projeto: fEcra.projeto };
     const html = `
       <div class="row-2">
-        <label>De <input type="date" id="expDe" value="${escapeAttr(f.de)}"></label>
-        <label>Até <input type="date" id="expAte" value="${escapeAttr(f.ate)}"></label>
+        <label>De <input type="date" id="expDe" value="${escapeAttr(fEcra.de)}"></label>
+        <label>Até <input type="date" id="expAte" value="${escapeAttr(fEcra.ate)}"></label>
       </div>
-      <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="expComFiltros"> Aplicar também os filtros do ecrã (Direção, Área, Pessoa, Tipo, Projeto)</label>
+      <div class="row-2">
+        <label>Direção <select id="expDept"><option value="">Todas</option></select></label>
+        <label>Área <select id="expEquipa"><option value="">Todas</option></select></label>
+      </div>
+      <div class="row-2">
+        <label>Pessoa <select id="expPessoa"><option value="">Todas</option></select></label>
+        <label>Tipo <select id="expTipo"><option value="">Todos</option></select></label>
+      </div>
+      <label>Projeto <select id="expProjeto"><option value="">Todos</option></select></label>
       <p id="expResumo" class="rec-resumo"></p>
-      <button class="btn btn-primary" id="btnExpDescarregar">Descarregar CSV</button>`;
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-primary" id="btnExpDescarregar">Descarregar Excel</button>
+        <button type="button" class="btn btn-sm" id="btnExpLimpar">Limpar filtros</button>
+      </div>`;
     this.abrirModal('Exportar registos de horas', html);
     const m = this.els.modalCorpo;
-    const resumo = () => {
-      const de = m.querySelector('#expDe').value, ate = m.querySelector('#expAte').value;
-      const btn = m.querySelector('#btnExpDescarregar');
-      if (!de || !ate || de > ate) { m.querySelector('#expResumo').textContent = 'Indica um período válido (a data inicial não pode ser depois da final).'; btn.disabled = true; return null; }
-      const { itens } = this.itensAnalise({ de, ate, comFiltros: m.querySelector('#expComFiltros').checked });
-      m.querySelector('#expResumo').textContent = `${itens.length} registo(s), ${this.formatarHorasAnalise(itens.reduce((s, i) => s + i.horas, 0))} entre ${DateUtil.formatShort(DateUtil.parseISO(de))} e ${DateUtil.formatShort(DateUtil.parseISO(ate))}.`;
-      btn.disabled = !itens.length;
-      return { de, ate, itens };
+    const elDe = m.querySelector('#expDe'), elAte = m.querySelector('#expAte');
+    const elDept = m.querySelector('#expDept'), elEquipa = m.querySelector('#expEquipa'), elPessoa = m.querySelector('#expPessoa');
+    const elTipo = m.querySelector('#expTipo'), elProjeto = m.querySelector('#expProjeto');
+    const elResumo = m.querySelector('#expResumo'), btnDescarregar = m.querySelector('#btnExpDescarregar');
+    let ultimoResultado = null;
+
+    const renderResumo = () => {
+      const de = elDe.value, ate = elAte.value;
+      if (!de || !ate || de > ate) {
+        elResumo.textContent = 'Indica um período válido (a data inicial não pode ser depois da final).';
+        btnDescarregar.disabled = true; ultimoResultado = null; return;
+      }
+      const { itens } = this.itensAnalise({ de, ate, comFiltros: true, filtros });
+      elResumo.textContent = `${itens.length} registo(s), ${this.formatarHorasAnalise(itens.reduce((s, i) => s + i.horas, 0))} entre ${DateUtil.formatShort(DateUtil.parseISO(de))} e ${DateUtil.formatShort(DateUtil.parseISO(ate))}.`;
+      btnDescarregar.disabled = !itens.length;
+      ultimoResultado = { de, ate, itens };
     };
-    ['#expDe', '#expAte', '#expComFiltros'].forEach(sel => m.querySelector(sel).addEventListener('change', resumo));
-    resumo();
-    m.querySelector('#btnExpDescarregar').addEventListener('click', () => {
-      const r = resumo();
-      if (!r || !r.itens.length) return;
-      const linhas = [['Data', 'Departamento', 'Equipa', 'Pessoa', 'Tipo de Trabalho', 'Referência', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
-      r.itens.slice().sort((a, b) => a.data.localeCompare(b.data) || a.pessoa.localeCompare(b.pessoa, 'pt')).forEach(i => {
-        const reg = i.registo;
-        linhas.push([
-          reg.data, this.csvTexto(i.dept), this.csvTexto(i.equipa), this.csvTexto(i.pessoa), this.csvTexto(i.tipo),
-          this.csvTexto(reg.projetoIdInterno || ''), this.csvTexto(reg.projetoNome || ''), this.csvTexto(reg.cliente || ''),
-          this.csvTexto(this.rotuloTarefaRegisto(reg)), String(i.horas).replace('.', ','), this.csvTexto(reg.notas || ''), reg.origem || ''
-        ]);
-      });
-      this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${r.de}_a_${r.ate}.csv`);
-      this.fecharModal();
-      this.toast(`${r.itens.length} registo(s) exportado(s).`);
+    // Só repõe as opções dos <select>s a partir do "filtros" atual — nunca decide sozinha nenhum
+    // reset em cascata (isso é só aoMudarOrg, ao reagir a uma mudança real de Direção/Área).
+    const renderSelects = () => {
+      const rec = this.aplicarFiltroOrg(elDept, elEquipa, this.analiseRecursosEscopo(), filtros);
+      filtros.dept = elDept.value; filtros.equipa = elEquipa.value;
+      elPessoa.innerHTML = '<option value="">Todas</option>' + this.opcoesPessoasPorDepartamento(rec, r => r.nome);
+      elPessoa.value = rec.some(r => r.nome === filtros.pessoa) ? filtros.pessoa : '';
+      filtros.pessoa = elPessoa.value;
+      // Opções de Tipo/Projeto: tudo o que existe no âmbito do papel, sempre — independente dos
+      // outros filtros já escolhidos aqui (mesmo critério do ecrã de Análise).
+      const base = this.itensAnalise({ de: '0000-01-01', ate: '9999-12-31', comFiltros: false, filtros }).rotulos;
+      const ordenar = (mapa) => [...mapa.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
+      elTipo.innerHTML = '<option value="">Todos</option>' + ordenar(base.tipo).map(([k, n]) => `<option value="${escapeAttr(k)}">${escapeHtml(n)}</option>`).join('');
+      elTipo.value = base.tipo.has(filtros.tipo) ? filtros.tipo : '';
+      filtros.tipo = elTipo.value;
+      elProjeto.innerHTML = '<option value="">Todos</option>' + ordenar(base.projeto).map(([k, n]) => `<option value="${escapeAttr(k)}">${escapeHtml(n)}</option>`).join('');
+      elProjeto.value = base.projeto.has(filtros.projeto) ? filtros.projeto : '';
+      filtros.projeto = elProjeto.value;
+    };
+    const aoMudarOrg = () => {
+      const anterior = { dept: filtros.dept, equipa: filtros.equipa, pessoa: filtros.pessoa };
+      Object.assign(filtros, this.reagirMudancaFiltroOrg(anterior, { dept: elDept.value, equipa: elEquipa.value, pessoa: elPessoa.value }));
+      renderSelects(); renderResumo();
+    };
+    renderSelects(); renderResumo();
+    elDe.addEventListener('change', renderResumo);
+    elAte.addEventListener('change', renderResumo);
+    elDept.addEventListener('change', aoMudarOrg);
+    elEquipa.addEventListener('change', aoMudarOrg);
+    elPessoa.addEventListener('change', () => { filtros.pessoa = elPessoa.value; renderResumo(); });
+    elTipo.addEventListener('change', () => { filtros.tipo = elTipo.value; renderResumo(); });
+    elProjeto.addEventListener('change', () => { filtros.projeto = elProjeto.value; renderResumo(); });
+    m.querySelector('#btnExpLimpar').addEventListener('click', () => {
+      Object.assign(filtros, { dept: '', equipa: '', pessoa: '', tipo: '', projeto: '' });
+      renderSelects(); renderResumo();
+    });
+
+    m.querySelector('#btnExpDescarregar').addEventListener('click', async () => {
+      if (!ultimoResultado || !ultimoResultado.itens.length) return;
+      const { de, ate, itens } = ultimoResultado;
+      const textoAnterior = elResumo.textContent;
+      btnDescarregar.disabled = true;
+      elResumo.textContent = 'A gerar o Excel…';
+      try {
+        // ~860KB, só interessa a quem exporta e só nesta ação — ver a nota grande em
+        // carregarScript (mesmo padrão já usado no Backup manual).
+        if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
+        const linhas = itens.slice().sort((a, b) => a.data.localeCompare(b.data) || a.pessoa.localeCompare(b.pessoa, 'pt')).map(i => {
+          const reg = i.registo;
+          return {
+            'Data': DateUtil.formatShort(DateUtil.parseISO(reg.data)),
+            'Departamento': i.dept, 'Equipa': i.equipa, 'Pessoa': i.pessoa, 'Tipo de Trabalho': i.tipo,
+            'Referência': reg.projetoIdInterno || '', 'Projeto': reg.projetoNome || '', 'Cliente': reg.cliente || '',
+            'Tarefa': this.rotuloTarefaRegisto(reg) || '', 'Horas': i.horas, 'Notas': reg.notas || '', 'Origem': reg.origem || ''
+          };
+        });
+        const ws = XLSX.utils.json_to_sheet(linhas);
+        // Cabeçalho já com AutoFiltro e colunas com largura razoável — o pedido era mesmo poder
+        // continuar a filtrar/ordenar à vontade depois de aberto no Excel.
+        ws['!autofilter'] = { ref: ws['!ref'] };
+        ws['!cols'] = Object.keys(linhas[0]).map(k => ({ wch: Math.max(k.length, 10) + 2 }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Registos');
+        const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        this.descarregarBlob(blob, `Registos_${de}_a_${ate}.xlsx`);
+        this.fecharModal();
+        this.toast(`${itens.length} registo(s) exportado(s).`);
+      } catch (err) {
+        console.error(err);
+        elResumo.textContent = 'Erro ao gerar o Excel: ' + err.message;
+      } finally {
+        btnDescarregar.disabled = false;
+        if (elResumo.textContent === 'A gerar o Excel…') elResumo.textContent = textoAnterior;
+      }
     });
   },
 
@@ -8215,7 +8317,7 @@ const App = {
     });
     document.getElementById('btnExportRegistosCsv').addEventListener('click', () => this.exportarRegistosCsv());
 
-    [e.fCalDept, e.fCalEquipa].forEach(el => { if (el) el.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto()); });
+    if (e.fCalEquipa) e.fCalEquipa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.fCalPessoa) e.fCalPessoa.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.fCalProjeto) e.fCalProjeto.addEventListener('change', () => this.aplicarFiltrosCalendarioRegisto());
     if (e.btnCalMesAnt) e.btnCalMesAnt.addEventListener('click', () => this.navegarMesCalendario(-1));
