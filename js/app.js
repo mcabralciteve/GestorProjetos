@@ -3369,7 +3369,7 @@ const App = {
             if (hojeISO >= t.inicio && hojeISO <= t.fim) tarefasHoje.push({ p, t });
           }));
           corpo = tarefasHoje.length ? tarefasHoje.map(({ p, t }) => `
-            <div class="dash-linha">
+            <div class="dash-linha dash-linha-link" data-dash-tarefa="${p.id}|${t.id}">
               <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
               <span class="dash-linha-sub">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)} · ${t.progresso || 0}%</span>
             </div>`).join('') : '<p class="hint">Sem tarefas previstas para hoje.</p>';
@@ -3388,7 +3388,7 @@ const App = {
         }));
         proximas.sort((a, b) => a.t.inicio.localeCompare(b.t.inicio));
         corpo = proximas.length ? proximas.map(({ p, t }) => `
-          <div class="dash-linha">
+          <div class="dash-linha dash-linha-link" data-dash-tarefa="${p.id}|${t.id}">
             <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
             <span class="dash-linha-sub">${escapeHtml(p.nome)} · começa ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))}</span>
           </div>`).join('') : '<p class="hint">Nada a começar nos próximos 7 dias.</p>';
@@ -3405,7 +3405,7 @@ const App = {
         }));
         passos.sort((a, b) => (a.pp.dataPrevista || '9999').localeCompare(b.pp.dataPrevista || '9999'));
         corpo = passos.length ? passos.map(({ p, pp }) => `
-          <div class="dash-linha">
+          <div class="dash-linha dash-linha-link" data-dash-passo="${p.id}|${pp.id}">
             <span class="dash-linha-principal">${this.proximoPassoAtrasado(pp) ? '⚠ ' : ''}${escapeHtml(pp.descricao)}</span>
             <span class="dash-linha-sub">${escapeHtml(p.nome)}${pp.dataPrevista ? ' · ' + DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : ''}</span>
           </div>`).join('') : '<p class="hint">Sem next steps atribuídos.</p>';
@@ -3416,7 +3416,7 @@ const App = {
     if (!ocultos.has('meusProjetos')) {
       const meus = this.meusProjetosDiretamente();
       const corpo = meus.length ? meus.map(p => `
-        <div class="dash-linha">
+        <div class="dash-linha dash-linha-link" data-dash-projeto="${p.id}">
           <span class="dash-linha-principal">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</span>
           <span class="dash-linha-sub">${escapeHtml(p.cliente || 'Sem cliente')} · ${escapeHtml(p.estado)}</span>
         </div>`).join('') : '<p class="hint">Ainda não és gestor nem consultor de nenhum projeto.</p>';
@@ -3433,7 +3433,7 @@ const App = {
         const dias = this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO);
         corpo = dias.length
           ? `<p class="hint">⚠ ${dias.length} dia(s) por preencher nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis:</p>` +
-            dias.map(d => `<div class="dash-linha"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(d.iso))}</span><span class="dash-linha-sub">faltam ${d.faltam.toFixed(1)}h</span></div>`).join('')
+            dias.map(d => `<div class="dash-linha dash-linha-link" data-dash-dia="${d.iso}"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(d.iso))}</span><span class="dash-linha-sub">faltam ${d.faltam.toFixed(1)}h</span></div>`).join('')
           : `<p class="hint">✅ Registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
       }
       html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo);
@@ -3447,7 +3447,7 @@ const App = {
           .filter(a => a.recursoId === meuRecurso.id && a.dataFim >= hojeISO)
           .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
         corpo = minhas.length ? minhas.map(a => `
-          <div class="dash-linha">
+          <div class="dash-linha dash-linha-link" data-dash-ausencia="${a.id}">
             <span class="dash-linha-principal">${escapeHtml(a.tipo)} — ${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
             <span class="dash-linha-sub">${ROTULOS_ESTADO[a.estado] || a.estado}${a.estado === 'rejeitada' && a.motivoRejeicao ? ' — ' + escapeHtml(a.motivoRejeicao) : ''}</span>
           </div>`).join('') : '<p class="hint">Sem ausências futuras.</p>';
@@ -3462,9 +3462,9 @@ const App = {
       const corpo = pendentes.length ? pendentes.map(a => {
         const nomePessoa = (this.state.recursos.find(r => r.id === a.recursoId) || {}).nome || '—';
         return `
-        <div class="dash-linha">
+        <div class="dash-linha dash-linha-link" data-dash-ausencia="${a.id}">
           <span class="dash-linha-principal">${escapeHtml(nomePessoa)} — ${escapeHtml(a.tipo)}</span>
-          <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))} · <a href="#" data-ir-aprovar-ausencia="${a.id}">decidir</a></span>
+          <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))} · decidir →</span>
         </div>`;
       }).join('') : '<p class="hint">Sem pedidos pendentes.</p>';
       html += this.cartaoDashboard('🕒 Pedidos de ausência para aprovar', corpo);
@@ -3479,7 +3479,7 @@ const App = {
       });
       linhas.sort((a, b) => a.f.dataPrevista.localeCompare(b.f.dataPrevista));
       const corpo = linhas.length ? linhas.map(({ p, f }) => `
-        <div class="dash-linha">
+        <div class="dash-linha dash-linha-link" data-dash-fatura="${p.id}">
           <span class="dash-linha-principal">${escapeHtml(p.nome)} — ${this.valorFatura(f, p).toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</span>
           <span class="dash-linha-sub">Prevista ${DateUtil.formatShort(DateUtil.parseISO(f.dataPrevista))}</span>
         </div>`).join('') : '<p class="hint">Sem faturas por emitir nos próximos 30 dias.</p>';
@@ -3496,7 +3496,7 @@ const App = {
       });
       proximas.sort((a, b) => a.a.dataInicio.localeCompare(b.a.dataInicio));
       const corpo = proximas.length ? proximas.map(({ r, a }) => `
-        <div class="dash-linha">
+        <div class="dash-linha dash-linha-link" data-dash-ausencia="${a.id}">
           <span class="dash-linha-principal">${escapeHtml(r.nome)} — ${escapeHtml(a.tipo)}</span>
           <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
         </div>`).join('') : '<p class="hint">Sem ausências nos próximos 7 dias.</p>';
@@ -3510,7 +3510,7 @@ const App = {
         .filter(x => x.nDias > 0)
         .sort((a, b) => b.nDias - a.nDias);
       const corpo = comFalhas.length ? comFalhas.map(({ r, nDias }) => `
-        <div class="dash-linha">
+        <div class="dash-linha dash-linha-link" data-dash-pessoa-dia="${r.id}">
           <span class="dash-linha-principal">${escapeHtml(r.nome)}</span>
           <span class="dash-linha-sub">${nDias} dia(s) por preencher (últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis)</span>
         </div>`).join('') : `<p class="hint">✅ Toda a gente com o registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
@@ -3536,7 +3536,7 @@ const App = {
         const periodo = +maisUrgente.inicio === +maisUrgente.fim
           ? DateUtil.formatShort(maisUrgente.inicio)
           : `${DateUtil.formatShort(maisUrgente.inicio)}–${DateUtil.formatShort(maisUrgente.fim)}`;
-        return `<div class="dash-linha">
+        return `<div class="dash-linha dash-linha-link" data-dash-pessoa-risco="${r.id}">
           <span class="dash-linha-principal">⚠ ${escapeHtml(r.nome)}</span>
           <span class="dash-linha-sub">${n} período(s) crítico(s), até ${piorExcesso.toFixed(1)}h de excesso — o mais próximo: ${periodo}</span>
         </div>`;
@@ -3551,8 +3551,111 @@ const App = {
       this.irParaAba('dia');
       this.irParaHojeDiaRegisto();
     });
-    e.dashboardGrelha.querySelectorAll('[data-ir-aprovar-ausencia]').forEach(a => {
-      a.addEventListener('click', (ev) => { ev.preventDefault(); this.irParaAba('ausencias'); });
+    // Cada registo do Dashboard leva a algum lado (ver os data-dash-* postos acima em cada cartão) —
+    // um único listener delegado no contentor, mesmo espírito do e.diaGrelha.onclick em
+    // renderRegistoDia, em vez de um listener por linha.
+    e.dashboardGrelha.onclick = (ev) => {
+      const elTarefa = ev.target.closest('[data-dash-tarefa]');
+      if (elTarefa) {
+        const [pid, tid] = elTarefa.dataset.dashTarefa.split('|');
+        this.abrirProjetoNoGantt(pid);
+        this.selecionarTarefa(tid);
+        return;
+      }
+      const elPasso = ev.target.closest('[data-dash-passo]');
+      if (elPasso) {
+        const [pid, ppid] = elPasso.dataset.dashPasso.split('|');
+        const proj = this.state.projetos[pid];
+        const pp = proj && (proj.proximosPassos || []).find(x => x.id === ppid);
+        // Com tarefa ligada: vai direto a ela no Gantt. Sem tarefa: quem gere o projeto vai ao
+        // Acompanhamento (onde os Next Steps se editam); quem só é responsável (mas não gestor/
+        // admin) não tem acesso a esse separador, por isso só abre o projeto no Gantt.
+        if (pp && pp.tarefaId) { this.abrirProjetoNoGantt(pid); this.selecionarTarefa(pp.tarefaId); }
+        else if (proj && this.possoEditarProjeto(pid)) {
+          this.acompanhamentoGestorId = proj.gestorId;
+          this.acompanhamentoProjetoId = pid;
+          this.irParaAba('acompanhamento');
+        } else if (proj) this.abrirProjetoNoGantt(pid);
+        return;
+      }
+      const elProjeto = ev.target.closest('[data-dash-projeto]');
+      if (elProjeto) { this.abrirProjetoNoGantt(elProjeto.dataset.dashProjeto); return; }
+      const elDia = ev.target.closest('[data-dash-dia]');
+      if (elDia) { this.irParaRegistoDoDia(elDia.dataset.dashDia, this.perfilAtual()?.recursoId); return; }
+      const elAusencia = ev.target.closest('[data-dash-ausencia]');
+      if (elAusencia) { this.irParaAusencia(elAusencia.dataset.dashAusencia); return; }
+      const elFatura = ev.target.closest('[data-dash-fatura]');
+      if (elFatura) { this.irParaFaturacaoDoProjeto(elFatura.dataset.dashFatura); return; }
+      const elPessoaDia = ev.target.closest('[data-dash-pessoa-dia]');
+      if (elPessoaDia) { this.irParaRegistoDoDia(null, elPessoaDia.dataset.dashPessoaDia); return; }
+      const elPessoaRisco = ev.target.closest('[data-dash-pessoa-risco]');
+      if (elPessoaRisco) { this.irParaCapacidadeDoRecurso(elPessoaRisco.dataset.dashPessoaRisco); return; }
+    };
+  },
+  // ---------- Dashboard: navegação a partir dos cartões (ver data-dash-* em renderDashboard) ----------
+  // Vai a um dia concreto do Registo do Dia, já com a pessoa certa escolhida — recursoId, não nome,
+  // porque quem chama (Dashboard) só tem o id à mão. Sem iso (caso "equipaDiasIncompletos", que só
+  // sabe que HÁ dias em falta, não qual): abre no mês atual e centra em "hoje", tal como o botão
+  // "Registar horas de hoje". Note-se que, tal como já acontecia em renderRegistoDia, um Team Leader
+  // que não seja também Gestor/Admin não consegue escolher aqui outra pessoa que não ele próprio
+  // (dropdown bloqueado) — nesse caso o pedido de pessoa é ignorado, sem erro.
+  irParaRegistoDoDia(iso, recursoId) {
+    const recurso = this.state.recursos.find(r => r.id === recursoId);
+    if (!recurso) return;
+    const dataAlvo = iso ? DateUtil.parseISO(iso) : new Date();
+    this.mesRegistoDiaAtual = { ano: dataAlvo.getFullYear(), mes: dataAlvo.getMonth() };
+    this.diaRegistoPessoa = recurso.nome;
+    this.irParaAba('dia');
+    if (iso) this.realcarDiaCalendario(iso); else this.centrarHojeCalendario();
+  },
+  // Pisca e centra a célula de um dia concreto na grelha mensal do Registo do Dia (ver data-dia-iso
+  // em renderRegistoDia) — mesmo efeito visual que já existe para uma linha de tabela nova
+  // (.linha-nova), só aplicado a uma célula do calendário.
+  realcarDiaCalendario(iso) {
+    requestAnimationFrame(() => {
+      const cel = document.querySelector(`.tab-panel.active .cal-dia[data-dia-iso="${iso}"]`);
+      if (!cel) return;
+      cel.scrollIntoView({ block: 'center' });
+      cel.classList.add('linha-nova');
+      setTimeout(() => cel.classList.remove('linha-nova'), 2000);
+    });
+  },
+  // Vai à lista de Ausências já filtrada pela pessoa desta ausência, e pisca a linha concreta (ver
+  // data-ausencia-id em renderTabelaAusencias). Se a pessoa ficar fora do âmbito de quem clicou
+  // (ex.: Gestor de projeto sem liderar a equipa dela), o filtro de pessoa simplesmente não pega
+  // (ver renderTabelaAusencias) e mostra-se a lista completa dentro do que já se pode ver — nunca
+  // mostra nada a mais.
+  irParaAusencia(ausenciaId) {
+    const a = this.state.ausencias.find(x => x.id === ausenciaId);
+    if (!a) return;
+    this.filtrosAusencias.pessoa = a.recursoId;
+    this.filtrosAusencias.dept = '';
+    this.filtrosAusencias.equipa = '';
+    this.modoAusencias = 'lista';
+    this.irParaAba('ausencias');
+    this.renderTabelaAusencias();
+    requestAnimationFrame(() => {
+      const tr = this.els.corpoTabelaAusencias?.querySelector(`tr[data-ausencia-id="${ausenciaId}"]`);
+      if (!tr) return;
+      tr.scrollIntoView({ block: 'center' });
+      tr.classList.add('linha-nova');
+      setTimeout(() => tr.classList.remove('linha-nova'), 2000);
+    });
+  },
+  // Vai ao heatmap de Capacidade já filtrado pela equipa desta pessoa, e pisca a linha dela (ver
+  // data-recurso-id em renderCapacidade).
+  irParaCapacidadeDoRecurso(recursoId) {
+    const r = this.state.recursos.find(x => x.id === recursoId);
+    if (!r) return;
+    if (this.els.selEquipaCap) this.els.selEquipaCap.value = r.equipaId || '';
+    this.irParaAba('capacidade');
+    this.renderCapacidade();
+    requestAnimationFrame(() => {
+      const tr = this.els.heatmapCapBody?.querySelector(`tr[data-recurso-id="${recursoId}"]`);
+      if (!tr) return;
+      tr.scrollIntoView({ block: 'center' });
+      tr.classList.add('linha-nova');
+      setTimeout(() => tr.classList.remove('linha-nova'), 2000);
     });
   },
 
@@ -4038,6 +4141,7 @@ const App = {
       const podeReatribuir = admin || liderDeAlgo;
       const souORequerente = a.recursoId === meuRecursoId;
       const tr = document.createElement('tr');
+      tr.dataset.ausenciaId = a.id; // usado por App.irParaAusencia (vindo do Dashboard) para realçar a linha
       if (a.estado === 'pendente') tr.classList.add('linha-pendente');
       tr.innerHTML = `
         <td><select data-campo="recursoId" ${podeReatribuir ? '' : 'disabled'}>${opcoesRecursos}</select></td>
@@ -4752,6 +4856,7 @@ const App = {
       const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes, intervalosCriticos)));
 
       const tr = document.createElement('tr');
+      tr.dataset.recursoId = r.id; // usado por App.irParaCapacidadeDoRecurso (vindo do Dashboard) para realçar a linha
       const celulas = resumos.map(res => {
         const cls = Capacidade.classeResumo(res);
         const temContexto = res.capacidade > 0 || res.alocado > 0;
@@ -5624,7 +5729,7 @@ const App = {
       const motivoHtml = !motivoBloqueio ? '' : (ausenciaDoDia && this.possoGerirAusencia(ausenciaDoDia))
         ? `<span class="dia-motivo-bloqueio dia-motivo-clicavel" data-editar-ausencia="${ausenciaDoDia.id}" title="${escapeAttr(motivoBloqueio + ' — clica para editar')}">${escapeHtml(motivoBloqueio)}</span>`
         : `<span class="dia-motivo-bloqueio" title="${escapeAttr(motivoBloqueio)}">${escapeHtml(motivoBloqueio)}</span>`;
-      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}${motivoBloqueio ? ' dia-bloqueado' : ''}">
+      html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}${motivoBloqueio ? ' dia-bloqueado' : ''}" data-dia-iso="${iso}">
         <div class="cal-dia-cabecalho"><span class="cal-dia-numero">${cursor.getDate()}</span>${totalHoras ? `<span class="cal-dia-total">${totalHoras}h</span>` : ''}</div>
         <div class="dia-mes-barra">${blocosHtml}${vazioHtml}</div>
         ${motivoHtml}
@@ -7382,8 +7487,13 @@ const App = {
   verFaturacaoDoProjeto() {
     const p = this.projetoAtivo();
     if (!p) return;
+    this.irParaFaturacaoDoProjeto(p.id);
+  },
+  // Mesmo destino que verFaturacaoDoProjeto, mas para um projeto arbitrário (não precisa de ser o
+  // projeto ativo do Gantt) — usado pelo cartão "Faturação a vencer" do Dashboard.
+  irParaFaturacaoDoProjeto(projetoId) {
     this.irParaAba('faturacao');
-    this.els.fFatProjeto.value = p.id;
+    this.els.fFatProjeto.value = projetoId;
     this.aplicarFiltrosFaturacao();
   },
 

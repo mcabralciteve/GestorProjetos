@@ -582,6 +582,12 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .dash-linha:last-child{border-bottom:none;padding-bottom:0;}
 .dash-linha-principal{font-size:12.5px;font-weight:600;color:var(--cinza-900);}
 .dash-linha-sub{font-size:11px;color:var(--cinza-500);}
+/* Registos do Dashboard que levam a algum lado (tarefa no Gantt, dia por preencher, ausência a
+   decidir, etc.) — mesmo espírito do hover em .an-linha/.linha-tarefa-port, só para não ficarem
+   meramente informativos (ver App.renderDashboard e os handlers data-dash-*). */
+.dash-linha-link{cursor:pointer;border-radius:6px;}
+.dash-linha-link:hover,.dash-linha-link:focus-visible{background:var(--cinza-100);outline:none;}
+:root[data-tema="escuro"] .dash-linha-link:hover,:root[data-tema="escuro"] .dash-linha-link:focus-visible{background:#1f2530;}
 
 /* Linha de tabela recém-criada (ex.: nova fatura) — pisca para ser fácil de encontrar mesmo que a
    ordenação/filtro ativos não a ponham mesmo no topo visível. */
