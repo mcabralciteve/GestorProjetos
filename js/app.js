@@ -42,7 +42,7 @@ const DateUtil = {
 
 const App = {
   STORAGE_KEY: 'gp_state_v2',
-  state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
+  state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], historicoEquipas: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
   selecionadaId: null,
   selecionadasIds: new Set(),
@@ -267,6 +267,11 @@ const App = {
       anBarras: document.getElementById('anBarras'), anEvolucao: document.getElementById('anEvolucao'), anLegenda: document.getElementById('anLegenda'),
       anTituloBarras: document.getElementById('anTituloBarras'), anTabela: document.getElementById('anTabela'),
       btnAnaliseExportar: document.getElementById('btnAnaliseExportar'), btnAnaliseLimpar: document.getElementById('btnAnaliseLimpar'),
+      tabBtnFinanceiro: document.getElementById('tabBtnFinanceiro'),
+      finKpis: document.getElementById('finKpis'), finPeriodo: document.getElementById('finPeriodo'), finDe: document.getElementById('finDe'), finAte: document.getElementById('finAte'),
+      finAgrupar: document.getElementById('finAgrupar'), finDept: document.getElementById('finDept'), finEquipa: document.getElementById('finEquipa'), finProjeto: document.getElementById('finProjeto'),
+      finGrafico: document.getElementById('finGrafico'), finLegenda: document.getElementById('finLegenda'),
+      finTabelaMeses: document.getElementById('finTabelaMeses'), finTituloGrupos: document.getElementById('finTituloGrupos'), finTabelaGrupos: document.getElementById('finTabelaGrupos'),
       loadingOverlay: document.getElementById('loadingOverlay'),
       loadingOverlayTexto: document.getElementById('loadingOverlayTexto'),
       relatorioHorasContainer: document.getElementById('relatorioHorasContainer'),
@@ -614,7 +619,7 @@ const App = {
     if (this.els.btnRefazer) this.els.btnRefazer.disabled = !this.redoStack.length;
   },
   estadoVazio() {
-    return { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
+    return { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], historicoEquipas: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null };
   },
   normalizarEstado() {
     // Compatibilidade com estados guardados antes da introdução de Equipas / Registos de horas.
@@ -646,6 +651,7 @@ const App = {
     this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; });
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
+    if (!this.state.historicoEquipas) this.state.historicoEquipas = [];
     if (!this.state.configuracoes) this.state.configuracoes = {};
     const cfg = this.state.configuracoes;
     if (cfg.emailViaturas1 === undefined) cfg.emailViaturas1 = '';
@@ -2000,6 +2006,7 @@ const App = {
     this.state.recursos = this.state.recursos.filter(r => r.id !== id);
     this.state.ausencias = this.state.ausencias.filter(a => a.recursoId !== id);
     this.state.utilizadores = this.state.utilizadores.filter(u => u.recursoId !== id);
+    this.state.historicoEquipas = (this.state.historicoEquipas || []).filter(h => h.recursoId !== id);
     Object.values(this.state.projetos).forEach(p => {
       p.tarefas.forEach(t => { t.recursoIds = t.recursoIds.filter(rid => rid !== id); });
     });
@@ -2010,12 +2017,58 @@ const App = {
     const r = this.state.recursos.find(x => x.id === id);
     if (!r) return;
     if (campo === 'nome' || campo === 'papel' || campo === 'email') r[campo] = valor;
-    else if (campo === 'equipaId') r.equipaId = valor || null;
+    else if (campo === 'equipaId') {
+      const novaEquipaId = valor || null;
+      if (novaEquipaId !== r.equipaId) this.registarMudancaEquipa(r, novaEquipaId);
+      r.equipaId = novaEquipaId;
+    }
     else r[campo] = parseFloat(valor) || 0;
     this.persist();
     this.renderTabelaRecursosCentral();
     this.renderTabelaTarefas();
     this.renderCapacidade();
+  },
+  // Regista no histórico (historico_equipas) que "r" mudou de equipa hoje — chamado sempre que
+  // equipaId muda de verdade (nunca ao criar um recurso: a pessoa nova nunca "mudou" de lado
+  // nenhum, só começou já numa equipa). Sem este histórico, uma tarefa/registo de horas antigo
+  // ficaria associado à equipa ERRADA (a atual) sempre que alguém mudasse de equipa — grave para o
+  // Acompanhamento Financeiro, que reparte proveito por equipa pelas horas de cada uma (ver
+  // equipaIdDoRecursoEm/orgDoRecursoEm).
+  registarMudancaEquipa(r, novaEquipaId) {
+    if (!this.state.historicoEquipas) this.state.historicoEquipas = [];
+    const hoje = DateUtil.todayISO();
+    const ontem = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hoje), -1));
+    let aberto = this.state.historicoEquipas.find(h => h.recursoId === r.id && !h.dataFim);
+    // Primeira mudança de sempre para esta pessoa (nenhuma linha aberta a "fechar"): sem isto, uma
+    // consulta a uma data passada não encontrava nada e caía no fallback de equipaIdDoRecursoEm
+    // (a equipa ATUAL, que está prestes a deixar de ser esta) — ficava errado logo no primeiro uso.
+    // dataInicio null = "desde sempre", já que não há como saber quando é que ela entrou de facto
+    // nesta equipa antiga.
+    if (!aberto) {
+      aberto = { id: crypto.randomUUID(), recursoId: r.id, equipaId: r.equipaId || null, dataInicio: null, dataFim: null };
+      this.state.historicoEquipas.push(aberto);
+    }
+    aberto.dataFim = ontem;
+    this.state.historicoEquipas.push({ id: crypto.randomUUID(), recursoId: r.id, equipaId: novaEquipaId, dataInicio: hoje, dataFim: null });
+  },
+  // Em que equipa estava "recursoId" na data "dataISO"? Usa o histórico acima; sem nenhuma linha
+  // para esta pessoa (nunca mudou de equipa desde que isto existe), assume que já lá estava desde
+  // sempre — a equipa atual dela, que é tudo o que há para saber.
+  equipaIdDoRecursoEm(recursoId, dataISO) {
+    const entrada = (this.state.historicoEquipas || [])
+      .find(h => h.recursoId === recursoId && (!h.dataInicio || h.dataInicio <= dataISO) && (!h.dataFim || h.dataFim >= dataISO));
+    if (entrada) return entrada.equipaId;
+    const r = this.state.recursos.find(x => x.id === recursoId);
+    return r ? (r.equipaId || null) : null;
+  },
+  // Como orgDoRecurso, mas para uma data do passado (ver equipaIdDoRecursoEm) — o departamento de
+  // uma equipa em si não tem histórico próprio (só se rastreia mudanças de PESSOA->equipa, nunca de
+  // equipa->departamento), por isso usa sempre o departamento ATUAL dessa equipa.
+  orgDoRecursoEm(recursoId, dataISO) {
+    const equipaId = this.equipaIdDoRecursoEm(recursoId, dataISO);
+    const eq = equipaId ? this.state.equipas.find(x => x.id === equipaId) : null;
+    const dep = eq && eq.departamentoId ? this.state.departamentos.find(d => d.id === eq.departamentoId) : null;
+    return { equipaId: eq ? eq.id : '', equipaNome: eq ? eq.nome : 'Sem equipa', deptId: dep ? dep.id : '', deptNome: dep ? dep.nome : 'Sem departamento' };
   },
   alternarRecursoTarefa(taskId, recursoId) {
     const p = this.projetoAtivo();
@@ -3190,6 +3243,7 @@ const App = {
     this.renderDefinicoes();
     this.renderAcompanhamento();
     if (this.abaAtiva === 'analise') this.renderAnalise();
+    if (this.abaAtiva === 'financeiro') this.renderFinanceiro();
   },
 
   // Esconde/mostra grupos de navegação, separadores e botões consoante o papel do utilizador
@@ -3218,6 +3272,11 @@ const App = {
     // "Análise" de horas: só Administradores e Team Leaders/Diretores (cada um vê o seu âmbito).
     if (e.tabBtnAnalise) e.tabBtnAnalise.style.display = this.podeVerAnalise() ? '' : 'none';
     if (!this.podeVerAnalise() && this.abaAtiva === 'analise') this.irParaAba('dashboard');
+    // Acompanhamento Financeiro (proveito reconhecido/planeado/faturado): dados sensíveis, cruzando
+    // faturação com horas de toda a empresa — só o Administrador, para já (ver a conversa de
+    // desenho no histórico; fácil de alargar a Diretores mais tarde se fizer falta).
+    if (e.tabBtnFinanceiro) e.tabBtnFinanceiro.style.display = this.podeVerFinanceiro() ? '' : 'none';
+    if (!this.podeVerFinanceiro() && this.abaAtiva === 'financeiro') this.irParaAba('dashboard');
     if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
     // "Vista de Equipa" (calendário de ausências por dia, colorido por pessoa) só para quem lidera/
     // dirige alguma coisa, ou Admin — para os outros não há aqui equipa nenhuma para ver.
@@ -7599,8 +7658,194 @@ const App = {
     });
   },
 
+  // ---------- Faturação → Financeiro ----------
+  // Reconhecimento de proveito pelo método da percentagem de acabamento (POC), repartido por
+  // equipa/departamento/projeto — ver a conversa de desenho no histórico da app para o modelo
+  // completo. As contas puras (por projeto, mês a mês) vivem em js/analise-financeira.js, testadas
+  // à parte (tests/analise-financeira.test.js); aqui só se junta o que vem do state (recursos,
+  // registos, faturas, histórico de equipas) e se agrega pelos filtros escolhidos. Só leitura, só
+  // Administrador (dados sensíveis, cruza faturação com horas de toda a empresa).
+  filtrosFinanceiro: { preset: '6m', de: '', ate: '', dept: '', equipa: '', projeto: '', agrupar: 'equipa' },
+  podeVerFinanceiro() { return this.souAdmin(); },
+  // Monta os inputs de UM projeto (horas já com a equipa HISTÓRICA de quem as lançou — ver
+  // orgDoRecursoEm — e faturas já a valor em €, via valorFatura) e pede a curva mensal a
+  // AnaliseFinanceira. null se o projeto não tiver orçamento de horas definido (mesmo critério de
+  // avaliarOrcamentoProjeto/Portefólio — "Sem orçamento de horas definido").
+  curvaFinanceiraProjeto(p, meses) {
+    const horas = this.state.registos
+      .filter(r => this.registoPertenceAoProjeto(r, p))
+      .map(r => {
+        const recurso = this.state.recursos.find(x => x.nome === r.pessoa);
+        const equipaId = recurso ? this.orgDoRecursoEm(recurso.id, r.data).equipaId : '';
+        return { data: r.data, equipaId: equipaId || null, valor: parseFloat(r.horas) || 0 };
+      });
+    const faturas = (p.faturas || []).map(f => ({
+      dataPrevista: f.dataPrevista, valor: this.valorFatura(f, p), emitida: !!f.emitida, dataEmissao: f.dataEmissao || ''
+    }));
+    return AnaliseFinanceira.curvaProjeto({ valorVendido: p.valorVendido, horasVendidas: p.horasVendidas, equipaIdProjeto: p.equipaId || null, horas, faturas, meses });
+  },
+  // Agrega a curva de todos os projetos elegíveis (com orçamento de horas, e dentro do filtro de
+  // Projeto) mês a mês, filtrando e agrupando pela mesma repartição por equipa que já vem de
+  // curvaFinanceiraProjeto — Direção/Área filtram QUAL FATIA de cada projeto entra (a das equipas
+  // dessa Direção/Área), não que projetos entram inteiros; só o filtro de Projeto restringe ao
+  // nível do próprio projeto. "Agrupar por" decide só como a tabela de detalhe (finTabelaGrupos)
+  // junta essas fatias — Equipa, Departamento (via a equipa de cada fatia) ou Projeto.
+  dadosFinanceiros() {
+    const f = this.filtrosFinanceiro;
+    const meses = AnaliseFinanceira.mesesEntre(f.de, f.ate);
+    const projetos = Object.values(this.state.projetos).filter(p => p.valorVendido > 0 && p.horasVendidas > 0 && (!f.projeto || p.id === f.projeto));
+    const orgPorEquipa = new Map();
+    this.state.equipas.forEach(eq => {
+      const dep = eq.departamentoId ? this.state.departamentos.find(d => d.id === eq.departamentoId) : null;
+      orgPorEquipa.set(eq.id, { equipaNome: eq.nome, deptId: dep ? dep.id : '', deptNome: dep ? dep.nome : 'Sem departamento' });
+    });
+    // Uma fatia "sem equipa" (SEM_EQUIPA) só entra quando NENHum filtro de Direção/Área está ativo
+    // — não pertence a nenhuma das duas, não faz sentido aparecer dentro de um filtro por uma delas.
+    const passaFiltroOrg = (equipaId) => {
+      if (!equipaId || equipaId === AnaliseFinanceira.SEM_EQUIPA) return !f.equipa && !f.dept;
+      if (f.equipa && equipaId !== f.equipa) return false;
+      if (f.dept && (orgPorEquipa.get(equipaId) || {}).deptId !== f.dept) return false;
+      return true;
+    };
+    const rotuloGrupo = (equipaId, p) => {
+      if (f.agrupar === 'projeto') return { chave: p.id, nome: this.rotuloProjeto(p) };
+      if (!equipaId || equipaId === AnaliseFinanceira.SEM_EQUIPA) {
+        return f.agrupar === 'departamento' ? { chave: '__sem_dept__', nome: 'Sem departamento' } : { chave: AnaliseFinanceira.SEM_EQUIPA, nome: 'Sem equipa' };
+      }
+      const org = orgPorEquipa.get(equipaId);
+      if (f.agrupar === 'departamento') return { chave: org ? (org.deptId || '__sem_dept__') : '__sem_dept__', nome: org ? org.deptNome : 'Sem departamento' };
+      return { chave: equipaId, nome: org ? org.equipaNome : 'Equipa eliminada' };
+    };
+
+    const porMes = {};
+    meses.forEach(m => { porMes[m] = { planeado: 0, reconhecido: 0, faturado: 0, grupos: new Map() }; });
+    projetos.forEach(p => {
+      const curva = this.curvaFinanceiraProjeto(p, meses);
+      if (!curva) return;
+      meses.forEach(m => {
+        const destino = porMes[m];
+        Object.entries(curva.porMes[m].porEquipa).forEach(([equipaId, v]) => {
+          if (!passaFiltroOrg(equipaId)) return;
+          destino.planeado += v.planeado; destino.reconhecido += v.reconhecido; destino.faturado += v.faturado;
+          const { chave, nome } = rotuloGrupo(equipaId, p);
+          if (!destino.grupos.has(chave)) destino.grupos.set(chave, { nome, planeado: 0, reconhecido: 0, faturado: 0 });
+          const g = destino.grupos.get(chave);
+          g.planeado += v.planeado; g.reconhecido += v.reconhecido; g.faturado += v.faturado;
+        });
+      });
+    });
+    return { meses, porMes };
+  },
+  // Pequeno gráfico de linhas em SVG puro (sem biblioteca nenhuma) — 3 linhas acumuladas desde o
+  // início de cada projeto até ao fim de cada mês. Cores fixas (não var(--...) — SVG só resolve
+  // variáveis CSS dentro de "style=", nunca em atributos de apresentação soltos como fill="var(..)").
+  svgLinhasFinanceiro(meses, porMes) {
+    const W = 760, H = 260, padL = 60, padR = 15, padT = 15, padB = 26;
+    const valores = meses.map(m => porMes[m]);
+    const maximo = Math.max(1, ...valores.flatMap(v => [v.planeado, v.reconhecido, v.faturado]));
+    const x = (i) => padL + (meses.length <= 1 ? 0 : i * (W - padL - padR) / (meses.length - 1));
+    const y = (v) => H - padB - (v / maximo) * (H - padT - padB);
+    const linha = (chave, cor, tracejado) => {
+      const pontos = valores.map((v, i) => `${x(i).toFixed(1)},${y(v[chave]).toFixed(1)}`).join(' ');
+      return `<polyline points="${pontos}" fill="none" stroke="${cor}" stroke-width="2.5"${tracejado ? ' stroke-dasharray="5,4"' : ''}/>`;
+    };
+    const eixoX = meses.map((m, i) => `<text x="${x(i).toFixed(1)}" y="${H - 8}" font-size="10" text-anchor="middle" style="fill:var(--cinza-500)">${escapeHtml(AnaliseHoras.rotuloPeriodo(m, 'mes'))}</text>`).join('');
+    const eixoY = [0, 0.5, 1].map(fr => {
+      const yy = y(maximo * fr);
+      return `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W - padR}" y2="${yy.toFixed(1)}" style="stroke:var(--cinza-200)" stroke-width="1"/>` +
+        `<text x="${padL - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" text-anchor="end" style="fill:var(--cinza-500)">${Math.round(maximo * fr / 1000)}k€</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:280px;">${eixoY}${eixoX}${linha('planeado', '#2a6ea6', true)}${linha('reconhecido', '#3a9d6b', false)}${linha('faturado', '#c8951f', false)}</svg>`;
+  },
+  renderFinanceiro() {
+    const e = this.els;
+    if (!e.finKpis || !this.podeVerFinanceiro()) return;
+    const f = this.filtrosFinanceiro;
+    const hojeISO = DateUtil.todayISO();
+    const [anoAtual, mesAtual] = hojeISO.split('-').map(Number);
+    const fimMesAtual = AnaliseFinanceira.fimDoMes(`${anoAtual}-${String(mesAtual).padStart(2, '0')}`);
+    if (f.preset !== 'custom') {
+      if (f.preset === 'ano') { f.de = `${anoAtual}-01-01`; }
+      else { const mesesAtras = f.preset === '12m' ? 11 : 5; f.de = DateUtil.toISO(new Date(anoAtual, mesAtual - 1 - mesesAtras, 1)); }
+      f.ate = fimMesAtual;
+    } else if (!f.de || !f.ate) { f.de = f.de || DateUtil.toISO(new Date(anoAtual, mesAtual - 6, 1)); f.ate = f.ate || fimMesAtual; }
+    e.finPeriodo.value = f.preset; e.finDe.value = f.de; e.finAte.value = f.ate; e.finAgrupar.value = f.agrupar;
+
+    // Direção/Área: universo é toda a gente (qualquer equipa pode ter lançado horas em qualquer
+    // projeto) — só para preencher os <select>s com todas as equipas/departamentos que existem.
+    this.aplicarFiltroOrg(e.finDept, e.finEquipa, this.state.recursos, f);
+    f.dept = e.finDept.value; f.equipa = e.finEquipa.value;
+    const projetosComOrcamento = Object.values(this.state.projetos).filter(p => p.valorVendido > 0 && p.horasVendidas > 0);
+    e.finProjeto.innerHTML = '<option value="">Todos</option>' + projetosComOrcamento
+      .sort((a, b) => this.rotuloProjeto(a).localeCompare(this.rotuloProjeto(b), 'pt'))
+      .map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjeto(p))}</option>`).join('');
+    e.finProjeto.value = projetosComOrcamento.some(p => p.id === f.projeto) ? f.projeto : '';
+    f.projeto = e.finProjeto.value;
+
+    if (f.de > f.ate) {
+      e.finKpis.innerHTML = '<p class="hint">A data inicial é depois da final.</p>';
+      e.finGrafico.innerHTML = ''; e.finLegenda.innerHTML = ''; e.finTabelaMeses.innerHTML = ''; e.finTabelaGrupos.innerHTML = '';
+      return;
+    }
+    const { meses, porMes } = this.dadosFinanceiros();
+    const euro = (v) => v.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    const comSinal = (v) => (v >= 0 ? '+' : '') + euro(v);
+    if (!projetosComOrcamento.length) {
+      e.finKpis.innerHTML = '<p class="hint">Nenhum projeto tem Valor Vendido e Horas Vendidas definidos — sem isso não há nada para reconhecer (ver Portefólio → Estado Orçamental).</p>';
+      e.finGrafico.innerHTML = ''; e.finLegenda.innerHTML = ''; e.finTabelaMeses.innerHTML = ''; e.finTabelaGrupos.innerHTML = '';
+      return;
+    }
+    const ultimoMes = meses[meses.length - 1];
+    const tot = porMes[ultimoMes];
+    const desvioRP = tot.reconhecido - tot.planeado, desvioFR = tot.faturado - tot.reconhecido;
+    const kpi = (valor, texto, cor) => `<div class="an-kpi"><b${cor ? ` style="color:${cor}"` : ''}>${valor}</b><span>${texto}</span></div>`;
+    e.finKpis.innerHTML = kpi(euro(tot.planeado), 'Planeado (acumulado)') + kpi(euro(tot.reconhecido), 'Reconhecido (acumulado)') + kpi(euro(tot.faturado), 'Faturado (acumulado)') +
+      kpi(comSinal(desvioRP), 'Reconhecido − Planeado', desvioRP < 0 ? 'var(--vermelho)' : 'var(--verde)') +
+      kpi(comSinal(desvioFR), 'Faturado − Reconhecido', desvioFR > 0 ? 'var(--amarelo)' : 'var(--verde)');
+
+    e.finGrafico.innerHTML = this.svgLinhasFinanceiro(meses, porMes);
+    e.finLegenda.innerHTML = '<span><i style="background:#2a6ea6"></i>Planeado</span><span><i style="background:#3a9d6b"></i>Reconhecido</span><span><i style="background:#c8951f"></i>Faturado</span>';
+
+    const linhaDesvio = (v, corSeNegativo) => `<td style="color:${v < 0 ? corSeNegativo : 'var(--verde)'}">${comSinal(v)}</td>`;
+    e.finTabelaMeses.innerHTML = `<thead><tr><th>Mês</th><th>Planeado</th><th>Reconhecido</th><th>Faturado</th><th title="Reconhecido menos Planeado — negativo: a executar/ganhar mais devagar do que o plano de faturação previa">Reconhecido − Planeado</th><th title="Faturado menos Reconhecido — positivo: a faturar à frente do trabalho já feito">Faturado − Reconhecido</th></tr></thead>
+      <tbody>${meses.map(m => {
+        const v = porMes[m];
+        return `<tr><td>${escapeHtml(AnaliseHoras.rotuloPeriodo(m, 'mes'))}</td><td>${euro(v.planeado)}</td><td>${euro(v.reconhecido)}</td><td>${euro(v.faturado)}</td>
+          ${linhaDesvio(v.reconhecido - v.planeado, 'var(--vermelho)')}
+          <td style="color:${(v.faturado - v.reconhecido) > 0 ? 'var(--amarelo)' : 'var(--verde)'}">${comSinal(v.faturado - v.reconhecido)}</td></tr>`;
+      }).join('')}</tbody>`;
+
+    const ROTULOS_DIM = { equipa: 'equipa', departamento: 'departamento', projeto: 'projeto' };
+    const dimTitulo = ROTULOS_DIM[f.agrupar] || 'equipa';
+    e.finTituloGrupos.textContent = `Por ${dimTitulo} (acumulado até ${AnaliseHoras.rotuloPeriodo(ultimoMes, 'mes')})`;
+    const grupos = [...tot.grupos.entries()].sort((a, b) => b[1].reconhecido - a[1].reconhecido);
+    e.finTabelaGrupos.innerHTML = grupos.length ? `<thead><tr><th>${escapeHtml(dimTitulo.charAt(0).toUpperCase() + dimTitulo.slice(1))}</th><th>Planeado</th><th>Reconhecido</th><th>Faturado</th><th>Reconhecido − Planeado</th><th>Faturado − Reconhecido</th></tr></thead>
+      <tbody>${grupos.map(([, g]) => `<tr><td>${escapeHtml(g.nome)}</td><td>${euro(g.planeado)}</td><td>${euro(g.reconhecido)}</td><td>${euro(g.faturado)}</td>
+        ${linhaDesvio(g.reconhecido - g.planeado, 'var(--vermelho)')}
+        <td style="color:${(g.faturado - g.reconhecido) > 0 ? 'var(--amarelo)' : 'var(--verde)'}">${comSinal(g.faturado - g.reconhecido)}</td></tr>`).join('')}</tbody>`
+      : '<tbody><tr class="empty-row"><td colspan="6" style="text-align:center;color:var(--cinza-500);padding:20px">Sem dados para o âmbito selecionado.</td></tr></tbody>';
+  },
+  aplicarFiltrosFinanceiro(origem) {
+    const e = this.els;
+    const f = this.filtrosFinanceiro;
+    const anterior = { dept: f.dept, equipa: f.equipa };
+    f.preset = e.finPeriodo.value;
+    if (origem === e.finDe || origem === e.finAte) f.preset = 'custom';
+    if (f.preset === 'custom') { f.de = e.finDe.value || f.de; f.ate = e.finAte.value || f.ate; }
+    f.agrupar = e.finAgrupar.value;
+    // reagirMudancaFiltroOrg só olha para dept/equipa/pessoa — sem campo "pessoa" aqui, passa-se ''
+    // dos dois lados, nunca dispara o reset (inofensivo).
+    Object.assign(f, this.reagirMudancaFiltroOrg(Object.assign({ pessoa: '' }, anterior), { dept: e.finDept.value, equipa: e.finEquipa.value, pessoa: '' }));
+    f.projeto = e.finProjeto.value;
+    this.renderFinanceiro();
+  },
+  limparFiltrosFinanceiro() {
+    this.filtrosFinanceiro = { preset: '6m', de: '', ate: '', dept: '', equipa: '', projeto: '', agrupar: 'equipa' };
+    this.renderFinanceiro();
+  },
+
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -7615,6 +7860,7 @@ const App = {
     if (nome === 'alocacoes') { this.renderCalendarioAlocacoes(); this.centrarHojeCalendario(); }
     if (nome === 'ausencias') this.aplicarModoAusencias();
     if (nome === 'analise') this.renderAnalise();
+    if (nome === 'financeiro') this.renderFinanceiro();
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
   // (se o mês mostrado o incluir) fica centrado no ecrã — nem encostado ao fundo nem ao topo.
@@ -8368,6 +8614,12 @@ const App = {
       };
       e.anBarras.addEventListener('click', aoEscolherBarra);
       e.anBarras.addEventListener('keydown', aoEscolherBarra);
+    }
+    if (e.finKpis) {
+      [e.finPeriodo, e.finDe, e.finAte, e.finAgrupar, e.finDept, e.finEquipa, e.finProjeto]
+        .forEach(el => el.addEventListener('change', () => this.aplicarFiltrosFinanceiro(el)));
+      const btnFinLimpar = document.getElementById('btnFinanceiroLimpar');
+      if (btnFinLimpar) btnFinLimpar.addEventListener('click', () => this.limparFiltrosFinanceiro());
     }
     if (e.chkMoverDependentes) {
       e.chkMoverDependentes.checked = this.moverDependentes;

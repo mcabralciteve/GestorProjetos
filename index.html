@@ -97,6 +97,7 @@
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Registo</button>
+    <button class="tab-btn" data-tab="financeiro" id="tabBtnFinanceiro">Financeiro</button>
   </div>
   <div class="tabs-grupo" data-grupo="viaturas">
     <button class="tab-btn" data-tab="viaturas">Pedido</button>
@@ -974,6 +975,37 @@
   </div>
 </section>
 
+<!-- ===================== TAB: FINANCEIRO ===================== -->
+<section class="tab-panel" id="tab-financeiro">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>📈 Acompanhamento Financeiro</h2>
+    </div>
+    <p class="pagina-sub">Evolução do proveito — Planeado (faturas previstas), Reconhecido (proveito pelo trabalho já feito, horas reais ÷ horas vendidas) e Faturado (faturas emitidas). Só leitura, só Administrador. Um projeto só entra aqui se tiver Valor Vendido e Horas Vendidas definidos.</p>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
+      <label class="zoom-label">Período <select id="finPeriodo">
+        <option value="6m">Últimos 6 meses</option><option value="12m">Últimos 12 meses</option>
+        <option value="ano">Este ano</option><option value="custom">Personalizado</option></select></label>
+      <label class="zoom-label">De <input type="date" id="finDe"></label>
+      <label class="zoom-label">Até <input type="date" id="finAte"></label>
+      <label class="zoom-label">Agrupar por <select id="finAgrupar">
+        <option value="equipa">Equipa</option><option value="departamento">Departamento</option><option value="projeto">Projeto</option></select></label>
+    </div>
+    <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+      <label class="zoom-label">Direção <select id="finDept"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Área <select id="finEquipa"><option value="">Todas</option></select></label>
+      <label class="zoom-label">Projeto <select id="finProjeto"><option value="">Todos</option></select></label>
+      <button class="btn btn-sm" id="btnFinanceiroLimpar">Limpar filtros</button>
+    </div>
+    <div id="finKpis" class="an-kpis"></div>
+    <div class="card"><h3 style="margin-top:0;">Evolução mensal acumulada</h3><div id="finGrafico"></div><div id="finLegenda" class="an-legenda"></div></div>
+    <h3 style="margin-top:20px;">Detalhe mensal (total do âmbito selecionado)</h3>
+    <div class="table-scroll" style="max-height:35vh;"><table class="tabela-crud" id="finTabelaMeses"></table></div>
+    <h3 style="margin-top:20px;" id="finTituloGrupos">Por equipa (último mês do período)</h3>
+    <div class="table-scroll" style="max-height:35vh;"><table class="tabela-crud" id="finTabelaGrupos"></table></div>
+  </div>
+</section>
+
 <!-- ===================== TAB: VIATURAS ===================== -->
 <section class="tab-panel" id="tab-viaturas">
   <div class="pagina">
@@ -1085,13 +1117,14 @@
 <script src="lib/jszip.min.js"></script>
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
-<script src="js/sync.js?v=20260928c"></script>
+<script src="js/sync.js?v=20260929g"></script>
 <script src="js/gantt.js?v=20260928c"></script>
 <script src="js/capacidade.js?v=20260929c"></script>
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
-<script src="js/app.js?v=20260929f"></script>
+<script src="js/analise-financeira.js?v=20260929g"></script>
+<script src="js/app.js?v=20260929g"></script>
 </body>
 </html>

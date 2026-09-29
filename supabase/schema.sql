@@ -74,6 +74,25 @@ update public.equipas eq set lider_id = r.id
   from public.recursos r
   where eq.lider_id is null and eq.team_leader <> '' and r.nome = eq.team_leader;
 
+-- ---------- Histórico de equipa de cada recurso ----------
+-- "recursos.equipa_id" só guarda a equipa ATUAL — sem isto, um projeto que atravesse a mudança de
+-- equipa de um consultor via essa mudança "reescrever" retroativamente as horas antigas dele para a
+-- equipa nova (grave para o Acompanhamento Financeiro por equipa/departamento, que reparte proveito
+-- reconhecido/faturado pelas horas de cada equipa: as contas passavam a bater mal a partir do dia
+-- da mudança). Uma linha por período: data_fim NULL = ainda em vigor. data_inicio NULL = "desde
+-- sempre" (só a primeira linha de cada pessoa, criada automaticamente na primeira mudança de
+-- equipa registada depois desta tabela existir — ver App.registarMudancaEquipa/
+-- equipaIdDoRecursoEm). Pessoas que nunca mudaram de equipa não têm nenhuma linha aqui: assume-se
+-- que sempre estiveram na equipa atual (não há como saber melhor sem este histórico).
+create table if not exists public.historico_equipas (
+  id uuid primary key default gen_random_uuid(),
+  recurso_id uuid not null references public.recursos(id) on delete cascade,
+  equipa_id uuid references public.equipas(id) on delete set null,
+  data_inicio date,
+  data_fim date
+);
+create index if not exists historico_equipas_recurso_id_idx on public.historico_equipas(recurso_id);
+
 -- ---------- Departamentos ----------
 -- Um departamento agrupa várias equipas ("unidades") — uma unidade só pode pertencer a UM
 -- departamento (equipas.departamento_id). Cada departamento tem um Diretor (recursos.id), com
@@ -559,7 +578,7 @@ begin
   for t in select unnest(array[
     'departamentos','equipas','recursos','feriados','ausencias',
     'projetos','tarefas','tarefa_recursos','faturas','registos',
-    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho'
+    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho','historico_equipas'
   ])
   loop
     execute format('alter table public.%I enable row level security;', t);
@@ -590,7 +609,7 @@ begin
   for t in select unnest(array[
     'departamentos','equipas','recursos','feriados','ausencias',
     'projetos','tarefas','tarefa_recursos','faturas','registos',
-    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho'
+    'pontos_situacao','proximos_passos','reservas_viatura','configuracoes','tipos_trabalho','historico_equipas'
   ])
   loop
     execute format('grant select, insert, update, delete on public.%I to authenticated;', t);

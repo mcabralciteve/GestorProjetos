@@ -50,6 +50,12 @@ const Sync = {
         })),
       this.sincronizarRegistos(antes.registos, depois.registos),
       this.sincronizarReservasViatura(antes.reservasViatura, depois.reservasViatura),
+      // Mesma tabela nova de sempre (ver carregarDeSupabase) — apanhado à parte, não deixa esta
+      // mudança de equipa "falhar" (e assustar com um erro) só porque ninguém correu o SQL ainda;
+      // o resto do persist() (o próprio recurso, entre outros) grava na mesma.
+      this.sincronizarListaSimples('historico_equipas', antes.historicoEquipas, depois.historicoEquipas,
+        h => ({ id: h.id, recurso_id: h.recursoId, equipa_id: h.equipaId || null, data_inicio: h.dataInicio || null, data_fim: h.dataFim || null })
+      ).catch(err => console.warn('historico_equipas ainda não existe no Supabase — corre supabase/schema.sql.', err)),
       this.sincronizarProjetos(antes.projetos || {}, depois.projetos || {})
     ]);
   },
@@ -212,7 +218,7 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt] = await Promise.all([
+    const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt, he] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
       supabaseClient.from('departamentos').select('*'),
       supabaseClient.from('recursos').select('*'),
@@ -231,9 +237,19 @@ const Sync = {
       supabaseClient.from('proximos_passos').select('*'),
       supabaseClient.from('reservas_viatura').select('*'),
       supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle(),
-      supabaseClient.from('tipos_trabalho').select('*')
+      supabaseClient.from('tipos_trabalho').select('*'),
+      // "historico_equipas" é a tabela mais recente (ver schema.sql) — só existe depois de alguém
+      // correr essa migração no Supabase. Fica de fora do Promise.all acima e é tratada à parte
+      // (não entra no .forEach que rebenta em qualquer erro): sem isto, publicar este JS ANTES de
+      // alguém correr o SQL deitava a app INTEIRA abaixo para toda a gente (falha "relation does
+      // not exist" logo no arranque) — exatamente o tipo de incidente que já tivemos antes (ver
+      // gravar_filhos_projeto). Em vez disso, sem a tabela, o histórico de equipas fica vazio e o
+      // resto da app continua a funcionar normalmente (só o Acompanhamento Financeiro fica sem
+      // conseguir repartir horas antigas de quem já mudou de equipa antes de a tabela existir).
+      supabaseClient.from('historico_equipas').select('*').then(r => r, () => ({ data: [], error: null }))
     ]);
     [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
+    if (he.error) { console.warn('historico_equipas ainda não existe no Supabase — corre supabase/schema.sql. A app continua, mas sem histórico de mudanças de equipa.', he.error); he.data = []; }
 
     const departamentos = dep.data.map(r => ({ id: r.id, nome: r.nome, diretorId: r.diretor_id || null }));
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, liderId: r.lider_id || null, departamentoId: r.departamento_id || null }));
@@ -314,6 +330,12 @@ const Sync = {
       });
     });
 
+    // Uma linha por período em que a pessoa esteve numa equipa — ver App.equipaIdDoRecursoEm/
+    // orgDoRecursoEm (usado no Acompanhamento Financeiro para repartir horas antigas pela equipa
+    // certa, mesmo que a pessoa já tenha mudado de equipa entretanto).
+    const historicoEquipas = he.data.map(h => ({
+      id: h.id, recursoId: h.recurso_id, equipaId: h.equipa_id || null, dataInicio: h.data_inicio, dataFim: h.data_fim
+    }));
     const reservasViatura = rv.data.map(r => ({
       id: r.id, projetoId: r.projeto_id, projetoNome: r.projeto_nome,
       requisitanteId: r.requisitante_id, requisitanteNome: r.requisitante_nome,
@@ -334,7 +356,7 @@ const Sync = {
 
     App.state = {
       departamentos, equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, tiposTrabalho,
-      reservasViatura, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
+      reservasViatura, historicoEquipas, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
     };
   },
 
