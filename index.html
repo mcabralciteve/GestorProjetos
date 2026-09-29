@@ -984,14 +984,23 @@
     <div class="pagina-head">
       <h2>🚗 Pedido de Reserva de Viatura</h2>
     </div>
-    <p class="pagina-sub">Associado a um projeto em que estejas envolvido — ao submeter, o Mapa de Despesas (DFRH-008/12) é gerado automaticamente e é aberto o teu cliente de email com os destinatários e o assunto já preenchidos.</p>
+    <p class="pagina-sub">Associado a um projeto em que estejas envolvido, ou a uma atividade comercial/interna/outra — ao submeter, o Mapa de Despesas (DFRH-008/12) é gerado automaticamente e é aberto o teu cliente de email com os destinatários e o assunto já preenchidos.</p>
 
     <div class="card" style="max-width:640px;">
       <form id="formReservaViatura">
         <div class="calc-line" style="border:none;padding:0 0 8px;">Requisitante: <b id="reservaRequisitanteInfo">—</b></div>
-        <div class="row-2">
+        <label>Associar a <span style="color:var(--vermelho);">*</span>
+          <select id="reservaTipoAssociacao" required>
+            <option value="">Seleciona…</option>
+            <option value="projeto">Projeto</option>
+            <option value="comercial">Atividade Comercial</option>
+            <option value="interna">Atividade Interna</option>
+            <option value="outra">Outra</option>
+          </select>
+        </label>
+        <div class="row-2" id="reservaProjetoWrap">
           <label>Projeto <span style="color:var(--vermelho);">*</span>
-            <select id="reservaProjeto" required><option value="">Seleciona…</option></select>
+            <select id="reservaProjeto"><option value="">Seleciona…</option></select>
           </label>
           <label>Gestor de Projeto <span class="hint">(automático)</span>
             <input type="text" id="reservaGestor" readonly>
@@ -1005,7 +1014,7 @@
             <input type="text" id="reservaChefia" readonly>
           </label>
         </div>
-        <label>Justificação <span style="color:var(--vermelho);">*</span>
+        <label>Justificação <span style="color:var(--vermelho);">*</span> <span class="hint" id="reservaJustificacaoHint"></span>
           <textarea id="reservaJustificacao" rows="2" required></textarea>
         </label>
         <label>Distância prevista, ida e volta (km) <span style="color:var(--vermelho);">*</span>
@@ -1043,7 +1052,7 @@
           <tr>
             <th>Data do pedido</th>
             <th>Requisitante</th>
-            <th>Projeto</th>
+            <th>Projeto / Atividade</th>
             <th>Início</th>
             <th>Fim</th>
             <th>Justificação</th>
@@ -1087,6 +1096,6 @@
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
-<script src="js/app.js?v=20260929a"></script>
+<script src="js/app.js?v=20260929d"></script>
 </body>
 </html>

@@ -285,12 +285,15 @@ const App = {
       corpoTabelaRegistos: document.getElementById('corpoTabelaRegistos'),
       paginacaoRegistos: document.getElementById('paginacaoRegistos'),
       formReservaViatura: document.getElementById('formReservaViatura'),
+      reservaTipoAssociacao: document.getElementById('reservaTipoAssociacao'),
+      reservaProjetoWrap: document.getElementById('reservaProjetoWrap'),
       reservaProjeto: document.getElementById('reservaProjeto'),
       reservaRequisitanteInfo: document.getElementById('reservaRequisitanteInfo'),
       reservaGestor: document.getElementById('reservaGestor'),
       reservaArea: document.getElementById('reservaArea'),
       reservaChefia: document.getElementById('reservaChefia'),
       reservaJustificacao: document.getElementById('reservaJustificacao'),
+      reservaJustificacaoHint: document.getElementById('reservaJustificacaoHint'),
       reservaDistanciaKm: document.getElementById('reservaDistanciaKm'),
       reservaDataPedido: document.getElementById('reservaDataPedido'),
       reservaDataInicio: document.getElementById('reservaDataInicio'),
@@ -6231,12 +6234,16 @@ const App = {
 
   // ---------- Tab: Viaturas ----------
   // Requisitante é sempre quem está autenticado (pedido pessoal, sem "pedir em nome de outro").
-  // Só é possível escolher projetos onde a pessoa está envolvida (meusProjetosEnvolvidos() — admin
-  // vê todos), tal como no resto da app. Gestor vem sempre do projeto escolhido (só leitura, como
-  // o "Cliente" no Registo de Horas). Área/Unidade e Chefia vêm sempre da equipa da pessoa (também
-  // só leitura): "Área/Unidade" impressa no Mapa de Despesas é, na prática, o Departamento da
-  // equipa (não o nome da equipa/área em si — são níveis diferentes); "Chefia" é sempre o Diretor
-  // dessa equipa. Só Justificação continua a ser texto livre.
+  // A associação a um Projeto NÃO é obrigatória — um pedido pode em vez disso ser para uma destas
+  // três atividades sem projeto (RESERVA_TIPOS_ATIVIDADE), com o "para quê" descrito na própria
+  // Justificação (ver reservaTipoAssociacao/reservaProjetoWrap). Só quando é mesmo um Projeto é que
+  // a escolha fica limitada aos que a pessoa está envolvida (meusProjetosEnvolvidos() — admin vê
+  // todos), tal como no resto da app, e o Gestor de Projeto aparece (só leitura, como o "Cliente" no
+  // Registo de Horas) — sem projeto não há gestor a mostrar. Área/Unidade e Chefia vêm sempre da
+  // equipa da pessoa (também só leitura, independente do tipo escolhido): "Área/Unidade" impressa
+  // no Mapa de Despesas é, na prática, o Departamento da equipa (não o nome da equipa/área em si —
+  // são níveis diferentes); "Chefia" é sempre o Diretor dessa equipa.
+  RESERVA_TIPOS_ATIVIDADE: { comercial: 'Atividade Comercial', interna: 'Atividade Interna', outra: 'Outra' },
   novaReservaViaturaObj(dados) {
     return {
       id: crypto.randomUUID(),
@@ -6276,12 +6283,26 @@ const App = {
     e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
     this.atualizarGestorReservaViatura();
 
-    const semAcesso = !recurso || !projetos.length || !e.reservaArea.value || !e.reservaChefia.value;
+    // "Projeto" (e o Gestor associado) só aparece e só é obrigatório quando "Associar a" = Projeto —
+    // para as outras três opções o pedido não tem projeto nenhum, e o "para quê" fica todo na
+    // Justificação (ver reservaJustificacaoHint, e a leitura do tipo em submeterFormReservaViatura).
+    const tipo = e.reservaTipoAssociacao ? e.reservaTipoAssociacao.value : 'projeto';
+    const ehProjeto = tipo === 'projeto';
+    if (e.reservaProjetoWrap) e.reservaProjetoWrap.style.display = ehProjeto ? '' : 'none';
+    e.reservaProjeto.required = ehProjeto;
+    if (e.reservaJustificacaoHint) {
+      e.reservaJustificacaoHint.textContent = (ehProjeto || !tipo) ? '' :
+        `— descreve aqui do que se trata esta ${this.RESERVA_TIPOS_ATIVIDADE[tipo].toLowerCase()}`;
+    }
+
+    const semAcesso = !recurso || !e.reservaArea.value || !e.reservaChefia.value;
     if (e.reservaMsg && (!e.reservaMsg.textContent || e.reservaMsg.style.color === 'var(--vermelho)')) {
       if (!recurso) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua conta ainda não está associada a um consultor — contacta o administrador.'; }
-      else if (!projetos.length) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — não é possível pedir reserva de viatura.'; }
       else if (!e.reservaArea.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'A tua equipa não está associada a nenhum departamento — contacta o administrador.'; }
       else if (!e.reservaChefia.value) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'O teu departamento não tem Diretor definido — contacta o administrador.'; }
+      // Não bloqueia (a pessoa pode sempre optar por uma atividade sem projeto) — só avisa enquanto
+      // "Projeto" continuar por escolher ou selecionado sem ela ter nenhum projeto disponível.
+      else if (!projetos.length && (ehProjeto || !tipo)) { e.reservaMsg.style.color = 'var(--vermelho)'; e.reservaMsg.textContent = 'Não estás associado a nenhum projeto — escolhe "Atividade Comercial/Interna/Outra" em "Associar a", ou contacta o administrador se devias ter um projeto.'; }
       else { e.reservaMsg.textContent = ''; }
     }
     e.formReservaViatura.querySelectorAll('input,select,textarea,button').forEach(c => { c.disabled = semAcesso; });
@@ -6297,17 +6318,26 @@ const App = {
     const e = this.els;
     const perfil = this.perfilAtual();
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
-    const projeto = this.state.projetos[e.reservaProjeto.value];
+    const tipo = e.reservaTipoAssociacao ? e.reservaTipoAssociacao.value : 'projeto';
+    const ehProjeto = tipo === 'projeto';
+    const projeto = ehProjeto ? this.state.projetos[e.reservaProjeto.value] : null;
     const textoJustificacao = e.reservaJustificacao.value.trim();
     const distanciaKm = e.reservaDistanciaKm.value.trim();
+    // Sem projeto (uma das três atividades — RESERVA_TIPOS_ATIVIDADE), é o próprio tipo que ocupa o
+    // lugar onde normalmente iria o nome do projeto (célula F15 do Mapa de Despesas); a Justificação,
+    // escrita pela pessoa, é que explica do que se trata em concreto (ver reservaJustificacaoHint).
+    const rotuloAssociacao = ehProjeto
+      ? (projeto ? `${projeto.idInterno ? projeto.idInterno + ' - ' : ''}${projeto.nome}` : '')
+      : (this.RESERVA_TIPOS_ATIVIDADE[tipo] || '');
     // A distância (ida e volta) não é um campo próprio no Mapa de Despesas oficial — junta-se à
     // Justificação, com um hífen, porque é essa a única célula de texto livre do template.
     const dados = {
       area: e.reservaArea.value.trim(),
       requisitante: recurso ? recurso.nome : '',
       chefia: e.reservaChefia.value.trim(),
-      gestor: e.reservaGestor.value.trim(),
-      projeto: projeto ? `${projeto.idInterno ? projeto.idInterno + ' - ' : ''}${projeto.nome}` : '',
+      // Gestor de Projeto só faz sentido havendo mesmo um projeto — sem ele, a célula fica em branco.
+      gestor: ehProjeto ? e.reservaGestor.value.trim() : '',
+      projeto: rotuloAssociacao,
       justificacao: distanciaKm ? `${textoJustificacao} - ${distanciaKm}km no total previsto.` : textoJustificacao,
       data_pedido: e.reservaDataPedido.value,
       data_inicio: e.reservaDataInicio.value,
@@ -6316,7 +6346,9 @@ const App = {
       hora_fim: e.reservaHoraFim.value
     };
     if (!recurso) { this.toast('A tua conta ainda não está associada a um consultor.'); return; }
-    if (!projeto || !dados.area || !dados.chefia || !textoJustificacao || !distanciaKm || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
+    if (!tipo) { this.toast('Escolhe a que associar este pedido, em "Associar a".'); return; }
+    if (ehProjeto && !projeto) { this.toast('Escolhe o projeto.'); return; }
+    if (!dados.area || !dados.chefia || !textoJustificacao || !distanciaKm || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
       this.toast('Preenche todos os campos obrigatórios (*).'); return;
     }
     if (dados.data_fim < dados.data_inicio || (dados.data_fim === dados.data_inicio && dados.hora_fim <= dados.hora_inicio)) {
@@ -6330,7 +6362,8 @@ const App = {
       this.descarregarBlob(blob, nomeFicheiro);
 
       const reserva = this.novaReservaViaturaObj({
-        projetoId: projeto.id, projetoNome: projeto.nome, requisitanteId: recurso.id, requisitanteNome: recurso.nome,
+        projetoId: ehProjeto && projeto ? projeto.id : null, projetoNome: rotuloAssociacao,
+        requisitanteId: recurso.id, requisitanteNome: recurso.nome,
         area: dados.area, chefia: dados.chefia, gestor: dados.gestor, justificacao: dados.justificacao,
         dataPedido: dados.data_pedido, dataInicio: dados.data_inicio, horaInicio: dados.hora_inicio,
         dataFim: dados.data_fim, horaFim: dados.hora_fim, nomeFicheiro
@@ -6349,7 +6382,7 @@ const App = {
       e.reservaMsg.style.color = 'var(--verde)';
       e.formReservaViatura.reset();
       e.reservaDataPedido.value = DateUtil.todayISO();
-      this.atualizarGestorReservaViatura();
+      this.renderFormReservaViatura();
     } catch (err) {
       console.error(err);
       e.reservaMsg.style.color = 'var(--vermelho)';
@@ -6366,7 +6399,7 @@ const App = {
     const assunto = `Reserva de Viatura — ${dados.projeto} — ${DateUtil.formatShort(DateUtil.parseISO(dados.data_inicio))}`;
     const corpo = [
       'Pedido de reserva de viatura:', '',
-      `Projeto: ${dados.projeto}`,
+      `Projeto/Atividade: ${dados.projeto}`,
       `Requisitante: ${dados.requisitante}`,
       `De: ${DateUtil.formatShort(DateUtil.parseISO(dados.data_inicio))} ${dados.hora_inicio}`,
       `Até: ${DateUtil.formatShort(DateUtil.parseISO(dados.data_fim))} ${dados.hora_fim}`,
@@ -8201,6 +8234,7 @@ const App = {
     window.addEventListener('afterprint', () => document.body.classList.remove('imprimindo-relatorio'));
     if (e.formReservaViatura) e.formReservaViatura.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormReservaViatura(); });
     if (e.reservaProjeto) e.reservaProjeto.addEventListener('change', () => this.atualizarGestorReservaViatura());
+    if (e.reservaTipoAssociacao) e.reservaTipoAssociacao.addEventListener('change', () => this.renderFormReservaViatura());
     if (e.btnGuardarDefinicoes) e.btnGuardarDefinicoes.addEventListener('click', () => this.guardarDefinicoes());
     if (e.btnGuardarOcupacao) e.btnGuardarOcupacao.addEventListener('click', () => this.guardarLimiaresOcupacao());
     if (e.btnAlocSemHoras) e.btnAlocSemHoras.addEventListener('click', () => this.abrirModalAlocacoesSemHoras());
