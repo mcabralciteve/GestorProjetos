@@ -584,10 +584,15 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .dash-linha-sub{font-size:11px;color:var(--cinza-500);}
 /* Registos do Dashboard que levam a algum lado (tarefa no Gantt, dia por preencher, ausência a
    decidir, etc.) — mesmo espírito do hover em .an-linha/.linha-tarefa-port, só para não ficarem
-   meramente informativos (ver App.renderDashboard e os handlers data-dash-*). */
-.dash-linha-link{cursor:pointer;border-radius:6px;}
+   meramente informativos (ver App.renderDashboard e os handlers data-dash-*). O "›" e a cor azul no
+   título são o sinal visual de que a linha leva a algum lado mesmo sem lhe passar o rato por cima
+   (o hover sozinho é invisível até se reparar nele) — mesma cor de link já usada em .pred-cell/.link-tab.*/
+.dash-linha-link{position:relative;cursor:pointer;border-radius:6px;padding-right:18px;}
 .dash-linha-link:hover,.dash-linha-link:focus-visible{background:var(--cinza-100);outline:none;}
 :root[data-tema="escuro"] .dash-linha-link:hover,:root[data-tema="escuro"] .dash-linha-link:focus-visible{background:#1f2530;}
+.dash-linha-link .dash-linha-principal{color:var(--azul);}
+.dash-linha-link:hover .dash-linha-principal,.dash-linha-link:focus-visible .dash-linha-principal{text-decoration:underline;}
+.dash-linha-link::after{content:'›';position:absolute;right:3px;top:50%;transform:translateY(-50%);color:var(--cinza-500);font-size:16px;font-weight:700;line-height:1;}
 
 /* Linha de tabela recém-criada (ex.: nova fatura) — pisca para ser fácil de encontrar mesmo que a
    ordenação/filtro ativos não a ponham mesmo no topo visível. */
