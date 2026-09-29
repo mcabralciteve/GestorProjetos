@@ -136,6 +136,7 @@ const App = {
 
   init() {
     this.cacheEls();
+    this.mostrarVersaoApp();
     this.aplicarTema(this.lerPrefsUI().tema || 'claro');
     this.modoRegistoDia = this.lerPrefsUI().modoRegistoDia || 'pessoal';
     this.moverDependentes = this.lerPrefsUI().moverDependentes !== false;
@@ -159,6 +160,19 @@ const App = {
     const novo = atual === 'escuro' ? 'claro' : 'escuro';
     this.aplicarTema(novo);
     this.gravarPrefUI('tema', novo);
+  },
+  // Lê o "?v=AAAAMMDDx" da própria tag <script> que carregou este ficheiro — nunca fica
+  // desatualizada por esquecimento (é sempre a mesma versão que já se bate a cache ao publicar,
+  // ver cache-busting-assets), sem precisar de um número mantido à parte em mais um sítio.
+  versaoApp() {
+    const tag = document.querySelector('script[src*="js/app.js"]');
+    const m = tag && tag.src.match(/[?&]v=([^&]+)/);
+    return m ? m[1] : '';
+  },
+  mostrarVersaoApp() {
+    const v = this.versaoApp();
+    if (!v) return;
+    document.querySelectorAll('.app-versao').forEach(el => { el.textContent = v; });
   },
 
   cacheEls() {

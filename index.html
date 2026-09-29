@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260929b">
+<link rel="stylesheet" href="css/style.css?v=20260929c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -22,7 +22,7 @@
 
 <div id="authGate" class="auth-gate aberto">
   <div class="auth-card">
-    <div class="logo" style="font-size:20px;margin-bottom:4px;">📊 Gestor de Projetos</div>
+    <div class="logo" style="font-size:20px;margin-bottom:4px;">📊 Gestor de Projetos <span class="app-versao"></span></div>
     <p class="hint" id="authSub">Inicia sessão para continuar.</p>
     <form id="formAuth">
       <label id="labelAuthNome" style="display:none;">Nome
@@ -50,7 +50,7 @@
 
 <header class="topbar">
   <div class="topbar-left">
-    <span class="logo">📊 Gestor de Projetos</span>
+    <span class="logo">📊 Gestor de Projetos <span class="app-versao"></span></span>
   </div>
   <div class="topbar-right">
     <button id="btnAtualizarDados" class="btn btn-sm" title="Recarrega os dados mais recentes da nuvem — usa isto se souberes que alguém (ou tu, diretamente na base de dados) alterou algo entretanto." style="display:none;">🔄 Atualizar</button>
@@ -73,7 +73,7 @@
   <button class="grupo-btn" data-grupo="planeamento">📅 Planeamento</button>
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
-  <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Faturação</button>
+  <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Financeiro</button>
   <button class="grupo-btn" data-grupo="viaturas">🚗 Viaturas</button>
   <button class="grupo-btn" data-grupo="configuracoes" id="grupoBtnConfiguracoes">⚙ Configurações</button>
 </nav>
@@ -96,8 +96,8 @@
     <button class="tab-btn" data-tab="analise" id="tabBtnAnalise">Análise</button>
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
-    <button class="tab-btn" data-tab="faturacao">Registo</button>
-    <button class="tab-btn" data-tab="financeiro" id="tabBtnFinanceiro">Financeiro</button>
+    <button class="tab-btn" data-tab="faturacao">Faturação</button>
+    <button class="tab-btn" data-tab="financeiro" id="tabBtnFinanceiro">Acompanhamento</button>
   </div>
   <div class="tabs-grupo" data-grupo="viaturas">
     <button class="tab-btn" data-tab="viaturas">Pedido</button>
@@ -1125,6 +1125,6 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/app.js?v=20260929g"></script>
+<script src="js/app.js?v=20260929h"></script>
 </body>
 </html>
