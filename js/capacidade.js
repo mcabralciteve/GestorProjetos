@@ -458,6 +458,14 @@ const Capacidade = {
 
     const projetoDaTarefa = App.state.projetos[projetoId];
     const tarefaAtual = projetoDaTarefa && projetoDaTarefa.tarefas.find(x => x.id === taskId);
+    // Uma tarefa já concluída (100%) e com data de fim no passado não tem mais nenhuma hora por
+    // fazer — não há decisão nenhuma que "sobre-alocado(a)" aqui ajude a tomar, só ruído visual
+    // numa linha que já fechou. Mesmo par de condições que já define "atrasada" na tabela de
+    // tarefas (fim no passado + progresso), só que ao contrário: aqui interessa o que já FECHOU,
+    // não o que ainda está em aberto.
+    if (tarefaAtual && tarefaAtual.progresso >= 100 && fimISO < DateUtil.todayISO()) {
+      return { nivel: 'ok', diasIndisponivel: 0, intervalosSobreAlocados: [], mesLabel: '' };
+    }
     const intervalosSobreAlocados = this.intervalosCriticos(recurso, {
       excluir: { projetoId, taskId },
       extra: { inicio, fim, horas: estaHorasTotais },
