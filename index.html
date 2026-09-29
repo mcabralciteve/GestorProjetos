@@ -418,7 +418,7 @@
       <h3>Next Steps</h3>
       <button id="btnAddProximoPasso" class="btn btn-primary btn-sm">+ Next Step</button>
     </div>
-    <p class="pagina-sub">Mostra os next steps de todos os projetos a que tens acesso — marca Gestores/Projetos para restringir; sem nada marcado, mostra tudo.</p>
+    <p class="pagina-sub">Mostra os next steps de todos os projetos a que tens acesso — marca Gestores/Projetos/Estados para restringir; sem nada marcado, mostra tudo.</p>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
       <div class="conta-menu-wrap">
         <button type="button" id="btnFiltroGestoresNS" class="btn btn-sm">Gestor: Todos</button>
@@ -430,13 +430,10 @@
       </div>
       <label class="zoom-label">Sessão <select id="nsFiltroSessao"><option value="">Todas</option></select></label>
       <label class="zoom-label">Responsável <select id="nsFiltroResponsavel"><option value="">Todos</option></select></label>
-      <label class="zoom-label">Estado <select id="nsFiltroEstado">
-        <option value="">Todos</option>
-        <option value="aberto">Aberto</option>
-        <option value="em_curso">Em curso</option>
-        <option value="concluido">Concluído</option>
-        <option value="abandonado">Abandonado</option>
-      </select></label>
+      <div class="conta-menu-wrap">
+        <button type="button" id="btnFiltroEstadosNS" class="btn btn-sm">Estado: Todos</button>
+        <div class="conta-menu para-esquerda" id="painelFiltroEstadosNS" style="min-width:160px;padding:6px 0;"></div>
+      </div>
       <label class="zoom-label">Criado de <input type="date" id="nsFiltroCriadoDe"></label>
       <label class="zoom-label">Criado até <input type="date" id="nsFiltroCriadoAte"></label>
       <button id="btnLimparFiltrosNextSteps" class="btn btn-sm">Limpar filtros</button>
@@ -1096,6 +1093,6 @@
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
-<script src="js/app.js?v=20260929d"></script>
+<script src="js/app.js?v=20260929e"></script>
 </body>
 </html>

@@ -87,9 +87,18 @@ const App = {
   CORES_CALENDARIO: ['#2a6a9a', '#1f8a5b', '#c8951f', '#6b4fa0', '#3e8fc0', '#b0562f', '#4a8f7a', '#8a4f7a'],
   filtrosFaturacao: { projeto: '', de: '', ate: '', numRegisto: '' },
   // Filtros da lista global de Next Steps dentro de Acompanhamento (ver renderNextStepsGlobal) —
-  // "gestores"/"projetos" são arrays de ids marcados via checkbox (vazio = sem restrição, mostra
-  // tudo a que o utilizador tem acesso); os restantes são um valor único, como nos outros filtros.
-  filtrosNextSteps: { gestores: [], projetos: [], pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' },
+  // "gestores"/"projetos"/"estados" são arrays de ids marcados via checkbox (vazio = sem restrição,
+  // mostra tudo a que o utilizador tem acesso); os restantes são um valor único, como nos outros
+  // filtros.
+  filtrosNextSteps: { gestores: [], projetos: [], estados: [], pontoSituacao: '', responsavel: '', criadoDe: '', criadoAte: '' },
+  // Opções fixas de estado de um Next Step — mesmos valores/rótulos do <select> de estado de cada
+  // linha (ver renderNextStepsGlobal), reaproveitadas aqui para o filtro de checkboxes.
+  ESTADOS_PROXIMO_PASSO: [
+    { id: 'aberto', nome: 'Aberto' },
+    { id: 'em_curso', nome: 'Em curso' },
+    { id: 'concluido', nome: 'Concluído' },
+    { id: 'abandonado', nome: 'Abandonado' }
+  ],
   // Estado da sessão de Acompanhamento — só do lado do cliente, nunca gravado/sincronizado (por
   // isso vive fora de "state", tal como filtrosRegisto/paginaRegistos etc.). Uma "reunião" é só
   // uma data + um feedback partilhados que se propagam automaticamente para o Ponto de Situação de
@@ -194,9 +203,10 @@ const App = {
       painelFiltroGestoresNS: document.getElementById('painelFiltroGestoresNS'),
       btnFiltroProjetosNS: document.getElementById('btnFiltroProjetosNS'),
       painelFiltroProjetosNS: document.getElementById('painelFiltroProjetosNS'),
+      btnFiltroEstadosNS: document.getElementById('btnFiltroEstadosNS'),
+      painelFiltroEstadosNS: document.getElementById('painelFiltroEstadosNS'),
       nsFiltroSessao: document.getElementById('nsFiltroSessao'),
       nsFiltroResponsavel: document.getElementById('nsFiltroResponsavel'),
-      nsFiltroEstado: document.getElementById('nsFiltroEstado'),
       nsFiltroCriadoDe: document.getElementById('nsFiltroCriadoDe'),
       nsFiltroCriadoAte: document.getElementById('nsFiltroCriadoAte'),
       corpoNextStepsGlobal: document.getElementById('corpoNextStepsGlobal'),
@@ -6822,7 +6832,7 @@ const App = {
     this.renderNextStepsGlobal();
   },
   limparFiltrosNextSteps() {
-    this.filtrosNextSteps = { gestores: [], projetos: [], pontoSituacao: '', responsavel: '', estado: '', criadoDe: '', criadoAte: '' };
+    this.filtrosNextSteps = { gestores: [], projetos: [], estados: [], pontoSituacao: '', responsavel: '', criadoDe: '', criadoAte: '' };
     this.renderNextStepsGlobal();
   },
   // "(Todos)" no topo de cada dropdown de Gestor/Projeto — limpa só esse filtro (os outros mantêm-se).
@@ -6851,7 +6861,6 @@ const App = {
     const f = this.filtrosNextSteps;
     f.pontoSituacao = e.nsFiltroSessao.value;
     f.responsavel = e.nsFiltroResponsavel.value;
-    f.estado = e.nsFiltroEstado.value;
     f.criadoDe = e.nsFiltroCriadoDe.value;
     f.criadoAte = e.nsFiltroCriadoAte.value;
     this.renderNextStepsGlobal();
@@ -6889,6 +6898,15 @@ const App = {
       cb.addEventListener('change', () => this.alternarFiltroNextSteps('projetos', cb.dataset.projeto));
     });
 
+    e.btnFiltroEstadosNS.textContent = this.rotuloFiltroNextSteps(f.estados, this.ESTADOS_PROXIMO_PASSO, 'Estado');
+    e.painelFiltroEstadosNS.innerHTML =
+      linhaFiltro(`<input type="checkbox" data-todos ${f.estados.length === 0 ? 'checked' : ''}>`, '(Todos)', true) +
+      this.ESTADOS_PROXIMO_PASSO.map(est => linhaFiltro(`<input type="checkbox" data-estado="${est.id}" ${f.estados.includes(est.id) ? 'checked' : ''}>`, est.nome, false)).join('');
+    e.painelFiltroEstadosNS.querySelector('[data-todos]').addEventListener('change', () => this.limparFiltroNextStepsCampo('estados'));
+    e.painelFiltroEstadosNS.querySelectorAll('input[data-estado]').forEach(cb => {
+      cb.addEventListener('change', () => this.alternarFiltroNextSteps('estados', cb.dataset.estado));
+    });
+
     // A lista de sessões filtra-se pelos Gestores/Projetos marcados; se a seleção deixar de fazer
     // sentido, o filtro de sessão reinicia sozinho.
     const projetosParaSessoes = f.projetos.length ? permitidos.filter(p => f.projetos.includes(p.id)) : projetosParaCheckbox;
@@ -6905,7 +6923,6 @@ const App = {
     const responsaveisOrdenados = [...this.state.recursos].sort((a, b) => a.nome.localeCompare(b.nome));
     e.nsFiltroResponsavel.innerHTML = '<option value="">Todos</option>' + responsaveisOrdenados.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     e.nsFiltroResponsavel.value = f.responsavel;
-    e.nsFiltroEstado.value = f.estado;
     e.nsFiltroCriadoDe.value = f.criadoDe;
     e.nsFiltroCriadoAte.value = f.criadoAte;
 
@@ -6916,7 +6933,7 @@ const App = {
       if (f.projetos.length && !f.projetos.includes(p.id)) return false;
       if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
       if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
-      if (f.estado && pp.estado !== f.estado) return false;
+      if (f.estados.length && !f.estados.includes(pp.estado)) return false;
       if (f.criadoDe && pp.criadoEm.slice(0, 10) < f.criadoDe) return false;
       if (f.criadoAte && pp.criadoEm.slice(0, 10) > f.criadoAte) return false;
       return true;
@@ -8282,13 +8299,24 @@ const App = {
       e.painelPersonalizarDashboard.addEventListener('click', (ev) => ev.stopPropagation());
       document.addEventListener('click', () => e.painelPersonalizarDashboard.classList.remove('aberto'));
     }
-    [e.nsFiltroSessao, e.nsFiltroResponsavel, e.nsFiltroEstado, e.nsFiltroCriadoDe, e.nsFiltroCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosNextStepsSimples()));
+    [e.nsFiltroSessao, e.nsFiltroResponsavel, e.nsFiltroCriadoDe, e.nsFiltroCriadoAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosNextStepsSimples()));
     document.getElementById('btnLimparFiltrosNextSteps').addEventListener('click', () => this.limparFiltrosNextSteps());
-    e.btnFiltroGestoresNS.addEventListener('click', (ev) => { ev.stopPropagation(); e.painelFiltroProjetosNS.classList.remove('aberto'); e.painelFiltroGestoresNS.classList.toggle('aberto'); });
-    e.painelFiltroGestoresNS.addEventListener('click', (ev) => ev.stopPropagation());
-    e.btnFiltroProjetosNS.addEventListener('click', (ev) => { ev.stopPropagation(); e.painelFiltroGestoresNS.classList.remove('aberto'); e.painelFiltroProjetosNS.classList.toggle('aberto'); });
-    e.painelFiltroProjetosNS.addEventListener('click', (ev) => ev.stopPropagation());
-    document.addEventListener('click', () => { e.painelFiltroGestoresNS.classList.remove('aberto'); e.painelFiltroProjetosNS.classList.remove('aberto'); });
+    // Três dropdowns de checkboxes (Gestor/Projeto/Estado) lado a lado — abrir um fecha sempre os
+    // outros dois, mesmo espírito do painel único de antes, só generalizado a três.
+    const painelFiltrosNS = [e.painelFiltroGestoresNS, e.painelFiltroProjetosNS, e.painelFiltroEstadosNS];
+    const ligarDropdownFiltroNS = (btn, painel) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const aberto = painel.classList.contains('aberto');
+        painelFiltrosNS.forEach(p => p.classList.remove('aberto'));
+        painel.classList.toggle('aberto', !aberto);
+      });
+      painel.addEventListener('click', (ev) => ev.stopPropagation());
+    };
+    ligarDropdownFiltroNS(e.btnFiltroGestoresNS, e.painelFiltroGestoresNS);
+    ligarDropdownFiltroNS(e.btnFiltroProjetosNS, e.painelFiltroProjetosNS);
+    ligarDropdownFiltroNS(e.btnFiltroEstadosNS, e.painelFiltroEstadosNS);
+    document.addEventListener('click', () => painelFiltrosNS.forEach(p => p.classList.remove('aberto')));
     document.querySelector('#tabelaFaturas thead').addEventListener('click', (ev) => {
       const th = ev.target.closest('th[data-sort]');
       if (!th) return;
