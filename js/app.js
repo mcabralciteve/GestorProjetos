@@ -304,14 +304,22 @@ const App = {
       btnAlternarTema: document.getElementById('btnAlternarTema'),
       formRegisto: document.getElementById('formRegisto'),
       regPessoa: document.getElementById('regPessoa'),
+      regDataWrap: document.getElementById('regDataWrap'),
       regData: document.getElementById('regData'),
       regProjeto: document.getElementById('regProjeto'),
       regTipo: document.getElementById('regTipo'),
       regProjetoWrap: document.getElementById('regProjetoWrap'),
       regTarefa: document.getElementById('regTarefa'),
+      regModoLoteWrap: document.getElementById('regModoLoteWrap'),
+      regModoLote: document.getElementById('regModoLote'),
+      regLotePeriodoWrap: document.getElementById('regLotePeriodoWrap'),
+      regLoteDe: document.getElementById('regLoteDe'),
+      regLoteAte: document.getElementById('regLoteAte'),
+      regHorasHint: document.getElementById('regHorasHint'),
       regHoras: document.getElementById('regHoras'),
       regNotas: document.getElementById('regNotas'),
       regMsg: document.getElementById('regMsg'),
+      btnSubmeterRegisto: document.getElementById('btnSubmeterRegisto'),
       fRegPessoa: document.getElementById('fRegPessoa'),
       fRegProjeto: document.getElementById('fRegProjeto'),
       fRegDe: document.getElementById('fRegDe'),
@@ -2841,6 +2849,23 @@ const App = {
     this.renderRegistoDia();
     return registo;
   },
+  // Mesmo que submeterRegisto, mas para vários de uma vez (ver prepararPreviaLoteRegisto) — um só
+  // persist()/render no fim, em vez de um por linha: evita N sincronizações separadas com o
+  // Supabase para o que é, na prática, uma única ação do utilizador.
+  submeterRegistosLote(listaDados) {
+    const registos = listaDados.map(dados => this.novoRegistoObj(Object.assign({ origem: 'app' }, dados)));
+    registos.forEach(r => this.state.registos.push(r));
+    this.invalidarIndiceRegistos();
+    if (listaDados.length) { try { localStorage.setItem(this.ULTIMA_PESSOA_KEY, listaDados[0].pessoa); } catch (e) { /* ignora */ } }
+    this.persist();
+    this.renderTabelaRegistos();
+    this.renderTabelaTarefas();
+    this.renderTabelaProjetos();
+    this.renderInfoProjeto();
+    this.renderPortefolio();
+    this.renderRegistoDia();
+    return registos;
+  },
   eliminarRegisto(id) {
     const r = this.state.registos.find(x => x.id === id);
     if (!r || !this.possoEditarRegisto(r)) return;
@@ -3474,9 +3499,11 @@ const App = {
             if (!t.recursoIds.includes(meuRecurso.id) || this.temFilhos(p, t.id)) return;
             if (hojeISO >= t.inicio && hojeISO <= t.fim) tarefasHoje.push({ p, t });
           }));
+          // Nome COM a cadeia de tarefas-pai (rotuloTarefaComPai) — uma tarefa-folha como "Sessão 1"
+          // sozinha não diz nada sobre em que fase/projeto se está a trabalhar.
           corpo = tarefasHoje.length ? tarefasHoje.map(({ p, t }) => `
             <div class="dash-linha dash-linha-link" data-dash-tarefa="${p.id}|${t.id}">
-              <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
+              <span class="dash-linha-principal">${escapeHtml(this.rotuloTarefaComPai(p, t))}</span>
               <span class="dash-linha-sub">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)} · ${t.progresso || 0}%</span>
             </div>`).join('') : '<p class="hint">Sem tarefas previstas para hoje.</p>';
         }
@@ -3495,7 +3522,7 @@ const App = {
         proximas.sort((a, b) => a.t.inicio.localeCompare(b.t.inicio));
         corpo = proximas.length ? proximas.map(({ p, t }) => `
           <div class="dash-linha dash-linha-link" data-dash-tarefa="${p.id}|${t.id}">
-            <span class="dash-linha-principal">${escapeHtml(t.nome)}</span>
+            <span class="dash-linha-principal">${escapeHtml(this.rotuloTarefaComPai(p, t))}</span>
             <span class="dash-linha-sub">${escapeHtml(p.nome)} · começa ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))}</span>
           </div>`).join('') : '<p class="hint">Nada a começar nos próximos 7 dias.</p>';
       }
@@ -5104,11 +5131,39 @@ const App = {
     e.fRegPessoa.innerHTML = filtrosPessoas;
     e.fRegPessoa.value = valorFiltroPessoa;
   },
-  // Um tipo de trabalho que não exige projeto (ex.: Formação interna) esconde Projeto/Tarefa.
+  // Um tipo de trabalho que não exige projeto (ex.: Formação interna) esconde Projeto/Tarefa — e o
+  // registo em lote nem faz sentido sem uma tarefa com datas para repartir, por isso esconde-se e
+  // desliga-se também.
   aplicarTipoRegisto() {
     const e = this.els;
     const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
     e.regProjetoWrap.style.display = tipo.requerProjeto ? '' : 'none';
+    if (e.regModoLoteWrap) e.regModoLoteWrap.style.display = tipo.requerProjeto ? '' : 'none';
+    if (!tipo.requerProjeto && e.regModoLote) e.regModoLote.checked = false;
+    this.aplicarModoLoteRegisto();
+  },
+  // Alterna entre registo dia-a-dia (o de sempre) e registo em lote: um total de horas para a
+  // tarefa inteira, repartido automaticamente pelos dias úteis em que a pessoa está disponível
+  // (ver prepararPreviaLoteRegisto/Capacidade.capacidadeDiaria) — pensado para consultores sem
+  // acesso à app, cujas horas só o Gestor consegue lançar, dia a dia seria muito mais lento.
+  aplicarModoLoteRegisto() {
+    const e = this.els;
+    if (!e.regModoLote) return;
+    const lote = e.regModoLote.checked;
+    e.regDataWrap.style.display = lote ? 'none' : '';
+    e.regData.required = !lote;
+    e.regLotePeriodoWrap.style.display = lote ? '' : 'none';
+    e.regHorasHint.textContent = lote ? '— total da tarefa, a repartir pelos dias úteis' : '';
+    e.btnSubmeterRegisto.textContent = lote ? 'Pré-visualizar distribuição' : 'Registar Horas';
+    // Ao ligar o modo (ou ao trocar de tarefa com o modo já ligado), propõe logo o período da
+    // própria tarefa — o caso mais comum de longe; continua editável a seguir, para quem só quer
+    // repartir uma parte do período.
+    if (lote) {
+      const p = Object.values(this.state.projetos).find(pr => pr.idInterno === e.regProjeto.value);
+      const recurso = this.state.recursos.find(r => r.nome === e.regPessoa.value);
+      const tarefa = (p && recurso) ? this.tarefasDoProjetoParaPessoaRegisto(e.regProjeto.value, e.regPessoa.value).find(t => t.id === e.regTarefa.value) : null;
+      if (tarefa) { e.regLoteDe.value = tarefa.inicio; e.regLoteAte.value = tarefa.fim; }
+    }
   },
   // Só mostra, no registo de horas, os projetos aos quais a pessoa selecionada já está
   // efetivamente associada (tem pelo menos uma tarefa com o seu recurso atribuído) — evita
@@ -5131,6 +5186,7 @@ const App = {
     const opcoes = (p && recurso) ? this.opcoesTarefasRegisto(p.idInterno, this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa)) : '';
     e.regTarefa.innerHTML = `<option value="">${p ? 'Seleciona…' : 'Seleciona primeiro o projeto…'}</option>` + opcoes;
     e.regTarefa.disabled = !p;
+    this.aplicarModoLoteRegisto();
   },
   // Mesma lógica de "a que projetos/tarefas esta pessoa está ligada" do formulário de criar
   // registo, reutilizada para editar linhas já existentes na tabela de Registos (Administrador ou
@@ -5280,6 +5336,11 @@ const App = {
     const notas = e.regNotas.value.trim();
     const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
 
+    if (tipo.requerProjeto && e.regModoLote && e.regModoLote.checked) {
+      this.prepararPreviaLoteRegisto();
+      return;
+    }
+
     if (!tipo.requerProjeto) {
       // Atividade que não é de projeto (Formação interna, etc.) — sem projeto nem tarefa.
       if (!pessoa || !data || !horas || horas <= 0) {
@@ -5345,6 +5406,125 @@ const App = {
     this.renderTarefasRegisto();
     e.regHoras.value = '';
     e.regNotas.value = '';
+  },
+  // Valida os campos do registo em lote e calcula a distribuição, mas não grava nada ainda — só
+  // abre a pré-visualização (abrirModalPreviaLoteRegisto). Pensado para consultores sem acesso à
+  // app: o Gestor sabe quantas horas totais alguém dedicou a uma tarefa, mas não tem paciência (nem
+  // motivo) para lançar dia a dia — ver a conversa de desenho no histórico.
+  prepararPreviaLoteRegisto() {
+    const e = this.els;
+    const pessoa = e.regPessoa.value;
+    const projetoIdInterno = e.regProjeto.value;
+    const tarefaSelecionadaId = e.regTarefa.value;
+    const totalHoras = parseFloat(e.regHoras.value);
+    const de = e.regLoteDe.value, ate = e.regLoteAte.value;
+    const notas = e.regNotas.value.trim();
+    const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
+
+    if (!pessoa || !projetoIdInterno || !tarefaSelecionadaId || !totalHoras || totalHoras <= 0 || !de || !ate) {
+      e.regMsg.textContent = 'Preenche pessoa, projeto, tarefa, período (De/Até) e o total de horas.';
+      e.regMsg.style.color = 'var(--vermelho)';
+      return;
+    }
+    if (de > ate) {
+      e.regMsg.textContent = 'A data "De" não pode ser depois da data "Até".';
+      e.regMsg.style.color = 'var(--vermelho)';
+      return;
+    }
+    if (!this.recursosPermitidosRegisto().some(r => r.nome === pessoa) || !this.projetosRegistoPermitidos().some(p => p.idInterno === projetoIdInterno)) {
+      e.regMsg.textContent = 'Não tens permissão para registar horas nesta pessoa/projeto.';
+      e.regMsg.style.color = 'var(--vermelho)';
+      return;
+    }
+    const proj = Object.values(this.state.projetos).find(pr => pr.idInterno === projetoIdInterno);
+    const tarefaReal = this.tarefasDoProjetoParaPessoaRegisto(projetoIdInterno, pessoa).find(t => t.id === tarefaSelecionadaId);
+    if (!tarefaReal) {
+      e.regMsg.textContent = 'A tarefa escolhida já não está disponível — escolhe-a outra vez.';
+      e.regMsg.style.color = 'var(--vermelho)';
+      this.renderTarefasRegisto();
+      return;
+    }
+    if (tarefaReal.progresso >= 100 && !confirm(`A tarefa "${tarefaReal.nome}" já está marcada como concluída (100%). Registar horas nela na mesma?`)) return;
+    const recurso = this.state.recursos.find(r => r.nome === pessoa);
+
+    // Dias em que a pessoa está mesmo disponível (sem fins de semana, feriados, nem ausências
+    // aprovadas dela) — nunca uma divisão ingénua pelos dias corridos do período, senão apareciam
+    // horas lançadas num sábado ou durante férias. Mesma conta usada em todo o motor de Capacidade.
+    Capacidade.limparCaches();
+    const diasDisponiveis = [];
+    for (let d = DateUtil.parseISO(de); d <= DateUtil.parseISO(ate); d = DateUtil.addDays(d, 1)) {
+      if (Capacidade.capacidadeDiaria(d, recurso) > 0) diasDisponiveis.push(DateUtil.toISO(d));
+    }
+    if (!diasDisponiveis.length) {
+      e.regMsg.textContent = 'Não há nenhum dia disponível para esta pessoa neste período (fins de semana, feriados ou ausências cobrem tudo).';
+      e.regMsg.style.color = 'var(--vermelho)';
+      return;
+    }
+    // Um dia que já tenha registo desta pessoa nesta tarefa fica de fora — nunca soma por cima às
+    // cegas de um registo já existente.
+    const diasComRegistoExistente = new Set(this.state.registos.filter(r => r.pessoa === pessoa && r.tarefaId === tarefaReal.id).map(r => r.data));
+    const diasParaDistribuir = diasDisponiveis.filter(d => !diasComRegistoExistente.has(d));
+    if (!diasParaDistribuir.length) {
+      e.regMsg.textContent = 'Todos os dias disponíveis deste período já têm registo desta pessoa nesta tarefa.';
+      e.regMsg.style.color = 'var(--vermelho)';
+      return;
+    }
+    // Reparte em passos de 0,25h; a diferença de arredondamento fica sempre no último dia, para a
+    // soma dar exatamente o total pedido — nunca menos nem mais por causa do arredondamento.
+    const n = diasParaDistribuir.length;
+    const base = Math.floor((totalHoras / n) / 0.25) * 0.25;
+    const linhas = diasParaDistribuir.map(dataDia => ({ data: dataDia, horas: base }));
+    linhas[linhas.length - 1].horas = Math.round((base + (totalHoras - base * n)) * 100) / 100;
+
+    const dadosComuns = {
+      pessoa, projetoIdInterno, projetoNome: proj ? proj.nome : projetoIdInterno, projetoId: proj ? proj.id : null,
+      cliente: proj ? (proj.cliente || '') : '', tarefaNome: tarefaReal.nome, tarefaId: tarefaReal.id,
+      tipoTrabalhoId: tipo.id, notas
+    };
+    this.abrirModalPreviaLoteRegisto({ linhas, diasComRegistoExistente: [...diasComRegistoExistente].filter(d => diasDisponiveis.includes(d)), dadosComuns, tarefaReal });
+  },
+  // Mostra o resultado da distribuição antes de gravar nada — dia a dia, com o total, avisos (dias
+  // acima de um dia normal de trabalho, dias excluídos por já terem registo) e só grava ao confirmar.
+  abrirModalPreviaLoteRegisto({ linhas, diasComRegistoExistente, dadosComuns, tarefaReal }) {
+    const somaFinal = linhas.reduce((s, l) => s + l.horas, 0);
+    const avisos = [];
+    if (linhas.some(l => l.horas > Capacidade.HORAS_DIA)) {
+      avisos.push(`⚠ Pelo menos um dia fica com mais de ${Capacidade.HORAS_DIA}h — confirma se faz sentido antes de gravar.`);
+    }
+    if (diasComRegistoExistente.length) {
+      avisos.push(`${diasComRegistoExistente.length} dia(s) já tinham registo desta pessoa nesta tarefa e ficam de fora: ${diasComRegistoExistente.map(d => DateUtil.formatShort(DateUtil.parseISO(d))).join(', ')}.`);
+    }
+    const html = `
+      <p>Vai criar <b>${linhas.length}</b> registo(s) para <b>${escapeHtml(dadosComuns.pessoa)}</b>, na tarefa <b>${escapeHtml(tarefaReal.nome)}</b>, somando <b>${somaFinal.toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</b>.</p>
+      ${avisos.map(a => `<p class="hint" style="color:var(--amarelo);">${escapeHtml(a)}</p>`).join('')}
+      <div class="table-scroll" style="max-height:40vh;">
+        <table class="tabela-crud"><thead><tr><th>Data</th><th style="text-align:right;">Horas</th></tr></thead>
+          <tbody>${linhas.map(l => `<tr><td>${DateUtil.formatShort(DateUtil.parseISO(l.data))}</td><td style="text-align:right;">${l.horas.toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;">
+        <button type="button" class="btn btn-primary" id="btnConfirmarLoteRegisto">Confirmar e registar</button>
+        <button type="button" class="btn btn-sm" id="btnCancelarLoteRegisto">Cancelar</button>
+      </div>`;
+    this.abrirModal('Pré-visualização — registo em lote', html);
+    const m = this.els.modalCorpo;
+    m.querySelector('#btnCancelarLoteRegisto').addEventListener('click', () => this.fecharModal());
+    m.querySelector('#btnConfirmarLoteRegisto').addEventListener('click', () => {
+      const listaDados = linhas.map(l => Object.assign({}, dadosComuns, {
+        data: l.data, horas: l.horas, origem: 'app-gestor-lote', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
+      }));
+      this.submeterRegistosLote(listaDados);
+      this.fecharModal();
+      const e = this.els;
+      e.regMsg.textContent = `${listaDados.length} registo(s) criado(s) (${somaFinal.toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h no total).`;
+      e.regMsg.style.color = 'var(--verde)';
+      e.regHoras.value = '';
+      e.regNotas.value = '';
+      e.regModoLote.checked = false;
+      e.regProjeto.value = '';
+      this.renderTarefasRegisto();
+      this.aplicarModoLoteRegisto();
+    });
   },
   aplicarFiltrosRegisto() {
     const e = this.els;
@@ -6650,7 +6830,10 @@ const App = {
     const ps = this.pontoSituacaoDaReuniao(p);
     if (!ps) { this.toast('Este projeto ainda não tem nenhum Ponto de Situação — cria primeiro um com o botão "+ Ponto de Situação" (ou pede a um Administrador).'); return; }
     const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
-    const opcoesTarefa = tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+    // Nome COM a cadeia de tarefas-pai (ver rotuloTarefaComPai) — sem isto, duas tarefas com o
+    // mesmo nome em sessões/fases diferentes (ex.: "Reconhecimento de Processos" em duas sessões)
+    // ficavam indistinguíveis nesta lista, e não dava para perceber onde se estava mesmo a alocar.
+    const opcoesTarefa = tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(this.rotuloTarefaComPai(p, t))}</option>`).join('');
     const consultores = this.consultoresDoProjeto(p);
     const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const temTarefas = tarefasFolha.length > 0;
@@ -7054,7 +7237,8 @@ const App = {
     e.corpoNextStepsGlobal.innerHTML = ordenadas.length ? '' : '<tr class="empty-row"><td colspan="13" style="text-align:center;color:var(--cinza-500);padding:20px">Sem next steps para os filtros selecionados.</td></tr>';
     ordenadas.forEach(({ p, pp }) => {
       const tarefasFolha = this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id)).map(x => x.tarefa);
-      const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+      // Idem — ver a nota em abrirModalNovoProximoPasso.
+      const opcoesTarefa = '<option value="">—</option>' + tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(this.rotuloTarefaComPai(p, t))}</option>`).join('');
       const sessoesOrdenadas = [...p.pontosSituacao].sort((a, b) => a.data.localeCompare(b.data) || a.criadoEm.localeCompare(b.criadoEm));
       const opcoesSessaoLinha = sessoesOrdenadas.map(ps => `<option value="${ps.id}">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 30)) : ''}</option>`).join('');
       const consultores = this.consultoresDoProjeto(p);
@@ -8572,6 +8756,8 @@ const App = {
     e.regPessoa.addEventListener('change', () => this.renderProjetosRegisto());
     e.regProjeto.addEventListener('change', () => this.renderTarefasRegisto());
     e.regTipo.addEventListener('change', () => this.aplicarTipoRegisto());
+    if (e.regTarefa) e.regTarefa.addEventListener('change', () => this.aplicarModoLoteRegisto());
+    if (e.regModoLote) e.regModoLote.addEventListener('change', () => this.aplicarModoLoteRegisto());
     e.formRegisto.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormRegisto(); });
     [e.fRegPessoa, e.fRegProjeto, e.fRegDe, e.fRegAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosRegisto()));
     e.fRegTexto.addEventListener('input', () => this.aplicarFiltrosRegisto());

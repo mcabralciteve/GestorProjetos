@@ -871,7 +871,7 @@
           <label>Pessoa <span style="color:var(--vermelho);">*</span>
             <select id="regPessoa" required><option value="">Seleciona…</option></select>
           </label>
-          <label>Data <span style="color:var(--vermelho);">*</span>
+          <label id="regDataWrap">Data <span style="color:var(--vermelho);">*</span>
             <input type="date" id="regData" required>
           </label>
         </div>
@@ -886,13 +886,20 @@
             <select id="regTarefa"><option value="">Seleciona…</option></select>
           </label>
         </div>
-        <label>Horas <span style="color:var(--vermelho);">*</span>
+        <label id="regModoLoteWrap" style="flex-direction:row;align-items:center;gap:8px;display:none;">
+          <input type="checkbox" id="regModoLote"> Registar o total de horas da tarefa, a repartir automaticamente pelos dias úteis disponíveis da pessoa (em vez de dia a dia) — para consultores sem acesso à app, por exemplo.
+        </label>
+        <div class="row-2" id="regLotePeriodoWrap" style="display:none;">
+          <label>De <input type="date" id="regLoteDe"></label>
+          <label>Até <input type="date" id="regLoteAte"></label>
+        </div>
+        <label>Horas <span style="color:var(--vermelho);">*</span> <span class="hint" id="regHorasHint"></span>
           <input type="number" id="regHoras" min="0.25" step="0.25" placeholder="ex.: 2.5" required>
         </label>
         <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
           <textarea id="regNotas" rows="2"></textarea>
         </label>
-        <button type="submit" class="btn btn-primary">Registar Horas</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmeterRegisto">Registar Horas</button>
         <span id="regMsg" class="calc-line" style="border:none;padding:0;margin-left:10px;display:inline-block;"></span>
         <p class="hint" style="margin-top:10px;"><span style="color:var(--vermelho);">*</span> campo obrigatório</p>
       </form>
@@ -1125,6 +1132,6 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/app.js?v=20260929i"></script>
+<script src="js/app.js?v=20260930a"></script>
 </body>
 </html>
