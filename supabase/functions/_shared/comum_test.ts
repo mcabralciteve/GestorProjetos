@@ -1,8 +1,8 @@
 import { assertEquals } from 'jsr:@std/assert@1';
 import { elegiveis, enviar, type Recurso } from './comum.ts';
 
-const r = (id: string, email: string, auth: string | null, lembretes: boolean | null): Recurso =>
-  ({ id, nome: id, email, auth_user_id: auth, lembretes_email: lembretes });
+const r = (id: string, email: string, auth: string | null, lembretes: boolean | null, piloto: boolean | null = null): Recurso =>
+  ({ id, nome: id, email, auth_user_id: auth, lembretes_email: lembretes, piloto_lembretes: piloto });
 
 const todos = [
   r('com-conta', 'a@x.pt', 'u1', true),
@@ -12,14 +12,25 @@ const todos = [
   r('coluna-nula', 'e@x.pt', 'u5', null), // linha antiga, antes da coluna existir -> conta como ligado
 ];
 
-Deno.test('só quem tem conta, email e não desligou os lembretes', () => {
-  assertEquals(elegiveis(todos, '').map(x => x.id), ['com-conta', 'coluna-nula']);
+Deno.test('só quem tem conta, email e não desligou os lembretes (piloto desligado: ignora piloto_lembretes)', () => {
+  assertEquals(elegiveis(todos, '', false).map(x => x.id), ['com-conta', 'coluna-nula']);
 });
 
 Deno.test('apenas restringe a um endereço, sem distinguir maiúsculas', () => {
-  assertEquals(elegiveis(todos, 'a@x.pt').map(x => x.id), ['com-conta']);
-  assertEquals(elegiveis([r('m', 'Ana@X.pt', 'u', true)], 'ana@x.pt').length, 1);
-  assertEquals(elegiveis(todos, 'd@x.pt'), []); // quem desligou nunca é apanhado, nem por "apenas"
+  assertEquals(elegiveis(todos, 'a@x.pt', false).map(x => x.id), ['com-conta']);
+  assertEquals(elegiveis([r('m', 'Ana@X.pt', 'u', true)], 'ana@x.pt', false).length, 1);
+  assertEquals(elegiveis(todos, 'd@x.pt', false), []); // quem desligou nunca é apanhado, nem por "apenas"
+});
+
+Deno.test('modo piloto: só quem o Administrador marcou (piloto_lembretes=true) entra, mesmo com "apenas"', () => {
+  const comPiloto = [
+    r('marcado', 'f@x.pt', 'u6', true, true),
+    r('nao-marcado', 'g@x.pt', 'u7', true, false),
+    r('nulo', 'h@x.pt', 'u8', true, null), // linha antiga, antes da coluna existir -> fora do piloto
+  ];
+  assertEquals(elegiveis(comPiloto, '', true).map(x => x.id), ['marcado']);
+  assertEquals(elegiveis(comPiloto, 'g@x.pt', true), []); // "apenas" nunca contorna o piloto
+  assertEquals(elegiveis(comPiloto, 'f@x.pt', true).map(x => x.id), ['marcado']);
 });
 
 // Mocka fetch (sem tocar na rede a sério) para confirmar duas coisas do envio pelo Microsoft

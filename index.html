@@ -484,6 +484,7 @@
             <th data-col="precoVenda" data-sort="precoVenda">Preço venda (€/h)<span class="col-resizer"></span></th>
             <th data-col="margem" data-sort="margem">Margem bruta<span class="col-resizer"></span></th>
             <th data-col="acesso" data-sort="acesso">Acesso<span class="col-resizer"></span></th>
+            <th data-col="piloto" title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições">Piloto<span class="col-resizer"></span></th>
             <th></th>
           </tr>
         </thead>
@@ -738,6 +739,8 @@
       <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="defLembreteHoras"> Enviar lembretes de horas em falta</label>
       <label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="defLembreteAgenda"> Enviar a agenda do dia (tarefas previstas para hoje)</label>
       <p class="pagina-sub" style="margin:0;">Cada pessoa pode desligar estes emails em "A minha conta". A agenda do dia tem a sua própria função no servidor (supabase/functions/lembrete-agenda).</p>
+      <label style="flex-direction:row;align-items:center;gap:8px;margin-top:6px;"><input type="checkbox" id="defLembretePiloto"> Modo piloto — só enviar a quem estiver marcado em Pessoas (coluna "Piloto")</label>
+      <p class="pagina-sub" style="margin:0;">Útil enquanto a app ainda não está disseminada a toda a gente: liga isto e marca só os colegas do piloto em Configurações → Pessoas — ninguém mais recebe lembretes automáticos, mesmo que os dois interruptores acima estejam ligados. Desliga quando quiseres voltar a enviar a toda a gente.</p>
       <button class="btn btn-primary" id="btnGuardarDefinicoes" style="margin-top:10px;">Guardar</button>
       <span id="defMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
@@ -1124,7 +1127,7 @@
 <script src="lib/jszip.min.js"></script>
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
-<script src="js/sync.js?v=20260929g"></script>
+<script src="js/sync.js?v=20260930b"></script>
 <script src="js/gantt.js?v=20260928c"></script>
 <script src="js/capacidade.js?v=20260929c"></script>
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
@@ -1132,6 +1135,6 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/app.js?v=20260930a"></script>
+<script src="js/app.js?v=20260930b"></script>
 </body>
 </html>

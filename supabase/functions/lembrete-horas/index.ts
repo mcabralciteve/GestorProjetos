@@ -34,14 +34,14 @@ Deno.serve(async (req) => {
   const db = criarDb();
   const hoje = hojeEmLisboa();
 
-  const { data: cfg, error: erroCfg } = await db.from('configuracoes').select('lembrete_horas_ativo').eq('id', 1).maybeSingle();
+  const { data: cfg, error: erroCfg } = await db.from('configuracoes').select('lembrete_horas_ativo,lembretes_piloto_ativo').eq('id', 1).maybeSingle();
   if (erroCfg) return resposta({ erro: String(erroCfg.message ?? erroCfg) }, 500);
   if (!cfg?.lembrete_horas_ativo && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'interruptor desligado nas Definições' });
 
   const [{ data: feriadosRaw }, ausencias, recursos] = await Promise.all([
     db.from('feriados').select('data'),
     lerTudo<Ausencia>((de, ate) => db.from('ausencias').select('recurso_id,data_inicio,data_fim,estado').range(de, ate)),
-    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email').range(de, ate)),
+    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes').range(de, ate)),
   ]);
   const feriados = new Set((feriadosRaw ?? []).map((f: { data: string }) => f.data));
   if (!ehDiaUtil(hoje, feriados) && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'hoje não é dia útil' });
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   const registos = await lerTudo<Registo>((de, ate) => db.from('registos').select('pessoa,data,horas').gte('data', desde).range(de, ate));
   const horas = indexarHoras(registos);
 
-  const candidatos = elegiveis(recursos, p.apenas);
+  const candidatos = elegiveis(recursos, p.apenas, cfg?.lembretes_piloto_ativo === true);
   const resultado: Resultado[] = [];
   for (const r of candidatos) {
     const dias = diasEmFalta(r.id, r.nome, hoje, DIAS_JANELA, feriados, ausencias, horas);

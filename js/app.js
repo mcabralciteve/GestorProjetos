@@ -379,6 +379,7 @@ const App = {
       defEmailRH: document.getElementById('defEmailRH'),
       defLembreteHoras: document.getElementById('defLembreteHoras'),
       defLembreteAgenda: document.getElementById('defLembreteAgenda'),
+      defLembretePiloto: document.getElementById('defLembretePiloto'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
       ocupLimiteBaixo: document.getElementById('ocupLimiteBaixo'),
@@ -660,7 +661,7 @@ const App = {
       if (eq.liderId === undefined) eq.liderId = null;
       if (eq.departamentoId === undefined) eq.departamentoId = null;
     });
-    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; });
+    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; });
     if (!this.state.registos) this.state.registos = [];
     this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
     if (!this.state.ausencias) this.state.ausencias = [];
@@ -685,6 +686,7 @@ const App = {
     if (cfg.emailRH === undefined) cfg.emailRH = '';
     if (cfg.lembreteHorasAtivo === undefined) cfg.lembreteHorasAtivo = false;
     if (cfg.lembreteAgendaAtivo === undefined) cfg.lembreteAgendaAtivo = false;
+    if (cfg.lembretesPilotoAtivo === undefined) cfg.lembretesPilotoAtivo = false;
     if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
     if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
     if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
@@ -1193,7 +1195,7 @@ const App = {
     };
   },
   novoRecursoObj(nome, papel, precoCusto, precoVenda, equipaId, email) {
-    return { id: crypto.randomUUID(), nome: nome || 'Recurso', email: email || '', papel: papel || '', equipaId: equipaId || null, precoCusto: precoCusto || 0, precoVenda: precoVenda || 0 };
+    return { id: crypto.randomUUID(), nome: nome || 'Recurso', email: email || '', papel: papel || '', equipaId: equipaId || null, precoCusto: precoCusto || 0, precoVenda: precoVenda || 0, pilotoLembretes: false };
   },
   novoFeriadoObj(data, descricao) {
     return { id: crypto.randomUUID(), data: data || DateUtil.todayISO(), descricao: descricao || '' };
@@ -2048,6 +2050,7 @@ const App = {
       if (novaEquipaId !== r.equipaId) this.registarMudancaEquipa(r, novaEquipaId);
       r.equipaId = novaEquipaId;
     }
+    else if (campo === 'pilotoLembretes') r.pilotoLembretes = !!valor;
     else r[campo] = parseFloat(valor) || 0;
     this.persist();
     this.renderTabelaRecursosCentral();
@@ -4093,6 +4096,7 @@ const App = {
         <td><input type="number" min="0" step="0.5" value="${r.precoVenda}" data-campo="precoVenda" style="width:80px"></td>
         <td>${margem.toFixed(1)}%</td>
         <td>${perfil ? `<select data-acesso style="min-width:110px"><option value="user" ${perfil.papel === 'user' ? 'selected' : ''}>Utilizador</option><option value="admin" ${perfil.papel === 'admin' ? 'selected' : ''}>Administrador</option></select>` : '<span class="hint">Sem conta</span>'}</td>
+        <td style="text-align:center;"><input type="checkbox" data-campo="pilotoLembretes" ${r.pilotoLembretes ? 'checked' : ''} title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições"></td>
         <td class="col-acoes">
           <button class="btn btn-sm" data-acao="alocacoes" title="Ver projetos, atividades e datas em que este consultor está alocado">📅 Alocações</button>
           <button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>
@@ -4101,7 +4105,9 @@ const App = {
       this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="nome"]'));
       this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="email"]'));
       tr.querySelectorAll('[data-campo]').forEach(inp => {
-        inp.addEventListener('change', () => this.atualizarRecurso(r.id, inp.dataset.campo, inp.value));
+        // Uma checkbox (ex.: "pilotoLembretes") não tem nada de útil em ".value" (é sempre "on") —
+        // o que importa é ".checked".
+        inp.addEventListener('change', () => this.atualizarRecurso(r.id, inp.dataset.campo, inp.type === 'checkbox' ? inp.checked : inp.value));
       });
       const selAcesso = tr.querySelector('[data-acesso]');
       if (selAcesso) {
@@ -8198,6 +8204,7 @@ const App = {
     if (document.activeElement !== e.defEmailRH) e.defEmailRH.value = c.emailRH || '';
     if (e.defLembreteHoras && document.activeElement !== e.defLembreteHoras) e.defLembreteHoras.checked = !!c.lembreteHorasAtivo;
     if (e.defLembreteAgenda && document.activeElement !== e.defLembreteAgenda) e.defLembreteAgenda.checked = !!c.lembreteAgendaAtivo;
+    if (e.defLembretePiloto && document.activeElement !== e.defLembretePiloto) e.defLembretePiloto.checked = !!c.lembretesPilotoAtivo;
     if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
     if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
     if (document.activeElement !== e.ocupLimiteCritico) e.ocupLimiteCritico.value = c.ocupacaoLimiteCritico ?? 100;
@@ -8212,8 +8219,12 @@ const App = {
     try {
       const lembreteHorasAtivo = !!(e.defLembreteHoras && e.defLembreteHoras.checked);
       const lembreteAgendaAtivo = !!(e.defLembreteAgenda && e.defLembreteAgenda.checked);
-      await Sync.atualizarConfiguracoes({ email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH, lembrete_horas_ativo: lembreteHorasAtivo, lembrete_agenda_ativo: lembreteAgendaAtivo });
-      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo, lembreteAgendaAtivo });
+      const lembretesPilotoAtivo = !!(e.defLembretePiloto && e.defLembretePiloto.checked);
+      await Sync.atualizarConfiguracoes({
+        email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH,
+        lembrete_horas_ativo: lembreteHorasAtivo, lembrete_agenda_ativo: lembreteAgendaAtivo, lembretes_piloto_ativo: lembretesPilotoAtivo
+      });
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo, lembreteAgendaAtivo, lembretesPilotoAtivo });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {

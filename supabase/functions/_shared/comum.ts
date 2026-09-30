@@ -12,7 +12,10 @@ const MS_SENDER_EMAIL = Deno.env.get('MS_SENDER_EMAIL') ?? '';
 export const APP_URL = Deno.env.get('APP_URL') ?? 'https://mcabralciteve.github.io/GestorProjetos/';
 
 export interface Email { assunto: string; texto: string; html: string }
-export interface Recurso { id: string; nome: string; email: string; auth_user_id: string | null; lembretes_email: boolean | null }
+export interface Recurso {
+  id: string; nome: string; email: string; auth_user_id: string | null; lembretes_email: boolean | null;
+  piloto_lembretes: boolean | null;
+}
 
 export const resposta = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo, null, 2), { status, headers: { 'Content-Type': 'application/json' } });
@@ -49,10 +52,15 @@ export async function lerTudo<T>(consulta: (de: number, ate: number) => PromiseL
 }
 
 // Quem pode receber lembretes: tem conta na app (auth_user_id), tem email, e não desligou os
-// lembretes em "A minha conta" (lembretes_email = false). "apenas" restringe a um endereço (testes).
-export function elegiveis(recursos: Recurso[], apenas: string): Recurso[] {
+// lembretes em "A minha conta" (lembretes_email = false). Em "modo piloto" (Configurações →
+// Definições — enquanto a app ainda não está disseminada a toda a gente), só entra quem o
+// Administrador marcou explicitamente em Pessoas (piloto_lembretes = true); tal como
+// lembretes_email, isto NUNCA é contornado por "apenas" — "apenas" só aponta um lote já elegível a
+// um endereço, nunca dispensa as próprias regras de elegibilidade.
+export function elegiveis(recursos: Recurso[], apenas: string, pilotoAtivo: boolean): Recurso[] {
   return recursos.filter(r =>
     r.auth_user_id && (r.email ?? '').trim() && r.lembretes_email !== false &&
+    (!pilotoAtivo || r.piloto_lembretes === true) &&
     (!apenas || r.email.trim().toLowerCase() === apenas));
 }
 
