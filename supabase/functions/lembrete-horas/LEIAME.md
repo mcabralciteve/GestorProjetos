@@ -18,14 +18,29 @@ email** estiver desligado (vem desligado por omissão).
    ```
    (Sem isto, "Guardar" nas Definições dá erro "Could not find the 'lembrete_horas_ativo' column".)
 
-2. **Serviço de email (Resend, resend.com).** Cria conta, adiciona e verifica o domínio de envio
-   (registos SPF/DKIM — pede ao IT do CITEVE) e cria uma API key. Sem domínio verificado só dá
-   para enviar para o teu próprio email, o que serve para testar.
+2. **Envio pelo Microsoft Graph (Office 365)** — a app autentica-se como ela mesma junto do Azure AD
+   (client credentials, sem login de ninguém) e envia pela caixa `MS_SENDER_EMAIL`. O IT interno tem
+   de preparar, no Azure AD (Entra ID) do tenant:
+   - Um **App registration** dedicado (ex.: "GestorProjetos — Lembretes"), com um **Client secret**.
+   - Permissão de API **Microsoft Graph → Application → `Mail.Send`**, com **consentimento de
+     administrador** concedido (só um Global Admin consegue).
+   - Uma **Application Access Policy** (Exchange Online PowerShell) a restringir esta app a só poder
+     enviar pela caixa `MS_SENDER_EMAIL` — sem isto, a permissão `Mail.Send` (Application) deixa a
+     app enviar como QUALQUER caixa do tenant:
+     ```powershell
+     Connect-ExchangeOnline
+     New-DistributionGroup -Name "GraphMailSenders-Lembretes" -Members <MS_SENDER_EMAIL> -Type Security
+     New-ApplicationAccessPolicy -AppId <MS_CLIENT_ID> -PolicyScopeGroupId "GraphMailSenders-Lembretes" -AccessRight RestrictAccess -Description "Só pode enviar como <MS_SENDER_EMAIL>"
+     Test-ApplicationAccessPolicy -AppId <MS_CLIENT_ID> -Identity <MS_SENDER_EMAIL>   # tem de dar "Granted"
+     ```
+   - A caixa `MS_SENDER_EMAIL` (partilhada, não pessoal) já criada no Exchange Online.
+
+   Do IT precisas de: **Tenant ID**, **Client ID**, **Client Secret** e a confirmação da caixa.
 
 3. **Publicar a função** (Supabase CLI, na pasta do projeto, com `supabase login` e
    `supabase link --project-ref <ref>` feitos):
    ```bash
-   supabase secrets set CRON_SECRET="<inventa uma frase longa e aleatória>" RESEND_API_KEY="re_..." EMAIL_FROM="Gestor de Projetos <lembretes@teudominio.pt>"
+   supabase secrets set CRON_SECRET="<inventa uma frase longa e aleatória>" MS_TENANT_ID="<tenant id>" MS_CLIENT_ID="<client id>" MS_CLIENT_SECRET="<client secret>" MS_SENDER_EMAIL="lembretes.dtd@citeve.pt"
    supabase functions deploy lembrete-horas --no-verify-jwt
    ```
    `--no-verify-jwt` é necessário porque quem a chama é o agendador, não um utilizador; a função

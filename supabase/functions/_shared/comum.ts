@@ -1,11 +1,14 @@
 // Peças comuns às funções de lembrete (lembrete-horas, lembrete-agenda): autenticação por segredo
-// partilhado, leitura paginada, envio pelo Resend e os parâmetros de teste (?dry, ?apenas,
-// ?destino, ?forcar). Cada função só decide QUEM recebe e O QUÊ.
+// partilhado, leitura paginada, envio pelo Microsoft Graph (Office 365, app-only via client
+// credentials — ver obterTokenGraph) e os parâmetros de teste (?dry, ?apenas, ?destino, ?forcar).
+// Cada função só decide QUEM recebe e O QUÊ.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? '';
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const EMAIL_FROM = Deno.env.get('EMAIL_FROM') ?? '';
+const MS_TENANT_ID = Deno.env.get('MS_TENANT_ID') ?? '';
+const MS_CLIENT_ID = Deno.env.get('MS_CLIENT_ID') ?? '';
+const MS_CLIENT_SECRET = Deno.env.get('MS_CLIENT_SECRET') ?? '';
+const MS_SENDER_EMAIL = Deno.env.get('MS_SENDER_EMAIL') ?? '';
 export const APP_URL = Deno.env.get('APP_URL') ?? 'https://mcabralciteve.github.io/GestorProjetos/';
 
 export interface Email { assunto: string; texto: string; html: string }
@@ -53,13 +56,49 @@ export function elegiveis(recursos: Recurso[], apenas: string): Recurso[] {
     (!apenas || r.email.trim().toLowerCase() === apenas));
 }
 
-export async function enviar(para: string, email: Email) {
-  const r = await fetch('https://api.resend.com/emails', {
+// Token de acesso ao Microsoft Graph, obtido por "client credentials" (a própria app a autenticar-
+// se como ela mesma junto do Azure AD — nenhum login de pessoa nenhuma está envolvido, é o fluxo
+// "app-only" que o Azure exige em vez de OAuth interativo para um serviço automático como este).
+// Guardado em memória e reaproveitado enquanto não estiver perto de expirar: sem isto, uma única
+// execução que despache dezenas de emails pediria um token novo por cada um.
+let tokenCache: { valor: string; expiraEm: number } | null = null;
+
+async function obterTokenGraph(): Promise<string> {
+  if (tokenCache && Date.now() < tokenCache.expiraEm) return tokenCache.valor;
+  const r = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: EMAIL_FROM, to: [para], subject: email.assunto, text: email.texto, html: email.html }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: MS_CLIENT_ID,
+      client_secret: MS_CLIENT_SECRET,
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    }),
   });
-  if (!r.ok) throw new Error(`Resend ${r.status}: ${await r.text()}`);
+  if (!r.ok) throw new Error(`Token Microsoft Graph ${r.status}: ${await r.text()}`);
+  const j = await r.json();
+  // 60s de margem antes do fim real do token — nunca o usa já à beira de expirar a meio de um envio.
+  tokenCache = { valor: j.access_token, expiraEm: Date.now() + (j.expires_in - 60) * 1000 };
+  return tokenCache.valor;
+}
+
+export async function enviar(para: string, email: Email) {
+  const token = await obterTokenGraph();
+  const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MS_SENDER_EMAIL)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        subject: email.assunto,
+        body: { contentType: 'HTML', content: email.html },
+        toRecipients: [{ emailAddress: { address: para } }],
+      },
+      saveToSentItems: false,
+    }),
+  });
+  // sendMail devolve 202 sem corpo quando corre bem; qualquer outro código é erro (ex.: 403 se a
+  // Application Access Policy do Exchange não deixar esta app enviar por MS_SENDER_EMAIL).
+  if (!r.ok) throw new Error(`Microsoft Graph sendMail ${r.status}: ${await r.text()}`);
 }
 
 export interface Resultado { nome: string; email: string; itens: number; estado: string }

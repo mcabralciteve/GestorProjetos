@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { elegiveis, type Recurso } from './comum.ts';
+import { elegiveis, enviar, type Recurso } from './comum.ts';
 
 const r = (id: string, email: string, auth: string | null, lembretes: boolean | null): Recurso =>
   ({ id, nome: id, email, auth_user_id: auth, lembretes_email: lembretes });
@@ -20,4 +20,39 @@ Deno.test('apenas restringe a um endereço, sem distinguir maiúsculas', () => {
   assertEquals(elegiveis(todos, 'a@x.pt').map(x => x.id), ['com-conta']);
   assertEquals(elegiveis([r('m', 'Ana@X.pt', 'u', true)], 'ana@x.pt').length, 1);
   assertEquals(elegiveis(todos, 'd@x.pt'), []); // quem desligou nunca é apanhado, nem por "apenas"
+});
+
+// Mocka fetch (sem tocar na rede a sério) para confirmar duas coisas do envio pelo Microsoft
+// Graph: (1) o pedido de sendMail tem a forma certa (Authorization, destinatário, HTML); (2) o
+// token de acesso só é pedido uma vez e reaproveitado nos envios seguintes (ver obterTokenGraph).
+Deno.test('enviar: chama o Graph com o token certo, e reaproveita o token em envios seguintes', async () => {
+  const original = globalThis.fetch;
+  let pedidosDeToken = 0;
+  const corposEnviados: Record<string, unknown>[] = [];
+  // deno-lint-ignore no-explicit-any
+  globalThis.fetch = ((input: any, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('login.microsoftonline.com')) {
+      pedidosDeToken++;
+      return Promise.resolve(new Response(JSON.stringify({ access_token: 'tok-123', expires_in: 3600 }), { status: 200 }));
+    }
+    if (url.includes('graph.microsoft.com') && url.endsWith('/sendMail')) {
+      assertEquals((init?.headers as Record<string, string>).Authorization, 'Bearer tok-123');
+      corposEnviados.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(new Response(null, { status: 202 }));
+    }
+    throw new Error('URL inesperado no mock: ' + url);
+  }) as typeof fetch;
+  try {
+    await enviar('destino@x.pt', { assunto: 'Assunto A', texto: 'texto', html: '<p>Corpo A</p>' });
+    await enviar('destino@x.pt', { assunto: 'Assunto B', texto: 'texto', html: '<p>Corpo B</p>' });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assertEquals(pedidosDeToken, 1); // 2º envio reaproveitou o token em cache, não pediu outro
+  assertEquals(corposEnviados.length, 2);
+  const msg = corposEnviados[0].message as Record<string, unknown>;
+  assertEquals(msg.subject, 'Assunto A');
+  assertEquals((msg.body as Record<string, unknown>).content, '<p>Corpo A</p>');
+  assertEquals(msg.toRecipients, [{ emailAddress: { address: 'destino@x.pt' } }]);
 });

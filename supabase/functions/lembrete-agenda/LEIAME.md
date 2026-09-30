@@ -6,8 +6,8 @@ projetos ativos, atribuídas à pessoa, com hoje dentro do período). Não envia
 tarefas hoje nem a quem está ausente/de férias. Cada pessoa pode desligar estes emails em
 **A minha conta**.
 
-Usa a mesma infraestrutura do lembrete de horas (Resend, `CRON_SECRET`, parâmetros de teste
-`dry`/`apenas`/`destino`/`forcar`) — instala primeiro essa (ver `../lembrete-horas/LEIAME.md`).
+Usa a mesma infraestrutura do lembrete de horas (Microsoft Graph, `CRON_SECRET`, parâmetros de
+teste `dry`/`apenas`/`destino`/`forcar`) — instala primeiro essa (ver `../lembrete-horas/LEIAME.md`).
 
 ## Instalação (uma vez, depois de o lembrete de horas estar a funcionar)
 
