@@ -1,13 +1,14 @@
-// Agenda do dia por email — todos os dias úteis de manhã, cada pessoa com conta que tenha tarefas
-// previstas para hoje recebe a lista (as mesmas do cartão "A minha agenda de hoje" do Início).
-// Mesma proteção, agendamento e parâmetros de teste do lembrete-horas (ver LEIAME.md dessa pasta):
-// ?dry=1, ?apenas=, ?destino=, ?forcar=1. Nada é enviado a quem não tem tarefas hoje, nem a quem
-// está ausente/de férias.
+// Agenda do dia por email — todos os dias úteis, cada pessoa com conta que tenha tarefas previstas
+// para hoje recebe a lista (as mesmas do cartão "A minha agenda de hoje" do Início). Mesma
+// proteção e parâmetros de teste do lembrete-horas (ver o cabeçalho desse index.ts): ?dry=1,
+// ?apenas=, ?destino=, ?forcar=1. Nada é enviado a quem não tem tarefas hoje, nem a quem está
+// ausente/de férias. Hora configurável pelo Administrador (lembrete_agenda_hora) e um só envio por
+// dia (lembrete_agenda_ultimo_envio) — mesmo mecanismo de polling pelo pg_cron do lembrete-horas.
 import {
   APP_URL, autorizado, criarDb, despachar, elegiveis, escapar, lerParametros, lerTudo, resposta,
   type Email, type Recurso, type Resultado,
 } from '../_shared/comum.ts';
-import { ehDiaUtil, formatarDia, hojeEmLisboa } from '../lembrete-horas/logica.ts';
+import { ehDiaUtil, formatarDia, hojeEmLisboa, horaAtualEmLisboa } from '../lembrete-horas/logica.ts';
 import {
   agendaDoDia, indexarAgenda, type Ausencia, type ItemAgenda, type Projeto, type Tarefa, type TarefaRecurso,
 } from './logica.ts';
@@ -32,9 +33,19 @@ Deno.serve(async (req) => {
   const db = criarDb();
   const hoje = hojeEmLisboa();
 
-  const { data: cfg, error: erroCfg } = await db.from('configuracoes').select('lembrete_agenda_ativo,lembretes_piloto_ativo').eq('id', 1).maybeSingle();
+  const { data: cfg, error: erroCfg } = await db.from('configuracoes')
+    .select('lembrete_agenda_ativo,lembretes_piloto_ativo,lembrete_agenda_hora,lembrete_agenda_ultimo_envio').eq('id', 1).maybeSingle();
   if (erroCfg) return resposta({ erro: String(erroCfg.message ?? erroCfg) }, 500);
   if (!cfg?.lembrete_agenda_ativo && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'interruptor desligado nas Definições' });
+
+  const horaConfigurada = cfg?.lembrete_agenda_hora || '07:30';
+  const jaEnviadoHoje = cfg?.lembrete_agenda_ultimo_envio === hoje;
+  if (!p.forcar) {
+    if (jaEnviadoHoje) return resposta({ hoje, enviados: 0, motivo: 'já enviado hoje' });
+    if (horaAtualEmLisboa() < horaConfigurada) {
+      return resposta({ hoje, enviados: 0, motivo: `ainda não é a hora configurada (${horaConfigurada})` });
+    }
+  }
 
   const { data: feriadosRaw } = await db.from('feriados').select('data');
   const feriados = new Set((feriadosRaw ?? []).map((f: { data: string }) => f.data));
@@ -55,5 +66,7 @@ Deno.serve(async (req) => {
     const itens = agendaDoDia(r.id, hoje, indice, ausencias);
     if (itens.length) resultado.push(await despachar(r, itens.length, montarEmail(r.nome, hoje, itens), p));
   }
-  return resposta({ hoje, dry: p.dry, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
+  // Só uma chamada "a sério" marca o dia como feito — ver a mesma nota em lembrete-horas/index.ts.
+  if (!p.dry && !p.forcar) await db.from('configuracoes').update({ lembrete_agenda_ultimo_envio: hoje }).eq('id', 1);
+  return resposta({ hoje, dry: p.dry, horaConfigurada, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
 });

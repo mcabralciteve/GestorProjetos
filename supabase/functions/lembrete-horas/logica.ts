@@ -26,20 +26,33 @@ export function hojeEmLisboa(agora = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon', year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
 }
 
+// "HH:MM" agora em Lisboa — comparável diretamente, como string, com a hora configurada pelo
+// Administrador (também "HH:MM"). Usado para o agendamento por hora configurável (ver index.ts: o
+// pg_cron chama a função de 10 em 10 minutos, e é esta comparação que decide se já é a hora certa).
+export function horaAtualEmLisboa(agora = new Date()): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Lisbon', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(agora);
+}
+
 export function ehDiaUtil(iso: string, feriados: Set<string>): boolean {
   return !ehFimDeSemana(paraUTC(iso)) && !feriados.has(iso);
 }
 
 // Últimos "nDias" dias úteis (sem fim de semana, feriado ou ausência não rejeitada) antes de
-// "hojeISO" em que o total de horas registadas fica abaixo de HORAS_DIA. "hoje" nunca conta.
+// "hojeISO" em que o total de horas registadas fica abaixo de HORAS_DIA.
+// "incluirHoje": por omissão "hoje" nunca conta (é o critério também usado no Dashboard —
+// App.diasIncompletosRecurso — onde faz sempre sentido, o dia ainda está a decorrer). Só este
+// lembrete por email, quando configurado para uma hora mais tardia (ver index.ts: horas >= 12:00),
+// passa "incluirHoje=true" — a essa hora o dia já praticamente acabou, por isso faz sentido
+// avisar também do que falta registar hoje, não só dos dias já fechados.
 export function diasEmFalta(
   recursoId: string, nome: string, hojeISO: string, nDias: number,
   feriados: Set<string>, ausencias: Ausencia[], horasPorPessoaDia: Map<string, number>,
+  incluirHoje = false,
 ): DiaEmFalta[] {
   const minhas = ausencias.filter(a => a.recurso_id === recursoId && a.estado !== 'rejeitada');
   const dias: DiaEmFalta[] = [];
-  let cursor = paraUTC(hojeISO);
-  cursor.setUTCDate(cursor.getUTCDate() - 1);
+  const cursor = paraUTC(hojeISO);
+  if (!incluirHoje) cursor.setUTCDate(cursor.getUTCDate() - 1);
   let vistos = 0, guarda = 0;
   while (vistos < nDias && guarda < nDias * 20 + 90) {
     guarda++;

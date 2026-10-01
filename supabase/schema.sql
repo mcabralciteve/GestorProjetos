@@ -499,6 +499,15 @@ alter table public.recursos add column if not exists lembretes_email boolean not
 -- (envia a toda a gente elegível). Ver App.elegiveis em supabase/functions/_shared/comum.ts.
 alter table public.configuracoes add column if not exists lembretes_piloto_ativo boolean not null default false;
 alter table public.recursos add column if not exists piloto_lembretes boolean not null default false;
+-- Hora de envio configurável pelo Administrador ("HH:MM", fuso de Lisboa) e último dia em que cada
+-- lembrete correu de facto (não um teste/forçado) — o pg_cron passa a chamar as funções de 10 em 10
+-- minutos (ver agendar_lembrete_*.sql), e são ESTAS colunas que decidem, a cada chamada, se já é a
+-- hora certa e se ainda não correu hoje. Muda-se a hora só aqui (Configurações → Definições), nunca
+-- mais é preciso voltar a mexer no agendamento em si.
+alter table public.configuracoes add column if not exists lembrete_horas_hora text not null default '08:00';
+alter table public.configuracoes add column if not exists lembrete_agenda_hora text not null default '07:30';
+alter table public.configuracoes add column if not exists lembrete_horas_ultimo_envio date;
+alter table public.configuracoes add column if not exists lembrete_agenda_ultimo_envio date;
 insert into public.configuracoes (id) values (1) on conflict (id) do nothing;
 
 -- Depois de alterar colunas por SQL direto, força a API (PostgREST) a esquecer a "schema cache"

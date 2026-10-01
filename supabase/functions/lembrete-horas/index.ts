@@ -7,13 +7,20 @@
 //   ?apenas=a@b.pt      só considera esse endereço (envia a essa pessoa, se tiver dias em falta)
 //   ?destino=eu@b.pt    envia TODOS os emails calculados para este endereço (com [TESTE] no assunto),
 //                       em vez de para cada pessoa — combina com ?apenas= para veres o email de um colega
-//   ?forcar=1           corre mesmo num fim de semana/feriado e mesmo com o interruptor desligado
+//   ?forcar=1           corre mesmo num fim de semana/feriado, com o interruptor desligado, antes da
+//                       hora configurada, ou já tendo corrido hoje — e nunca marca "já enviado hoje"
+//                       (um teste manual nunca pode silenciar o envio automático real desse dia)
+//
+// Agendamento: o pg_cron chama esta função de 10 em 10 minutos (ver agendar_lembrete_horas.sql),
+// não só uma vez — é esta função que decide, a cada chamada, se já é a hora configurada em
+// Definições (lembrete_horas_hora) e se ainda não correu hoje (lembrete_horas_ultimo_envio); isto é
+// o que torna a hora configurável pelo Administrador sem nunca mais mexer no SQL do agendamento.
 import {
   APP_URL, autorizado, criarDb, despachar, elegiveis, escapar, lerParametros, lerTudo, resposta,
   type Email, type Recurso, type Resultado,
 } from '../_shared/comum.ts';
 import {
-  DIAS_JANELA, diasEmFalta, ehDiaUtil, formatarDia, formatarHoras, hojeEmLisboa, indexarHoras,
+  DIAS_JANELA, diasEmFalta, ehDiaUtil, formatarDia, formatarHoras, hojeEmLisboa, horaAtualEmLisboa, indexarHoras,
   type Ausencia, type Registo,
 } from './logica.ts';
 
@@ -34,9 +41,23 @@ Deno.serve(async (req) => {
   const db = criarDb();
   const hoje = hojeEmLisboa();
 
-  const { data: cfg, error: erroCfg } = await db.from('configuracoes').select('lembrete_horas_ativo,lembretes_piloto_ativo').eq('id', 1).maybeSingle();
+  const { data: cfg, error: erroCfg } = await db.from('configuracoes')
+    .select('lembrete_horas_ativo,lembretes_piloto_ativo,lembrete_horas_hora,lembrete_horas_ultimo_envio').eq('id', 1).maybeSingle();
   if (erroCfg) return resposta({ erro: String(erroCfg.message ?? erroCfg) }, 500);
   if (!cfg?.lembrete_horas_ativo && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'interruptor desligado nas Definições' });
+
+  const horaConfigurada = cfg?.lembrete_horas_hora || '08:00';
+  const jaEnviadoHoje = cfg?.lembrete_horas_ultimo_envio === hoje;
+  if (!p.forcar) {
+    if (jaEnviadoHoje) return resposta({ hoje, enviados: 0, motivo: 'já enviado hoje' });
+    if (horaAtualEmLisboa() < horaConfigurada) {
+      return resposta({ hoje, enviados: 0, motivo: `ainda não é a hora configurada (${horaConfigurada})` });
+    }
+  }
+  // Às 12:00 ou mais tarde, o dia de trabalho já vai avançado — passa a contar também o próprio dia
+  // nos "dias em falta" (ver a nota grande em diasEmFalta); antes disso, mantém-se o critério de
+  // sempre ignorar "hoje" (ainda a decorrer, como no Dashboard).
+  const incluirHoje = horaConfigurada >= '12:00';
 
   const [{ data: feriadosRaw }, ausencias, recursos] = await Promise.all([
     db.from('feriados').select('data'),
@@ -54,8 +75,11 @@ Deno.serve(async (req) => {
   const candidatos = elegiveis(recursos, p.apenas, cfg?.lembretes_piloto_ativo === true);
   const resultado: Resultado[] = [];
   for (const r of candidatos) {
-    const dias = diasEmFalta(r.id, r.nome, hoje, DIAS_JANELA, feriados, ausencias, horas);
+    const dias = diasEmFalta(r.id, r.nome, hoje, DIAS_JANELA, feriados, ausencias, horas, incluirHoje);
     if (dias.length) resultado.push(await despachar(r, dias.length, montarEmail(r.nome, dias), p));
   }
-  return resposta({ hoje, dry: p.dry, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
+  // Só uma chamada "a sério" (nem de teste/forçada, nem dry) marca o dia como feito — um teste
+  // manual a meio do dia nunca pode impedir o envio automático real de correr mais tarde.
+  if (!p.dry && !p.forcar) await db.from('configuracoes').update({ lembrete_horas_ultimo_envio: hoje }).eq('id', 1);
+  return resposta({ hoje, dry: p.dry, horaConfigurada, incluirHoje, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
 });

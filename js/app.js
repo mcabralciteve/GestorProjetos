@@ -378,7 +378,9 @@ const App = {
       defEmail2: document.getElementById('defEmail2'),
       defEmailRH: document.getElementById('defEmailRH'),
       defLembreteHoras: document.getElementById('defLembreteHoras'),
+      defLembreteHorasHora: document.getElementById('defLembreteHorasHora'),
       defLembreteAgenda: document.getElementById('defLembreteAgenda'),
+      defLembreteAgendaHora: document.getElementById('defLembreteAgendaHora'),
       defLembretePiloto: document.getElementById('defLembretePiloto'),
       btnGuardarDefinicoes: document.getElementById('btnGuardarDefinicoes'),
       defMsg: document.getElementById('defMsg'),
@@ -687,6 +689,8 @@ const App = {
     if (cfg.lembreteHorasAtivo === undefined) cfg.lembreteHorasAtivo = false;
     if (cfg.lembreteAgendaAtivo === undefined) cfg.lembreteAgendaAtivo = false;
     if (cfg.lembretesPilotoAtivo === undefined) cfg.lembretesPilotoAtivo = false;
+    if (cfg.lembreteHorasHora === undefined) cfg.lembreteHorasHora = '08:00';
+    if (cfg.lembreteAgendaHora === undefined) cfg.lembreteAgendaHora = '07:30';
     if (cfg.ocupacaoLimiteBaixo === undefined) cfg.ocupacaoLimiteBaixo = 60;
     if (cfg.ocupacaoLimiteAlto === undefined) cfg.ocupacaoLimiteAlto = 80;
     if (cfg.ocupacaoLimiteCritico === undefined) cfg.ocupacaoLimiteCritico = 100;
@@ -8203,7 +8207,9 @@ const App = {
     if (document.activeElement !== e.defEmail2) e.defEmail2.value = c.emailViaturas2 || '';
     if (document.activeElement !== e.defEmailRH) e.defEmailRH.value = c.emailRH || '';
     if (e.defLembreteHoras && document.activeElement !== e.defLembreteHoras) e.defLembreteHoras.checked = !!c.lembreteHorasAtivo;
+    if (e.defLembreteHorasHora && document.activeElement !== e.defLembreteHorasHora) e.defLembreteHorasHora.value = c.lembreteHorasHora || '08:00';
     if (e.defLembreteAgenda && document.activeElement !== e.defLembreteAgenda) e.defLembreteAgenda.checked = !!c.lembreteAgendaAtivo;
+    if (e.defLembreteAgendaHora && document.activeElement !== e.defLembreteAgendaHora) e.defLembreteAgendaHora.value = c.lembreteAgendaHora || '07:30';
     if (e.defLembretePiloto && document.activeElement !== e.defLembretePiloto) e.defLembretePiloto.checked = !!c.lembretesPilotoAtivo;
     if (document.activeElement !== e.ocupLimiteBaixo) e.ocupLimiteBaixo.value = c.ocupacaoLimiteBaixo ?? 60;
     if (document.activeElement !== e.ocupLimiteAlto) e.ocupLimiteAlto.value = c.ocupacaoLimiteAlto ?? 80;
@@ -8218,13 +8224,17 @@ const App = {
     e.defMsg.textContent = 'A guardar...';
     try {
       const lembreteHorasAtivo = !!(e.defLembreteHoras && e.defLembreteHoras.checked);
+      const lembreteHorasHora = (e.defLembreteHorasHora && e.defLembreteHorasHora.value) || '08:00';
       const lembreteAgendaAtivo = !!(e.defLembreteAgenda && e.defLembreteAgenda.checked);
+      const lembreteAgendaHora = (e.defLembreteAgendaHora && e.defLembreteAgendaHora.value) || '07:30';
       const lembretesPilotoAtivo = !!(e.defLembretePiloto && e.defLembretePiloto.checked);
       await Sync.atualizarConfiguracoes({
         email_viaturas_1: email1, email_viaturas_2: email2, email_rh: emailRH,
-        lembrete_horas_ativo: lembreteHorasAtivo, lembrete_agenda_ativo: lembreteAgendaAtivo, lembretes_piloto_ativo: lembretesPilotoAtivo
+        lembrete_horas_ativo: lembreteHorasAtivo, lembrete_horas_hora: lembreteHorasHora,
+        lembrete_agenda_ativo: lembreteAgendaAtivo, lembrete_agenda_hora: lembreteAgendaHora,
+        lembretes_piloto_ativo: lembretesPilotoAtivo
       });
-      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo, lembreteAgendaAtivo, lembretesPilotoAtivo });
+      Object.assign(this.state.configuracoes, { emailViaturas1: email1, emailViaturas2: email2, emailRH, lembreteHorasAtivo, lembreteHorasHora, lembreteAgendaAtivo, lembreteAgendaHora, lembretesPilotoAtivo });
       e.defMsg.style.color = 'var(--verde)';
       e.defMsg.textContent = 'Definições guardadas.';
     } catch (err) {

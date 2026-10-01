@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { diasEmFalta, ehDiaUtil, hojeEmLisboa, indexarHoras } from './logica.ts';
+import { diasEmFalta, ehDiaUtil, hojeEmLisboa, horaAtualEmLisboa, indexarHoras } from './logica.ts';
 
 // 2026-09-24 é quinta-feira.
 const HOJE = '2026-09-24';
@@ -36,6 +36,16 @@ Deno.test('feriado e ausência aprovada/pendente não contam; rejeitada conta', 
   assertEquals(dias.map(d => d.iso), ['2026-09-17', '2026-09-18', '2026-09-21']);
 });
 
+Deno.test('incluirHoje=true conta também o dia de hoje (lembrete configurado para a tarde/noite)', () => {
+  // Sem incluirHoje (omisso): os 3 dias úteis são 21, 22, 23 (hoje, 24, nunca conta).
+  const semHoje = diasEmFalta('r1', 'Ana', HOJE, 3, sem, [], new Map());
+  assertEquals(semHoje.map(d => d.iso), ['2026-09-21', '2026-09-22', '2026-09-23']);
+  // Com incluirHoje: desliza uma posição — passa a incluir o próprio 24 (hoje) e já não o 21.
+  const comHoje = diasEmFalta('r1', 'Ana', HOJE, 3, sem, [], new Map(), true);
+  assertEquals(comHoje.map(d => d.iso), ['2026-09-22', '2026-09-23', '2026-09-24']);
+  assertEquals(comHoje.every(d => d.faltam === 8), true);
+});
+
 Deno.test('ehDiaUtil', () => {
   assertEquals(ehDiaUtil('2026-09-26', sem), false); // sábado
   assertEquals(ehDiaUtil('2026-09-24', new Set(['2026-09-24'])), false);
@@ -45,4 +55,10 @@ Deno.test('ehDiaUtil', () => {
 Deno.test('hojeEmLisboa: 23:30 UTC de verão já é dia seguinte em Lisboa', () => {
   assertEquals(hojeEmLisboa(new Date('2026-07-01T23:30:00Z')), '2026-07-02');
   assertEquals(hojeEmLisboa(new Date('2026-01-15T23:30:00Z')), '2026-01-15');
+});
+
+Deno.test('horaAtualEmLisboa: "HH:MM" certo, com o deslizamento de hora de verão/inverno', () => {
+  assertEquals(horaAtualEmLisboa(new Date('2026-10-01T17:30:00Z')), '18:30'); // verão, +1h
+  assertEquals(horaAtualEmLisboa(new Date('2026-01-15T17:30:00Z')), '17:30'); // inverno, +0h
+  assertEquals(horaAtualEmLisboa(new Date('2026-10-01T05:05:00Z')), '06:05'); // zero à esquerda
 });

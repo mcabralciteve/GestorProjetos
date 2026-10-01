@@ -1,13 +1,17 @@
 # Lembrete diário de horas em falta
 
-Todos os dias úteis de manhã, cada pessoa **com conta na app e email** que tenha dias com menos de
-8h registadas nos últimos 10 dias úteis recebe um email com esses dias e as horas que faltam.
-Feriados, fins de semana e ausências (aprovadas ou pendentes) não contam; "hoje" também não. A
+Todos os dias úteis, à hora configurada pelo Administrador (**Configurações → Definições → Horas de
+envio**, por omissão 08:00), cada pessoa **com conta na app e email** que tenha dias com menos de 8h
+registadas nos últimos 10 dias úteis recebe um email com esses dias e as horas que faltam. Feriados,
+fins de semana e ausências (aprovadas ou pendentes) não contam. "Hoje" conta ou não consoante a hora
+configurada: antes das 12:00 nunca conta (o dia ainda está a decorrer); às 12:00 ou mais tarde, passa
+a contar também (faz sentido como lembrete de fim de tarde — ver a nota grande em `logica.ts`). A
 lógica é a mesma do cartão "Os meus dias por preencher" do Início (`logica.ts` espelha
-`App.diasIncompletosRecurso`, verificado com o mesmo cenário nos dois).
+`App.diasIncompletosRecurso`, verificado com o mesmo cenário nos dois, afora esta exceção do "hoje").
 
 Nada é enviado enquanto o interruptor **Configurações → Definições → Lembretes automáticos por
-email** estiver desligado (vem desligado por omissão).
+email** estiver desligado (vem desligado por omissão), nem a ninguém fora do **Modo piloto**,
+enquanto esse estiver ligado (ver Configurações → Pessoas → coluna "Piloto").
 
 ## Instalação (uma vez)
 
@@ -53,9 +57,13 @@ email** estiver desligado (vem desligado por omissão).
    Depois, enviar só para ti: `...?apenas=o.teu@email.pt&forcar=1`.
 
 5. **Agendar** — ativa as extensões `pg_cron` e `pg_net` (Database → Extensions) e corre
-   `agendar_lembrete_horas.sql` (nesta pasta), depois de trocar `<ref>` e `<CRON_SECRET>`.
+   `agendar_lembrete_horas.sql` (nesta pasta), depois de trocar `<ref>` e `<CRON_SECRET>`. Isto
+   agenda uma VERIFICAÇÃO de 10 em 10 minutos, não o envio em si — é a função que decide, a cada
+   chamada, se já chegou a hora configurada nas Definições e se ainda não correu hoje (ver "Hora de
+   envio configurável", abaixo). Corre isto de novo sempre que precisares de mudar de "uma vez por
+   dia a uma hora fixa" para este esquema — nunca mais precisas de voltar aqui só por mudar a hora.
 
-6. Liga o interruptor nas Definições.
+6. Liga o interruptor nas Definições, e define aí a hora de envio desejada.
 
 ## Parâmetros
 
@@ -64,6 +72,12 @@ email** estiver desligado (vem desligado por omissão).
 | `dry=1` | não envia; devolve a lista |
 | `apenas=a@b.pt` | só considera esse endereço |
 | `destino=eu@b.pt` | envia os emails calculados para este endereço (com `[TESTE]` no assunto) em vez de para cada pessoa; usa com `apenas=` para ver o email de um colega sem o incomodar |
-| `forcar=1` | ignora "hoje não é dia útil" e o interruptor desligado |
+| `forcar=1` | ignora "hoje não é dia útil", o interruptor desligado, a hora configurada e "já enviado hoje" — e nunca marca o dia como enviado (um teste forçado nunca pode silenciar o envio automático real desse dia) |
 
-O horário do agendamento está em UTC (Lisboa = UTC+0 no inverno, +1 no verão).
+## Hora de envio configurável
+
+A hora (**Configurações → Definições**, campo junto ao interruptor) é só "HH:MM", no fuso de
+Lisboa — a função converte sozinha para UTC internamente. Muda-se ali, não é preciso SQL nenhum.
+Cada chamada do `pg_cron` (de 10 em 10 minutos) só segue em frente se a hora atual em Lisboa já
+tiver passado a configurada E ainda não tiver corrido hoje (`lembrete_horas_ultimo_envio`) — por
+isso o envio real pode atrasar-se até ~10 minutos da hora pedida, nunca mais do que isso.
