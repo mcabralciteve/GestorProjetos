@@ -6040,9 +6040,6 @@ const App = {
     // possoVerRegisto, não só "pessoa === X" — sem isto, escolher aqui alguém que só vejo por ser
     // gestor de UM dos seus projetos mostrava também as horas dela noutros projetos alheios.
     const registosDoMes = this.state.registos.filter(r => r.pessoa === pessoa && (r.data || '').startsWith(mesISO) && this.possoVerRegisto(r));
-    const porDia = {};
-    registosDoMes.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
-    Object.values(porDia).forEach(lista => lista.sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || '')));
 
     if (e.diaResumo) {
       const totalMes = registosDoMes.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
@@ -6059,6 +6056,17 @@ const App = {
     fimGrelha.setDate(fimGrelha.getDate() + (6 - fimGrelha.getDay()));
     const hojeISO = DateUtil.todayISO();
     const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    // A grelha mostra sempre semanas completas, o que traz uns dias do mês anterior/seguinte para
+    // preencher as pontas (ver "fora-mes" abaixo) — "porDia" tem de incluir também esses, senão essas
+    // células ficam sempre vazias mesmo quando a pessoa lá tem horas lançadas (bug: só se via o
+    // registo na Tabela, nunca nesta grelha, enquanto se estivesse a ver o mês vizinho).
+    const inicioGrelhaISO = DateUtil.toISO(inicioGrelha);
+    const fimGrelhaISO = DateUtil.toISO(fimGrelha);
+    const registosGrelha = this.state.registos.filter(r => r.pessoa === pessoa && r.data >= inicioGrelhaISO && r.data <= fimGrelhaISO && this.possoVerRegisto(r));
+    const porDia = {};
+    registosGrelha.forEach(r => { (porDia[r.data] = porDia[r.data] || []).push(r); });
+    Object.values(porDia).forEach(lista => lista.sort((a, b) => (a.submetidoEm || '').localeCompare(b.submetidoEm || '')));
 
     let html = '<div class="cal-cabecalho">' + DIAS_SEMANA.map(d => `<div>${d}</div>`).join('') + '</div><div class="cal-grelha">';
     let cursor = new Date(inicioGrelha);
