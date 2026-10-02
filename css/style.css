@@ -407,6 +407,12 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .nome-cell input:focus{background:var(--cinza-100);border-radius:4px;}
 .toggle-filhos{cursor:pointer;width:14px;text-align:center;color:var(--cinza-500);flex-shrink:0;user-select:none;}
 .indent{flex-shrink:0;}
+.linha-handle{cursor:grab;width:12px;text-align:center;color:var(--cinza-300);flex-shrink:0;user-select:none;touch-action:none;}
+.linha-handle:hover{color:var(--cinza-500);}
+.tabela-tarefas tr.linha-a-arrastar td{opacity:0.4;}
+.linha-indicador-drop td{padding:0;border:none;height:0;}
+.linha-indicador-drop .barra{height:3px;background:var(--azul);border-radius:2px;margin:0 8px;}
+:root[data-tema="escuro"] .linha-handle{color:var(--cinza-600);}
 
 .tabela-tarefas input[type=date],.tabela-tarefas input[type=number]{
   border:none;background:transparent;font-size:12px;padding:2px;width:100%;

@@ -1827,6 +1827,124 @@ const App = {
     p.tarefas[posAtual] = vizinho;
     p.tarefas[posVizinho] = atual;
   },
+  // ---------- Arrastar linhas na tabela (reordena E indenta/promove ao mesmo tempo — ver
+  // tornarLinhasTarefasArrastaveis) ----------
+  // O ancestral de "tarefa" (ou ela própria) que fica exatamente ao nível "nivelAlvo" — é assim que
+  // "a que profundidade largaste o rato" vira um parentId concreto.
+  ancestralAoNivel(p, tarefa, nivelProprio, nivelAlvo) {
+    let t = tarefa, nivel = nivelProprio;
+    while (nivel > nivelAlvo && t) { t = this.tarefaPorId(p, t.parentId); nivel--; }
+    return t;
+  },
+  // A partir da posição onde se larga (idxGap = índice do "espaço" dentro de listaSemArrastadas,
+  // entre essa posição-1 e essa posição) e do nível horizontal pedido, devolve o parentId resultante
+  // e a tarefa depois da qual a(s) arrastada(s) ficam — null nesse 2º caso significa "como primeira
+  // filha desse parentId". listaSemArrastadas é flatten(p) já sem as linhas a arrastar (e sem as
+  // suas descendentes) — não faz sentido largar uma tarefa dentro de si própria.
+  calcularAlvoArrasto(listaSemArrastadas, idxGap, nivelDesejado) {
+    if (idxGap <= 0) return { parentId: null, depoisDe: null, nivel: 0 };
+    const acima = listaSemArrastadas[idxGap - 1];
+    const nivel = Math.max(0, Math.min(nivelDesejado, acima.nivel + 1));
+    if (nivel === acima.nivel + 1) return { parentId: acima.tarefa.id, depoisDe: null, nivel };
+    const p = this.projetoAtivo();
+    const ancestral = this.ancestralAoNivel(p, acima.tarefa, acima.nivel, nivel);
+    const parentId = ancestral ? ancestral.parentId : null;
+    // De trás para a frente, a última tarefa já irmã (mesmo parentId) do alvo é aquela depois da
+    // qual entramos; ao encontrar algo mais raso do que o nível pedido, já saímos desse grupo todo.
+    for (let i = idxGap - 1; i >= 0; i--) {
+      if (listaSemArrastadas[i].tarefa.parentId === parentId) return { parentId, depoisDe: listaSemArrastadas[i].tarefa.id, nivel };
+      if (listaSemArrastadas[i].nivel < nivel) break;
+    }
+    return { parentId, depoisDe: null, nivel };
+  },
+  // Aplica o resultado de calcularAlvoArrasto: só as "raízes" do lote arrastado mudam de parentId
+  // (uma selecionada cujo pai também esteja selecionado já vem a reboque dele — mantém-se tal e qual
+  // estava, com o MESMO parentId de sempre) — e são reinseridas, pela mesma ordem relativa entre si,
+  // logo a seguir a "depoisDe" (ou ao início do grupo de irmãs de "parentId", se null).
+  moverTarefasArrastadas(idsArrastados, parentId, depoisDeInicial) {
+    const p = this.projetoAtivo();
+    if (!p) return;
+    const ordemAtual = this.flatten(p).map(x => x.tarefa.id);
+    const idsSet = new Set(idsArrastados);
+    const raizes = idsArrastados.slice().sort((a, b) => ordemAtual.indexOf(a) - ordemAtual.indexOf(b))
+      .filter(id => { const t = this.tarefaPorId(p, id); return t && !idsSet.has(t.parentId); });
+    if (!raizes.length) return;
+    // Nunca largar uma tarefa dentro de si própria ou de uma descendente sua.
+    const bloqueados = new Set();
+    raizes.forEach(id => { bloqueados.add(id); this.descendentesDe(p, id).forEach(d => bloqueados.add(d.id)); });
+    if (parentId && bloqueados.has(parentId)) return;
+
+    const raizesSet = new Set(raizes);
+    const tarefasMovidas = raizes.map(id => this.tarefaPorId(p, id));
+    p.tarefas = p.tarefas.filter(t => !raizesSet.has(t.id));
+
+    let depoisDe = depoisDeInicial;
+    tarefasMovidas.forEach(t => {
+      t.parentId = parentId;
+      let idx;
+      if (depoisDe) idx = p.tarefas.findIndex(x => x.id === depoisDe);
+      else idx = parentId ? p.tarefas.findIndex(x => x.id === parentId) : -1;
+      p.tarefas.splice(idx + 1, 0, t);
+      depoisDe = t.id;
+    });
+    this.recalcularAgendamento(p);
+    this.persist();
+    this.renderTudo();
+  },
+  // Liga o arrastar das linhas da tabela de tarefas: pega-se pelo ⠿ (só aparece a quem pode editar),
+  // arrasta-se para cima/baixo para reordenar e para a esquerda/direita (dentro da zona de texto, em
+  // passos de 16px — o mesmo tamanho de cada nível de indentação) para promover/indentar ao mesmo
+  // tempo. Arrastar uma linha que faz parte da seleção múltipla atual arrasta o lote todo junto (ver
+  // moverTarefasArrastadas); arrastar uma linha fora da seleção só mexe nela.
+  tornarLinhasTarefasArrastaveis() {
+    const tbody = this.els.corpoTabelaTarefas;
+    if (!tbody) return;
+    let estado = null;
+    tbody.addEventListener('pointerdown', (e) => {
+      const handle = e.target.closest('.linha-handle');
+      if (!handle) return;
+      const tr = handle.closest('tr[data-id]');
+      if (!tr) return;
+      e.preventDefault();
+      const p = this.projetoAtivo();
+      if (!p) return;
+      const id = tr.dataset.id;
+      const idsArrastados = (this.selecionadasIds.has(id) && this.selecionadasIds.size > 1) ? this.idsSelecionados() : [id];
+      const idsSet = new Set(idsArrastados);
+      const bloqueados = new Set();
+      idsArrastados.forEach(aid => { bloqueados.add(aid); this.descendentesDe(p, aid).forEach(d => bloqueados.add(d.id)); });
+      const listaSemArrastadas = this.flatten(p).filter(x => !bloqueados.has(x.tarefa.id));
+      const indicador = document.createElement('tr');
+      indicador.className = 'linha-indicador-drop';
+      indicador.innerHTML = `<td colspan="${this.ordemColunasTarefas().length}"><div class="barra"></div></td>`;
+      estado = { idsArrastados, idsSet, listaSemArrastadas, indicador, resultado: null };
+      idsArrastados.forEach(aid => { const linha = tbody.querySelector(`tr[data-id="${aid}"]`); if (linha) linha.classList.add('linha-a-arrastar'); });
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!estado) return;
+      const alvo = document.elementFromPoint(e.clientX, e.clientY)?.closest('tr[data-id]');
+      if (!alvo || alvo.parentElement !== tbody || estado.idsSet.has(alvo.dataset.id)) return;
+      const idxNaLista = estado.listaSemArrastadas.findIndex(x => x.tarefa.id === alvo.dataset.id);
+      if (idxNaLista === -1) return;
+      const rect = alvo.getBoundingClientRect();
+      const metadeInferior = e.clientY > rect.top + rect.height / 2;
+      const idxGap = metadeInferior ? idxNaLista + 1 : idxNaLista;
+      const primeiraCelula = alvo.querySelector('td');
+      const offsetX = primeiraCelula ? e.clientX - primeiraCelula.getBoundingClientRect().left : 0;
+      const nivelDesejado = Math.round((offsetX - 8) / 16);
+      estado.resultado = this.calcularAlvoArrasto(estado.listaSemArrastadas, idxGap, nivelDesejado);
+      estado.indicador.querySelector('.barra').style.marginLeft = (8 + estado.resultado.nivel * 16) + 'px';
+      tbody.insertBefore(estado.indicador, metadeInferior ? alvo.nextSibling : alvo);
+    });
+    document.addEventListener('pointerup', () => {
+      if (!estado) return;
+      const { idsArrastados, resultado, indicador } = estado;
+      indicador.remove();
+      idsArrastados.forEach(aid => { const linha = tbody.querySelector(`tr[data-id="${aid}"]`); if (linha) linha.classList.remove('linha-a-arrastar'); });
+      estado = null;
+      if (resultado) this.moverTarefasArrastadas(idsArrastados, resultado.parentId, resultado.depoisDe);
+    });
+  },
   // Associa UM consultor (e opcionalmente horas fixas) a todas as tarefas selecionadas de uma só
   // vez — um atalho para não teres de abrir "Associar consultores" tarefa a tarefa. Deliberadamente
   // mais simples do que esse modal: não mostra disponibilidade/conflitos por tarefa (seria uma
@@ -7426,6 +7544,7 @@ const App = {
       const atrasada = t.fim < hojeISO && t.progresso < 100;
       const tr = document.createElement('tr');
       tr.dataset.id = t.id;
+      tr.dataset.nivel = nivel;
       tr.className = (this.selecionadasIds.has(t.id) ? 'selecionada ' : '') + (filhos ? 'resumo' : '');
       const nomesRec = t.recursoIds.map(rid => {
         const r = this.state.recursos.find(x => x.id === rid);
@@ -7454,6 +7573,7 @@ const App = {
       const celulas = {
         nome: `<td class="col-nome">
           <div class="nome-cell" style="padding-left:${nivel * 16}px">
+            ${podeEditar ? `<span class="linha-handle" title="Arrastar para mover (e indentar/promover, conforme a posição)">⠿</span>` : ''}
             <span class="toggle-filhos">${filhos ? (this.colapsadas.has(t.id) ? '▶' : '▼') : ''}</span>
             <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}
               style="${t.negrito ? 'font-weight:700;' : ''}${t.italico ? 'font-style:italic;' : ''}${t.cor ? 'color:' + escapeAttr(t.cor) + ';' : ''}">
@@ -9096,6 +9216,7 @@ const App = {
     this.aplicarOrdemColunasSalva('tabelaTarefas', 'ordemTarefas');
     this.tornarColunasRedimensionaveis('tabelaTarefas', 'colunasTarefas');
     this.tornarColunasReordenaveis('tabelaTarefas', 'ordemTarefas');
+    this.tornarLinhasTarefasArrastaveis();
     if (prefs.sidebarColapsada) this.alternarSidebar(true);
 
     // Colunas ajustáveis + cabeçalhos ordenáveis nas restantes tabelas de dados da app.
