@@ -5377,7 +5377,7 @@ const App = {
     const e = this.els;
     const p = Object.values(this.state.projetos).find(pr => pr.idInterno === e.regProjeto.value);
     const recurso = this.state.recursos.find(r => r.nome === e.regPessoa.value);
-    const opcoes = (p && recurso) ? this.opcoesTarefasRegisto(p.idInterno, this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa)) : '';
+    const opcoes = (p && recurso) ? this.opcoesTarefasRegisto(p.idInterno, this.tarefasDoProjetoParaPessoaRegisto(p.idInterno, recurso.nome)) : '';
     e.regTarefa.innerHTML = `<option value="">${p ? 'Seleciona…' : 'Seleciona primeiro o projeto…'}</option>` + opcoes;
     e.regTarefa.disabled = !p;
     this.aplicarModoLoteRegisto();
@@ -5391,11 +5391,15 @@ const App = {
     if (!recurso) return [];
     return Object.values(this.state.projetos).filter(p => p.idInterno && p.tarefas.some(t => t.recursoIds.includes(recurso.id)));
   },
+  // Inclui tarefas-resumo (com subtarefas) quando a pessoa está associada diretamente a ELAS — uma
+  // fase/tarefa-pai pode ter recursos e registos próprios, à parte dos das suas subtarefas (ver a
+  // nota grande em horasReaisTarefa, que já soma os dois); nunca ofereceria essa fase para registar
+  // se filtrássemos sempre por "sem filhos".
   tarefasDoProjetoParaPessoaRegisto(idInternoProjeto, nomePessoa) {
     const p = Object.values(this.state.projetos).find(pr => pr.idInterno === idInternoProjeto);
     const recurso = this.state.recursos.find(r => r.nome === nomePessoa);
     if (!p || !recurso) return [];
-    return this.flatten(p).filter(x => !this.temFilhos(p, x.tarefa.id) && x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa);
+    return this.flatten(p).filter(x => x.tarefa.recursoIds.includes(recurso.id)).map(x => x.tarefa);
   },
   // "Pai › Filha" — a cadeia de tarefas-resumo acima desta tarefa. Duas tarefas com o mesmo nome em
   // grupos diferentes (ex.: "Atividades de Preparação" em cada sessão) só se distinguem por aqui.
