@@ -64,6 +64,10 @@ const App = {
   // Estado do Registo do Dia — só do lado do cliente, tal como filtrosCalendarioRegisto/calMesAtual
   // acima (nunca persistido nem sincronizado; cada pessoa escolhe de novo ao voltar à aba).
   diaRegistoPessoa: '',
+  // Mesmo espírito de filtrosCalendarioRegisto.equipa (Equipa → Pessoa, sem Departamento — ver
+  // aplicarFiltroEquipaSimples) só que aqui a Pessoa não vive num objeto de filtros, é
+  // diaRegistoPessoa — por isso esta fica solta, não dentro de um "filtrosRegistoDia".
+  filtroEquipaDia: '',
   mesRegistoDiaAtual: null,
   // Separador "Dia" — dois modos, a mesma aba: "pessoal" (editável, uma pessoa de cada vez — a
   // antiga vista "Dia") e "equipa" (só leitura, todas as pessoas — a antiga vista "Calendário").
@@ -411,6 +415,7 @@ const App = {
       btnCalHoje: document.getElementById('btnCalHoje'),
       calMesLabel: document.getElementById('calMesLabel'),
       calendarioRegistos: document.getElementById('calendarioRegistos'),
+      fDiaEquipa: document.getElementById('fDiaEquipa'),
       diaPessoa: document.getElementById('diaPessoa'),
       diaMsg: document.getElementById('diaMsg'),
       diaDataLabel: document.getElementById('diaDataLabel'),
@@ -1008,13 +1013,14 @@ const App = {
   aplicarFiltrosPorDefeito() {
     const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
     if (!meuRecurso) return;
-    // Os dois calendários de equipa (Alocações e Registo do Dia > Vista de equipa) abrem já na
-    // equipa da própria pessoa, com "Todas" as pessoas dessa equipa (Alocações também herda o
-    // departamento — Registo do Dia não tem esse nível, ver filtrosCalendarioRegisto).
+    // Alocações e as duas vistas do Registo do Dia (Individual e de equipa) abrem já na equipa da
+    // própria pessoa (Alocações também herda o departamento — o Registo do Dia não tem esse nível,
+    // ver filtrosCalendarioRegisto/filtroEquipaDia).
     const org = this.orgDoRecurso(meuRecurso);
     this.filtrosAlocacoes.dept = org.deptId;
     this.filtrosAlocacoes.equipa = org.equipaId;
     this.filtrosCalendarioRegisto.equipa = org.equipaId;
+    this.filtroEquipaDia = org.equipaId;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
     this.diaRegistoPessoa = meuRecurso.nome;
     if (meuRecurso.equipaId) this.filtroEquipaCap = meuRecurso.equipaId;
@@ -6009,8 +6015,13 @@ const App = {
     if (!e.diaPessoa) return;
     const recursosPermitidos = this.recursosPermitidosRegisto();
     const somenteEuProprio = !this.souAdmin() && !this.souGestorDeAlgumProjeto();
-    const nomesPermitidos = new Set(recursosPermitidos.map(r => r.nome));
-    e.diaPessoa.innerHTML = '<option value="">Seleciona…</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.nome)}">${escapeHtml(r.nome)}</option>`).join('');
+    // Equipa → Pessoa (agrupada por departamento), mesmo espírito do filtro da Vista de equipa (ver
+    // aplicarFiltroEquipaSimples/opcoesPessoasPorDepartamento) — só esconde a Equipa para quem só se
+    // pode ver a si próprio, onde escolher equipa não tem nenhum efeito.
+    if (e.fDiaEquipa) e.fDiaEquipa.closest('.zoom-label').style.display = somenteEuProprio ? 'none' : '';
+    const recursosOrg = somenteEuProprio ? recursosPermitidos : this.aplicarFiltroEquipaSimples(e.fDiaEquipa, recursosPermitidos, { equipa: this.filtroEquipaDia });
+    const nomesPermitidos = new Set(recursosOrg.map(r => r.nome));
+    e.diaPessoa.innerHTML = '<option value="">Seleciona…</option>' + this.opcoesPessoasPorDepartamento(recursosOrg, r => r.nome);
     // Ao contrário de renderProjetoSelect (que É o seu próprio change-handler, daí a necessidade de
     // uma "semente única" — ver _filtroGestorGanttSemeado), aqui o change do <select> tem um
     // handler à parte (ver wireEvents) que já escreve em this.diaRegistoPessoa ANTES de chamar este
@@ -8866,6 +8877,11 @@ const App = {
     if (e.btnModoDiaPessoal) e.btnModoDiaPessoal.addEventListener('click', () => this.alternarModoRegistoDia('pessoal'));
     if (e.btnModoDiaEquipa) e.btnModoDiaEquipa.addEventListener('click', () => this.alternarModoRegistoDia('equipa'));
 
+    if (e.fDiaEquipa) e.fDiaEquipa.addEventListener('change', () => {
+      this.filtroEquipaDia = e.fDiaEquipa.value;
+      this.diaRegistoPessoa = ''; // mudar de equipa limpa a pessoa, mesmo espírito de reagirMudancaFiltroOrg
+      this.renderRegistoDia();
+    });
     if (e.diaPessoa) e.diaPessoa.addEventListener('change', () => { this.diaRegistoPessoa = e.diaPessoa.value; this.renderRegistoDia(); });
     const btnDiaAnt = document.getElementById('btnDiaAnt');
     const btnDiaSeg = document.getElementById('btnDiaSeg');

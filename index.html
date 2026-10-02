@@ -792,13 +792,14 @@
       <h2>🕒 Registo do Dia</h2>
     </div>
     <div class="filters" style="display:flex;gap:8px;margin-bottom:12px;">
-      <button type="button" class="chip-projeto" id="btnModoDiaPessoal">👤 A minha vista</button>
+      <button type="button" class="chip-projeto" id="btnModoDiaPessoal">👤 Vista Individual</button>
       <button type="button" class="chip-projeto" id="btnModoDiaEquipa">👥 Vista de equipa</button>
     </div>
 
     <div id="diaModoPessoal">
       <p class="pagina-sub">Regista aqui, num único ecrã e mês a mês, tudo o que preencheu os dias de uma pessoa — projetos, ausências, formação, comercial, ou qualquer outro tipo de trabalho. Clica em qualquer dia do mês para adicionar ou editar um bloco.</p>
       <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
+        <label class="zoom-label">Equipa <select id="fDiaEquipa"><option value="">Todas</option></select></label>
         <label class="zoom-label">Pessoa <select id="diaPessoa"><option value="">Seleciona…</option></select></label>
       </div>
       <span id="diaMsg" class="hint" style="color:var(--vermelho);display:block;margin-bottom:8px;"></span>
@@ -1142,6 +1143,6 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/app.js?v=20261002b"></script>
+<script src="js/app.js?v=20261002c"></script>
 </body>
 </html>
