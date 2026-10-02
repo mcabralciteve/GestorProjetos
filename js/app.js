@@ -2092,8 +2092,9 @@ const App = {
     }
     return folhas;
   },
-  moverTarefa(id, novoInicioISO, novoFimISO) {
-    const p = this.projetoAtivo();
+  // "projetoOpt": para mover uma tarefa de um projeto que não é o ativo (ver janela de Alocações).
+  moverTarefa(id, novoInicioISO, novoFimISO, projetoOpt) {
+    const p = projetoOpt || this.projetoAtivo();
     const t = this.tarefaPorId(p, id);
     if (!t) return;
     // Deslocar a tarefa INTEIRA (mesma duração, início diferente) leva consigo, pelo mesmo número
@@ -8537,6 +8538,83 @@ const App = {
       e.btnExportarBackup.disabled = false;
     }
   },
+  // Até 3 deslocamentos (±1..±5 dias úteis, os mais pequenos primeiro, para a frente antes de para
+  // trás) que resolvem o conflito de "recurso" sem criar outro — a simulação vive em
+  // Capacidade.avaliarDeslocamento. Para trás só se a tarefa não tiver predecessoras (senão
+  // recalcularAgendamento voltava a empurrá-la) e nunca para antes de hoje.
+  sugestoesDeslocamento(p, t, recurso, conflitosAntes) {
+    const hojeISO = DateUtil.todayISO();
+    const sugestoes = [];
+    for (const delta of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5]) {
+      if (sugestoes.length >= 3) break;
+      if (delta < 0 && (t.predecessores || []).length) continue;
+      const novoInicio = Capacidade.deslocarDiasUteis(t.inicio, delta);
+      const novoInicioISO = DateUtil.toISO(novoInicio);
+      if (delta < 0 && novoInicioISO < hojeISO) continue;
+      const deltaCal = DateUtil.diffDays(DateUtil.parseISO(t.inicio), novoInicio);
+      const novoFimISO = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.fim), deltaCal));
+      const av = Capacidade.avaliarDeslocamento(p, t, recurso, novoInicioISO, novoFimISO, conflitosAntes);
+      if (av.resolve) sugestoes.push({ delta, novoInicioISO, novoFimISO, problemasOutros: av.problemasOutros });
+    }
+    return sugestoes;
+  },
+  // Secção "conflitos" no topo da janela de Alocações de uma pessoa: só o que está em conflito, com
+  // as tarefas envolvidas e, para cada uma, as formas de o resolver deslocando-a (botão "Aplicar"
+  // quando se pode editar o projeto). Devolve '' se não houver nada em conflito.
+  montarSecaoConflitosAlocacao(r, linhas) {
+    const violacoes = Capacidade.intervalosCriticos(r);
+    // Uma tarefa de fim de semana já listada como conflito (tem horas por fazer) não se repete abaixo.
+    const idsEmConflito = new Set(violacoes.flatMap(v => (v.tarefasInfo || []).map(i => i.taskId)));
+    const soFimDeSemana = linhas.filter(l => l.resultado.semDiasUteis && !idsEmConflito.has(l.tarefa.id));
+    if (!violacoes.length && !soFimDeSemana.length) return '';
+    const fmt = (iso) => DateUtil.formatShort(DateUtil.parseISO(iso));
+    const periodoTarefa = (t) => t.inicio === t.fim ? fmt(t.inicio) : `${fmt(t.inicio)}–${fmt(t.fim)}`;
+    const botao = (p, t, s, texto) => this.possoEditarProjeto(p.id)
+      ? `<button type="button" class="btn btn-sm" data-aplicar-desloc="${escapeAttr(`${p.id}|${t.id}|${s.novoInicioISO}|${s.novoFimISO}`)}">${texto}</button>`
+      : `<span class="hint">${texto} (sem permissão para alterar este projeto)</span>`;
+    const textoSug = (s) => {
+      const dias = Math.abs(s.delta);
+      const quando = s.novoInicioISO === s.novoFimISO ? fmt(s.novoInicioISO) : `${fmt(s.novoInicioISO)}–${fmt(s.novoFimISO)}`;
+      return `Mover ${dias} ${dias > 1 ? 'dias úteis' : 'dia útil'} para ${s.delta > 0 ? 'a frente' : 'trás'} (${quando})`;
+    };
+    const avisoOutros = (s) => s.problemasOutros.length
+      ? ` <span style="color:#b45309;">⚠ criaria conflito a ${escapeHtml(s.problemasOutros.join(', '))}</span>` : '';
+    const blocos = violacoes.map(v => {
+      const periodo = +v.inicio === +v.fim ? DateUtil.formatShort(v.inicio) : `${DateUtil.formatShort(v.inicio)}–${DateUtil.formatShort(v.fim)}`;
+      const itens = (v.tarefasInfo || []).map(info => {
+        const p = this.state.projetos[info.projetoId];
+        const t = p && this.tarefaPorId(p, info.taskId);
+        if (!t) return '';
+        const sugs = this.sugestoesDeslocamento(p, t, r, violacoes.length);
+        const corpoSug = sugs.length
+          ? sugs.map(s => `<div style="margin-top:3px;">${botao(p, t, s, textoSug(s))}${avisoOutros(s)}</div>`).join('')
+          : '<div class="hint" style="margin-top:3px;">Nenhum deslocamento de até 5 dias úteis resolve isto — considera reduzir as horas ou passar a tarefa a outro consultor.</div>';
+        return `<div style="padding:6px 0;border-top:1px solid var(--cinza-100);">
+          <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} · ${Math.round(info.horas * 100) / 100}h por fazer
+          ${corpoSug}
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:10px;">
+        <div style="font-weight:600;color:#b91c1c;">📅 ${periodo} — excesso de ${v.excesso.toFixed(1)}h <span class="hint" style="font-weight:400;">(${v.demanda.toFixed(1)}h por fazer para ${v.capacidade.toFixed(1)}h disponíveis)</span></div>
+        ${itens}
+      </div>`;
+    }).join('');
+    const blocosFds = soFimDeSemana.map(l => {
+      const t = l.tarefa, p = l.projeto;
+      const novoInicio = Capacidade.deslocarDiasUteis(t.inicio, 1);
+      const deltaCal = DateUtil.diffDays(DateUtil.parseISO(t.inicio), novoInicio);
+      const s = { delta: 1, novoInicioISO: DateUtil.toISO(novoInicio), novoFimISO: DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.fim), deltaCal)), problemasOutros: [] };
+      return `<div style="padding:6px 0;border-top:1px solid var(--cinza-100);">
+        <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} — cai só em fim de semana
+        <div style="margin-top:3px;">${botao(p, t, s, `Mover para o próximo dia útil (${fmt(s.novoInicioISO)})`)}</div>
+      </div>`;
+    }).join('');
+    return `<div style="border:1px solid rgba(220,38,38,0.35);background:rgba(220,38,38,0.07);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+      <h4 style="margin:0 0 8px;font-size:13px;color:#b91c1c;">⚠ Conflitos de ${escapeHtml(r.nome)}</h4>
+      ${blocos}
+      ${blocosFds ? `<div style="font-weight:600;color:#b91c1c;margin-top:4px;">Tarefas em fim de semana</div>${blocosFds}` : ''}
+    </div>`;
+  },
   abrirModalAlocacoesRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
     if (!r) return;
@@ -8568,8 +8646,11 @@ const App = {
       ? `<p class="hint" style="margin:0 0 10px;">${linhas.length} alocação(ões) em ${new Set(linhas.map(l => l.projeto.id)).size} projeto(s).${numConflito ? ` <b style="color:#dc2626;">⚠ ${numConflito} com conflito de alocação.</b>` : ' Sem conflitos de alocação.'} Ajusta as horas de alocação diretamente aqui para resolver.</p>`
       : '';
 
+    const secaoConflitos = this.montarSecaoConflitosAlocacao(r, linhas);
     const html = linhas.length ? `
       ${resumoTopo}
+      ${secaoConflitos}
+      ${secaoConflitos ? '<h4 style="margin:4px 0 6px;font-size:13px;color:var(--cinza-700);">Todas as alocações</h4>' : ''}
       <div class="table-scroll" style="max-height:50vh;">
         <table class="tabela-crud">
           <thead><tr><th></th><th>Projeto</th><th>Cliente</th><th>Tarefa</th><th>Início</th><th>Fim</th><th>Dias</th><th>Horas</th></tr></thead>
@@ -8594,6 +8675,15 @@ const App = {
         </table>
       </div>` : '<p style="color:var(--cinza-500)">Sem alocações em nenhum projeto carregado.</p>';
     this.abrirModal(`Alocações — ${r.nome}`, html, { largo: true });
+    this.els.modalCorpo.querySelectorAll('[data-aplicar-desloc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [projetoId, taskId, novoInicio, novoFim] = btn.dataset.aplicarDesloc.split('|');
+        const projeto = this.state.projetos[projetoId];
+        if (!projeto || !this.possoEditarProjeto(projetoId)) { this.toast('Não tens permissão para alterar este projeto.'); return; }
+        this.moverTarefa(taskId, novoInicio, novoFim, projeto);
+        this.abrirModalAlocacoesRecurso(recursoId);
+      });
+    });
     this.els.modalCorpo.querySelectorAll('[data-horas-alocacao-tarefa]').forEach(inp => {
       inp.addEventListener('change', () => {
         const projeto = this.state.projetos[inp.dataset.projetoAlocacao];

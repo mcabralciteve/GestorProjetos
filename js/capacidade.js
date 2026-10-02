@@ -256,7 +256,7 @@ const Capacidade = {
         const horas = this.horasRestantesTarefa(p, t, recurso.id);
         if (horas <= 0) return;
         const janela = recortarNaJanela(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim));
-        tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas, nome: t.nome });
+        tarefas.push({ inicio: janela.inicio, fim: janela.fim, horas, nome: t.nome, projetoId: p.id, taskId: t.id });
       });
     });
     if (opts.extra && opts.extra.horas > 0) {
@@ -286,6 +286,8 @@ const Capacidade = {
           violacoes.push({
             inicio: a, fim: b, demanda, capacidade: capacidadeAcumulada, excesso: demanda - capacidadeAcumulada,
             tarefas: envolvidas.map(t => t.nome),
+            // Para quem precisa de agir sobre cada tarefa (ver sugestões na janela de Alocações).
+            tarefasInfo: envolvidas.filter(t => t.taskId).map(t => ({ nome: t.nome, projetoId: t.projetoId, taskId: t.taskId, horas: t.horas })),
             // Só usado por avaliarAtribuicao, para não atribuir a uma tarefa um problema
             // genuíno mas COMPLETAMENTE ALHEIO a ela — uma tarefa de 24h com um prazo de 609
             // dias não devia acender "crítico" só porque, algures nesse prazo gigante, existe um
@@ -298,6 +300,42 @@ const Capacidade = {
     }
     // Só as mínimas: descarta qualquer violação que contenha estritamente outra já encontrada.
     return violacoes.filter(v => !violacoes.some(w => w !== v && w.inicio >= v.inicio && w.fim <= v.fim && (w.inicio > v.inicio || w.fim < v.fim)));
+  },
+
+  // Soma n dias úteis (n pode ser negativo) a uma data ISO, saltando fins de semana.
+  deslocarDiasUteis(iso, n) {
+    let d = DateUtil.parseISO(iso);
+    const passo = n < 0 ? -1 : 1;
+    for (let i = 0; i < Math.abs(n); i++) {
+      do { d = DateUtil.addDays(d, passo); } while (this.ehFimDeSemana(d));
+    }
+    return d;
+  },
+  // Simula mover "tarefa" (do projeto) para [novoInicioISO, novoFimISO], do ponto de vista de
+  // "recurso" (o do conflito). "conflitosAntes" é o nº de violações atuais desse recurso (calculado
+  // uma vez por quem chama). Devolve { resolve, problemasOutros }: resolve = o recurso fica com menos
+  // violações e a tarefa já não faz parte de nenhuma; problemasOutros = nomes dos OUTROS consultores
+  // da mesma tarefa que passariam a ficar com um conflito que não tinham (mover a tarefa mexe nas
+  // datas de todos).
+  avaliarDeslocamento(projeto, tarefa, recurso, novoInicioISO, novoFimISO, conflitosAntes) {
+    const simular = (rec, inicioISO, fimISO) => this.intervalosCriticos(rec, {
+      excluir: { projetoId: projeto.id, taskId: tarefa.id },
+      extra: { inicio: DateUtil.parseISO(inicioISO), fim: DateUtil.parseISO(fimISO), horas: this.horasRestantesTarefa(projeto, tarefa, rec.id) },
+      extraNome: tarefa.nome
+    });
+    const depois = simular(recurso, novoInicioISO, novoFimISO);
+    const resolve = depois.length < conflitosAntes && !depois.some(v => v.envolveExtra);
+    const problemasOutros = [];
+    if (resolve) {
+      tarefa.recursoIds.filter(id => id !== recurso.id).forEach(id => {
+        const outro = App.state.recursos.find(x => x.id === id);
+        if (!outro) return;
+        const base = simular(outro, tarefa.inicio, tarefa.fim).filter(v => v.envolveExtra).length;
+        const novo = simular(outro, novoInicioISO, novoFimISO).filter(v => v.envolveExtra).length;
+        if (novo > base) problemasOutros.push(outro.nome);
+      });
+    }
+    return { resolve, problemasOutros };
   },
 
   // Resume capacidade/alocação de um recurso num intervalo de dias (dias úteis apenas). Distingue
