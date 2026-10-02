@@ -1647,6 +1647,9 @@ const App = {
       <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="data"> Numa data <input type="date" id="recDataFim" disabled></label>
       <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Atribuir consultores a cada ocorrência <span class="hint">(opcional — dá para ajustar depois em cada uma)</span></p>
       ${this.state.recursos.length ? this.state.recursos.map(r => `<label class="zoom-label" style="padding:3px 0;"><input type="checkbox" class="rec-recorrente-recurso" value="${escapeAttr(r.id)}"> ${escapeHtml(r.nome)}</label>`).join('') : '<p class="hint">Sem consultores definidos.</p>'}
+      <label style="margin-top:8px;">Horas previstas por ocorrência, para cada consultor escolhido <span class="hint">(obrigatório se escolheres algum consultor)</span>
+        <input type="number" id="recHoras" min="0.25" step="0.25" placeholder="ex.: 2">
+      </label>
       <button class="btn btn-primary" id="btnGerarRecorrente" style="margin-top:12px;">Gerar ocorrências</button>
       <span id="recMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
     this.abrirModal('Tarefa/Subtarefa recorrente', html);
@@ -1669,6 +1672,8 @@ const App = {
       const fimValor = fimTipo === 'ocorrencias' ? numOcorrencias.value : (fimTipo === 'data' ? dataFim.value : null);
       const recursoIds = [...m.querySelectorAll('.rec-recorrente-recurso:checked')].map(cb => cb.value);
       const msg = m.querySelector('#recMsg');
+      const horasPorConsultor = parseFloat(m.querySelector('#recHoras').value);
+      if (recursoIds.length && !(horasPorConsultor > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Indica as horas previstas por ocorrência para os consultores escolhidos.'; return; }
       if (!nome) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'O nome não pode ficar vazio.'; return; }
       if (!dataInicio) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe a data de início da 1ª ocorrência.'; return; }
       if (!(duracaoDias > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'A duração de cada ocorrência tem de ser pelo menos 1 dia.'; return; }
@@ -1676,7 +1681,7 @@ const App = {
       if (fimTipo === 'ocorrencias' && !(parseInt(fimValor, 10) > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Indica quantas ocorrências.'; return; }
       if (fimTipo === 'data' && !fimValor) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe a data limite.'; return; }
       const parentId = comoSubtarefa ? selecionada.id : (selecionada ? selecionada.parentId : null);
-      const criadas = this.criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds });
+      const criadas = this.criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds, horasPorConsultor });
       if (!criadas) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Nenhuma ocorrência gerada — confere as datas e a duração.'; return; }
       this.fecharModal();
     });
@@ -1684,7 +1689,7 @@ const App = {
   // Gera as ocorrências e devolve quantas foram criadas (0 se nenhuma coube nas condições dadas).
   // "500" é só uma rede de segurança contra parâmetros absurdos (ex.: intervalo enorme com data
   // limite distante) — nunca deve ser atingido em uso normal.
-  criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds }) {
+  criarTarefasRecorrentes(p, { nome, parentId, dataInicio, duracaoDias, intervaloDias, fimTipo, fimValor, recursoIds, horasPorConsultor }) {
     const parent = parentId ? this.tarefaPorId(p, parentId) : null;
     const limiteData = fimTipo === 'projeto' ? (parent ? parent.fim : p.dataFim) : (fimTipo === 'data' ? fimValor : null);
     const numOcorrencias = fimTipo === 'ocorrencias' ? parseInt(fimValor, 10) : Infinity;
@@ -1694,7 +1699,9 @@ const App = {
     while (i <= numOcorrencias && novas.length < 500) {
       const fimOcorrencia = DateUtil.addDays(cursorInicio, duracaoDias - 1);
       if (limiteData && DateUtil.toISO(fimOcorrencia) > limiteData) break;
-      novas.push(this.novaTarefaObj(p, `${nome} ${i}`, parentId, DateUtil.toISO(cursorInicio), DateUtil.toISO(fimOcorrencia), recursoIds.slice()));
+      const nova = this.novaTarefaObj(p, `${nome} ${i}`, parentId, DateUtil.toISO(cursorInicio), DateUtil.toISO(fimOcorrencia), recursoIds.slice());
+      if (horasPorConsultor > 0) recursoIds.forEach(rid => { nova.alocacoesHoras[rid] = horasPorConsultor; });
+      novas.push(nova);
       cursorInicio = DateUtil.addDays(cursorInicio, intervaloDias);
       i++;
     }
@@ -1964,8 +1971,8 @@ const App = {
       <label>Consultor <span style="color:var(--vermelho);">*</span>
         <select id="loteRecursoId"><option value="">Seleciona…</option>${this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</select>
       </label>
-      <label>Horas totais previstas, por tarefa <span class="hint">(em branco = tempo inteiro, todos os dias úteis de cada tarefa)</span>
-        <input type="number" id="loteHoras" min="0" step="0.25" placeholder="ex.: 8">
+      <label>Horas totais previstas, por tarefa <span style="color:var(--vermelho);">*</span> <span class="hint">(obrigatório — o mesmo número em cada uma das tarefas selecionadas)</span>
+        <input type="number" id="loteHoras" min="0.25" step="0.25" placeholder="ex.: 8">
       </label>
       <button class="btn btn-primary" id="btnAplicarRecursoLote" style="margin-top:10px;">Aplicar a ${ids.length} tarefa(s)</button>
       <span id="loteMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>`;
@@ -1976,8 +1983,8 @@ const App = {
       const horasTexto = m.querySelector('#loteHoras').value.trim();
       const msg = m.querySelector('#loteMsg');
       if (!recursoId) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Escolhe um consultor.'; return; }
-      const horas = horasTexto === '' ? null : parseFloat(horasTexto);
-      if (horas !== null && !(horas >= 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'As horas têm de ser um número válido (ou deixa em branco).'; return; }
+      const horas = parseFloat(horasTexto);
+      if (!(horas > 0)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Indica as horas previstas por tarefa (um número maior que 0).'; return; }
       this.fecharModal();
       this.associarRecursoATarefasSelecionadas(recursoId, horas);
     });
@@ -1985,14 +1992,14 @@ const App = {
   associarRecursoATarefasSelecionadas(recursoId, horas) {
     const p = this.projetoAtivo();
     const ids = this.idsSelecionados();
-    if (!p || !ids.length) return;
+    if (!p || !ids.length || !(horas > 0)) return;
     let aplicadas = 0;
     ids.forEach(id => {
       const t = this.tarefaPorId(p, id);
       if (!t) return;
       if (!t.recursoIds.includes(recursoId)) t.recursoIds.push(recursoId);
-      if (horas !== null) t.alocacoesHoras[recursoId] = horas;
-      else delete t.alocacoesHoras[recursoId]; // tempo inteiro (omisso), recalculado dinamicamente
+      if (!t.alocacoesHoras) t.alocacoesHoras = {};
+      t.alocacoesHoras[recursoId] = horas;
       aplicadas++;
     });
     this.recalcularAgendamento(p);
@@ -2228,17 +2235,15 @@ const App = {
     const dep = eq && eq.departamentoId ? this.state.departamentos.find(d => d.id === eq.departamentoId) : null;
     return { equipaId: eq ? eq.id : '', equipaNome: eq ? eq.nome : 'Sem equipa', deptId: dep ? dep.id : '', deptNome: dep ? dep.nome : 'Sem departamento' };
   },
+  // Só remove — adicionar um consultor passa sempre por adicionarConsultorComHoras (horas obrigatórias).
   alternarRecursoTarefa(taskId, recursoId) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, taskId);
     if (!t) return;
     const idx = t.recursoIds.indexOf(recursoId);
-    if (idx >= 0) {
-      t.recursoIds.splice(idx, 1);
-      if (t.alocacoesHoras) delete t.alocacoesHoras[recursoId];
-    } else {
-      t.recursoIds.push(recursoId);
-    }
+    if (idx < 0) return;
+    t.recursoIds.splice(idx, 1);
+    if (t.alocacoesHoras) delete t.alocacoesHoras[recursoId];
     this.persist();
     this.renderTudo();
   },
@@ -2434,14 +2439,29 @@ const App = {
     const viaLegadoInterno = legado.get(projeto.idInterno + chaveBase) || 0;
     return viaId + viaLegadoId + viaLegadoInterno;
   },
+  // As horas previstas de um consultor numa tarefa são obrigatórias e têm de ser > 0 — nunca se grava
+  // vazio/zero (que antes significava, em silêncio, "tempo inteiro").
   definirHorasRecursoTarefa(projeto, taskId, recursoId, valor) {
     const t = this.tarefaPorId(projeto, taskId);
-    if (!t || !t.recursoIds.includes(recursoId)) return;
-    const horas = Math.max(0, Number(valor) || 0);
+    if (!t || !t.recursoIds.includes(recursoId)) return false;
+    const horas = Number(valor);
+    if (!(horas > 0)) { this.toast('Indica as horas previstas (maior que 0).'); this.renderTudo(); return false; }
     if (!t.alocacoesHoras) t.alocacoesHoras = {};
     t.alocacoesHoras[recursoId] = horas;
     this.persist();
     this.renderTudo();
+    return true;
+  },
+  adicionarConsultorComHoras(taskId, recursoId, horas) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, taskId);
+    if (!t || !(horas > 0)) return false;
+    if (!t.recursoIds.includes(recursoId)) t.recursoIds.push(recursoId);
+    if (!t.alocacoesHoras) t.alocacoesHoras = {};
+    t.alocacoesHoras[recursoId] = horas;
+    this.persist();
+    this.renderTudo();
+    return true;
   },
   // Pares tarefa×consultor em que ninguém indicou horas (a app assume tempo inteiro — ver
   // horasAlocadas). Só tarefas-folha: uma tarefa com subtarefas é só um agrupador. "soAtivos" deixa
@@ -7070,7 +7090,7 @@ const App = {
         <label>Responsável <select id="npResponsavel">${opcoesResponsavel}</select></label>
         <label>Data prevista <input type="date" id="npDataPrevista" value="${DateUtil.todayISO()}"></label>
       </div>
-      <label id="npHorasWrap" style="margin-top:10px;display:none;">Horas previstas para o responsável <input type="number" id="npHoras" min="0" step="0.5" placeholder="ex.: 4"></label>
+      <label id="npHorasWrap" style="margin-top:10px;display:none;">Horas previstas para o responsável <span style="color:var(--vermelho);">*</span> <input type="number" id="npHoras" min="0.25" step="0.25" placeholder="ex.: 4"></label>
       <p class="hint" style="margin-top:12px;">Fica associado ao Ponto de Situação de ${DateUtil.formatShort(DateUtil.parseISO(ps.data))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 60)) : ''}.</p>
       <button type="button" class="btn btn-primary" id="btnCriarNovoPasso" style="margin-top:10px;">Criar Next Step</button>`;
     this.abrirModal(`Novo Next Step — ${p.nome}`, html);
@@ -7102,7 +7122,14 @@ const App = {
       const tid = document.getElementById('npTarefaId').value;
       tarefa = this.tarefaPorId(p, tid);
       if (!tarefa) { this.toast('Escolhe uma tarefa existente, ou "+ Nova tarefa".'); return; }
-    } else {
+    }
+    // O responsável passa a consultor da tarefa — as horas previstas dele são obrigatórias, a não ser
+    // que ele já as tenha definidas nessa tarefa (tarefa existente).
+    if (responsavelId && !(horas > 0) && !(tarefa && this.horasRecursoExplicita(tarefa, responsavelId) > 0)) {
+      this.toast('Indica as horas previstas para o responsável.');
+      return;
+    }
+    if (modo !== 'existente') {
       const nomeTarefa = (document.getElementById('npTarefaNome').value || descricao).trim();
       const hojeISO = DateUtil.todayISO();
       const fim = (dataPrevista && dataPrevista > hojeISO) ? dataPrevista : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hojeISO), 1));
@@ -7176,15 +7203,16 @@ const App = {
     if (!this.possoEditarProjeto(p.id) || pp.tarefaId) return;
     const hojeISO = DateUtil.todayISO();
     const fim = (pp.dataPrevista && pp.dataPrevista > hojeISO) ? pp.dataPrevista : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hojeISO), 1));
-    const recursoIds = pp.responsavelId && this.state.recursos.some(r => r.id === pp.responsavelId) ? [pp.responsavelId] : [];
-    const t = this.novaTarefaObj(p, pp.descricao || 'Nova tarefa', null, hojeISO, fim, recursoIds);
+    // Não associa o responsável à tarefa: um consultor só entra numa tarefa com as horas previstas
+    // definidas (ver "Associar consultores" no Gantt).
+    const t = this.novaTarefaObj(p, pp.descricao || 'Nova tarefa', null, hojeISO, fim, []);
     p.tarefas.push(t);
     pp.tarefaId = t.id;
     pp.atualizadoEm = new Date().toISOString();
     this.recalcularAgendamento(p);
     this.persist();
     this.renderTudo();
-    this.toast(`Tarefa "${t.nome}" criada no Gantt a partir deste next step.`);
+    this.toast(`Tarefa "${t.nome}" criada no Gantt a partir deste next step. Associa o consultor e as suas horas no Gantt.`);
   },
   eliminarProximoPasso(id) {
     const achado = this.projetoDoProximoPasso(id);
@@ -8586,31 +8614,32 @@ const App = {
   // Monta o <label> de UM consultor na lista do modal "Associar consultores" — usado tanto para
   // montar o modal inteiro (na primeira abertura) como para atualizar só esta linha depois (ver
   // abrirModalRecursos), sem recalcular nem tocar nas linhas dos outros consultores.
-  montarLinhaModalRecursos(p, t, r) {
+  // "pendente": o consultor foi marcado mas ainda não tem horas — só entra na tarefa quando se escreve
+  // um número de horas maior que 0 (ver abrirModalRecursos). Já associados sem horas (dados de antes
+  // desta regra) continuam a aparecer com aviso, mas não são alterados.
+  montarLinhaModalRecursos(p, t, r, pendente) {
     const resultado = Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id));
     const horasExplicitas = this.horasRecursoExplicita(t, r.id);
     const horasTempoInteiro = this.horasTempoInteiro(t);
     const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
     const disp = this.rotuloDisponibilidade(resultado);
     const dica = Capacidade.descreverProblema(r.nome, resultado) || 'Sem conflitos conhecidos neste período.';
-    const marcado = t.recursoIds.includes(r.id);
+    const associado = t.recursoIds.includes(r.id);
+    const marcado = associado || !!pendente;
     const livreHoras = Capacidade.capacidadeLivreHoras(r, t.id, t.inicio, t.fim);
-    // Só avisa quando ainda não há horas explícitas E a suposição de tempo inteiro já representa
-    // mais do que uns dias — em tarefas curtas (1-2 dias) a suposição costuma estar mesmo certa, não
-    // vale a pena incomodar; é em tarefas longas com pouco esforço real que o erro do utilizador
-    // (10 dias úteis × 8h em vez das 2h que a tarefa realmente precisa) passa despercebido.
+    const semHoras = associado && horasExplicitas === null;
     const diasUteis = this.diasUteisTarefa(t);
-    const precisaConfirmar = marcado && horasExplicitas === null && diasUteis > 2;
     return `
-      <label class="rec-check${precisaConfirmar ? ' rec-check-por-confirmar' : ''}" data-linha-recurso="${r.id}">
+      <label class="rec-check${(semHoras || pendente) ? ' rec-check-por-confirmar' : ''}" data-linha-recurso="${r.id}">
         <input type="checkbox" value="${r.id}" ${marcado ? 'checked' : ''}>
         <span class="rec-check-nome">${escapeHtml(r.nome)} <span style="color:var(--cinza-500)">— ${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</span></span>
         <span class="rec-horas-wrap">
-          <input type="number" class="rec-horas${horasExplicitas === null ? ' rec-horas-por-omissao' : ''}" min="0" step="0.25" value="${horasExplicitas === null ? '' : horasExplicitas}" placeholder="${horasTempoInteiro}" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
+          <input type="number" class="rec-horas${horasExplicitas === null ? ' rec-horas-por-omissao' : ''}" min="0.25" step="0.25" value="${horasExplicitas === null ? '' : horasExplicitas}" placeholder="horas" data-horas-recurso="${r.id}" ${marcado ? '' : 'disabled'}>h
           ${livreHoras !== null ? `<span class="hint-livre" title="Horas livres deste consultor neste período, sem ultrapassar 100% em nenhum dia, dadas as outras tarefas desta pessoa">Livre: ${livreHoras.toFixed(1)}h</span>` : ''}
         </span>
         <span class="disp-tag disp-${disp.classe}" title="${escapeAttr(dica)}">${disp.texto}</span>
-        ${precisaConfirmar ? `<span class="rec-horas-aviso">⚠ Sem horas próprias definidas — a assumir tempo inteiro: ${diasUteis} dias úteis × ${Capacidade.HORAS_DIA}h = ${horasTempoInteiro}h. Confirma (escreve ${horasTempoInteiro}) ou indica o esforço real.</span>` : ''}
+        ${pendente ? `<span class="rec-horas-aviso">⚠ Indica as horas previstas de ${escapeHtml(r.nome)} nesta tarefa para a associar (a tarefa tem ${diasUteis} dias úteis = ${horasTempoInteiro}h a tempo inteiro).</span>` : ''}
+        ${semHoras ? `<span class="rec-horas-aviso">⚠ Sem horas previstas definidas — escreve o esforço real (a tarefa tem ${diasUteis} dias úteis = ${horasTempoInteiro}h a tempo inteiro).</span>` : ''}
       </label>`;
   },
   // Equipa por omissão do modal "Associar consultores": a equipa "dona" do próprio projeto
@@ -8662,7 +8691,7 @@ const App = {
       filtrosIniciais || {}
     );
     const html = `
-      <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. As datas de início/fim e as horas de cada pessoa são coisas diferentes: as datas são quando a tarefa PODE decorrer; as horas são o esforço real que cada consultor vai dedicar. Deixa o campo "horas" em branco só se for mesmo a tempo inteiro (${horasCheias}h, toda a duração útil) — caso contrário, escreve as horas reais previstas.</p>
+      <p class="hint" style="margin:0 0 10px;">Disponibilidade de cada consultor neste período (${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}), considerando as suas outras tarefas, feriados e ausências. As datas de início/fim e as horas de cada pessoa são coisas diferentes: as datas são quando a tarefa PODE decorrer; as horas são o esforço real que cada consultor vai dedicar. <b>As horas previstas são obrigatórias</b> — um consultor só fica associado depois de indicares as suas horas (a tempo inteiro seriam ${horasCheias}h, toda a duração útil).</p>
       <p id="recResumoAssociados" class="rec-resumo"></p>
       <div class="rec-filtros">
         <select id="recFiltroDepartamento">
@@ -8681,6 +8710,7 @@ const App = {
     const inpNome = m.querySelector('#recFiltroNome');
     const listaEl = m.querySelector('#recListaConsultores');
     const resumoEl = m.querySelector('#recResumoAssociados');
+    const pendentes = new Set();
 
     const popularEquipas = () => {
       const equipasDoDept = this.state.equipas.filter(eq => !filtros.departamento || eq.departamentoId === filtros.departamento);
@@ -8707,7 +8737,7 @@ const App = {
         return true;
       });
       listaEl.innerHTML = visiveis.length
-        ? visiveis.map(({ r }) => this.montarLinhaModalRecursos(p, t, r)).join('')
+        ? visiveis.map(({ r }) => this.montarLinhaModalRecursos(p, t, r, pendentes.has(r.id))).join('')
         : '<p class="rec-sem-resultado">Nenhum consultor corresponde a este filtro.</p>';
       listaEl.querySelectorAll('[data-linha-recurso]').forEach(ligarEventosLinha);
     };
@@ -8716,42 +8746,65 @@ const App = {
       const linhaAtual = listaEl.querySelector(`[data-linha-recurso="${recursoId}"]`);
       if (!r || !linhaAtual) return;
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = this.montarLinhaModalRecursos(p, t, r);
+      wrapper.innerHTML = this.montarLinhaModalRecursos(p, t, r, pendentes.has(recursoId));
       const novaLinha = wrapper.firstElementChild;
       ligarEventosLinha(novaLinha);
       linhaAtual.replaceWith(novaLinha);
     };
+    // Pergunta se se estende a tarefa para compensar feriados/ausências deste consultor; devolve true
+    // se as datas mudaram.
+    const compensarIndisponibilidade = (r) => {
+      const novoFim = Capacidade.calcularFimComCompensacao(r, t.inicio, t.fim);
+      if (!novoFim) return false;
+      const estender = confirm(
+        `${r.nome} tem dias indisponíveis (feriado/ausência) entre ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} e ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}.\n\n` +
+        `Queres estender a tarefa até ${DateUtil.formatShort(novoFim)} para compensar esses dias, ou manter as datas atuais e aceitar que ${r.nome} fica indisponível nesses dias?\n\n` +
+        `OK = Estender a tarefa\nCancelar = Manter as datas atuais`
+      );
+      if (!estender) return false;
+      t.fim = DateUtil.toISO(novoFim);
+      this.recalcularAgendamento(p);
+      return true;
+    };
     const ligarEventosLinha = (linhaEl) => {
       linhaEl.querySelector('[data-horas-recurso]').addEventListener('change', (ev) => {
-        this.definirHorasRecursoTarefa(p, taskId, ev.target.dataset.horasRecurso, ev.target.value);
-        atualizarLinha(ev.target.dataset.horasRecurso);
+        const recursoId = ev.target.dataset.horasRecurso;
+        const horas = parseFloat(ev.target.value);
+        if (!(horas > 0)) {
+          this.toast('Indica as horas previstas (maior que 0).');
+          atualizarLinha(recursoId);
+          const campo = listaEl.querySelector(`[data-horas-recurso="${recursoId}"]`);
+          if (campo && !campo.disabled) campo.focus();
+          return;
+        }
+        if (pendentes.has(recursoId)) {
+          pendentes.delete(recursoId);
+          const datasMudaram = compensarIndisponibilidade(this.state.recursos.find(x => x.id === recursoId));
+          this.adicionarConsultorComHoras(taskId, recursoId, horas);
+          // Só quando o PRAZO da tarefa muda (compensação de indisponibilidade) é que todas as
+          // linhas passam a depender de uma janela diferente — só nesse caso vale a pena refazer o
+          // modal inteiro (preservando os filtros escolhidos).
+          if (datasMudaram) this.abrirModalRecursos(taskId, filtros);
+          else { atualizarLinha(recursoId); renderResumo(); }
+          return;
+        }
+        this.definirHorasRecursoTarefa(p, taskId, recursoId, horas);
+        atualizarLinha(recursoId);
       });
       linhaEl.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
         const recursoId = ev.target.value;
-        let datasMudaram = false;
         if (ev.target.checked) {
-          const r = this.state.recursos.find(x => x.id === recursoId);
-          const novoFim = Capacidade.calcularFimComCompensacao(r, t.inicio, t.fim);
-          if (novoFim) {
-            const estender = confirm(
-              `${r.nome} tem dias indisponíveis (feriado/ausência) entre ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))} e ${DateUtil.formatShort(DateUtil.parseISO(t.fim))}.\n\n` +
-              `Queres estender a tarefa até ${DateUtil.formatShort(novoFim)} para compensar esses dias, ou manter as datas atuais e aceitar que ${r.nome} fica indisponível nesses dias?\n\n` +
-              `OK = Estender a tarefa\nCancelar = Manter as datas atuais`
-            );
-            if (estender) {
-              t.fim = DateUtil.toISO(novoFim);
-              this.recalcularAgendamento(p);
-              datasMudaram = true;
-            }
-          }
+          // Só fica "pendente": entra na tarefa quando se escrever as horas (ver o handler acima).
+          pendentes.add(recursoId);
+          atualizarLinha(recursoId);
+          const campo = listaEl.querySelector(`[data-horas-recurso="${recursoId}"]`);
+          if (campo) campo.focus();
+          return;
         }
+        if (pendentes.has(recursoId)) { pendentes.delete(recursoId); atualizarLinha(recursoId); return; }
         this.alternarRecursoTarefa(taskId, recursoId);
-        // Só quando o PRAZO da tarefa muda (compensação de indisponibilidade) é que todas as
-        // linhas passam a depender de uma janela diferente — só nesse caso vale a pena refazer o
-        // modal inteiro (preservando os filtros escolhidos); nos outros casos, (des)associar um
-        // consultor não muda o resultado de mais ninguém, só o dele e o resumo fixo.
-        if (datasMudaram) this.abrirModalRecursos(taskId, filtros);
-        else { atualizarLinha(recursoId); renderResumo(); }
+        atualizarLinha(recursoId);
+        renderResumo();
       });
     };
 
