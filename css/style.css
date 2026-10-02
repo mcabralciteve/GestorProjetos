@@ -376,6 +376,11 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .tabela-tarefas thead th{
   position:sticky;top:0;background:var(--cinza-100);z-index:2;
   text-align:left;font-size:11px;color:var(--cinza-500);font-weight:600;
+  /* Mesma altura do cabeçalho do Gantt (Gantt.HEADER_H, em gantt.js) — os dois painéis fazem
+     scroll sincronizado a partir do topo de cada um (ver e.painelTabela/e.painelGantt), por isso
+     um cabeçalho mais baixo do que o outro desalinhava TODAS as linhas por baixo, pelo mesmo
+     desvio constante. */
+  height:36px;
   padding:6px 8px;border-bottom:1px solid var(--cinza-300);border-right:1px solid var(--cinza-200);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   cursor:grab;user-select:none;
@@ -407,7 +412,7 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .nome-cell input:focus{background:var(--cinza-100);border-radius:4px;}
 .toggle-filhos{cursor:pointer;width:14px;text-align:center;color:var(--cinza-500);flex-shrink:0;user-select:none;}
 .indent{flex-shrink:0;}
-.linha-handle{cursor:grab;width:12px;text-align:center;color:var(--cinza-300);flex-shrink:0;user-select:none;touch-action:none;}
+.linha-handle{cursor:grab;width:12px;text-align:center;color:var(--cinza-300);flex-shrink:0;user-select:none;touch-action:none;font-size:12px;line-height:1;}
 .linha-handle:hover{color:var(--cinza-500);}
 .tabela-tarefas tr.linha-a-arrastar td{opacity:0.4;}
 .linha-indicador-drop td{padding:0;border:none;height:0;}
