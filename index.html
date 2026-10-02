@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261002b">
+<link rel="stylesheet" href="css/style.css?v=20261002c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -71,6 +71,7 @@
 
 <nav class="grupos-nav" id="gruposNav">
   <button class="grupo-btn active" data-grupo="inicio">🏠 Início</button>
+  <button class="grupo-btn" data-grupo="comercial" id="grupoBtnComercial" style="display:none;">💼 Comercial</button>
   <button class="grupo-btn" data-grupo="planeamento">📅 Planeamento</button>
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
@@ -79,6 +80,13 @@
   <button class="grupo-btn" data-grupo="configuracoes" id="grupoBtnConfiguracoes">⚙ Configurações</button>
 </nav>
 <nav class="tabs" id="tabsNav">
+  <div class="tabs-grupo" data-grupo="comercial">
+    <button class="tab-btn" data-tab="crmOportunidades">Oportunidades</button>
+    <button class="tab-btn" data-tab="crmContas">Contas</button>
+    <button class="tab-btn" data-tab="crmContactos">Contactos</button>
+    <button class="tab-btn" data-tab="crmPropostas">Propostas</button>
+    <button class="tab-btn" data-tab="crmFollowups">Follow-ups</button>
+  </div>
   <div class="tabs-grupo" data-grupo="planeamento">
     <button class="tab-btn" data-tab="gantt">Gantt do Projeto</button>
     <button class="tab-btn" data-tab="projetos">Projetos</button>
@@ -106,6 +114,7 @@
   <div class="tabs-grupo" data-grupo="configuracoes">
     <button class="tab-btn" data-tab="recursos">Pessoas</button>
     <button class="tab-btn" data-tab="tiposTrabalho">Tipos de Trabalho</button>
+    <button class="tab-btn" data-tab="crmFunil" id="tabBtnCrmFunil">Funil CRM</button>
     <button class="tab-btn" data-tab="definicoes">Definições</button>
   </div>
 </nav>
@@ -525,6 +534,49 @@
         <tbody id="corpoTabelaEquipas"></tbody>
       </table>
     </div>
+  </div>
+</section>
+
+<!-- ===================== COMERCIAL (CRM) ===================== -->
+<section class="tab-panel" id="tab-crmOportunidades">
+  <div class="pagina">
+    <div class="pagina-head"><h2>💼 Oportunidades</h2></div>
+    <p class="pagina-sub">Funil comercial por tipo de oportunidade. Arrasta os cartões entre etapas (marcar como perdida pede o motivo; ganha permite criar o projeto). Os valores em € são visíveis a quem tem acesso ao CRM.</p>
+    <div id="crmOportunidadesCorpo"></div>
+  </div>
+</section>
+<section class="tab-panel" id="tab-crmContas">
+  <div class="pagina">
+    <div class="pagina-head"><h2>🏢 Contas</h2></div>
+    <p class="pagina-sub">Clientes e potenciais clientes. Abre uma conta para ver os seus contactos, oportunidades, interações e follow-ups.</p>
+    <div id="crmContasCorpo"></div>
+  </div>
+</section>
+<section class="tab-panel" id="tab-crmContactos">
+  <div class="pagina">
+    <div class="pagina-head"><h2>👤 Contactos</h2></div>
+    <p class="pagina-sub">Pessoas de contacto nas contas. Cada contacto pode exportar os seus dados (RGPD).</p>
+    <div id="crmContactosCorpo"></div>
+  </div>
+</section>
+<section class="tab-panel" id="tab-crmPropostas">
+  <div class="pagina">
+    <div class="pagina-head"><h2>📄 Propostas</h2></div>
+    <p class="pagina-sub">Registo das propostas (referência e valor vêm do GIAF). O documento fica no OneDrive/SharePoint — aqui guarda-se só a ligação ou o caminho.</p>
+    <div id="crmPropostasCorpo"></div>
+  </div>
+</section>
+<section class="tab-panel" id="tab-crmFollowups">
+  <div class="pagina">
+    <div class="pagina-head"><h2>✅ Follow-ups</h2></div>
+    <p class="pagina-sub">O que há a fazer junto de clientes e oportunidades. Os teus follow-ups em atraso aparecem no sino.</p>
+    <div id="crmFollowupsCorpo"></div>
+  </div>
+</section>
+<section class="tab-panel" id="tab-crmFunil">
+  <div class="pagina">
+    <div class="pagina-head"><h2>⚙ Funil CRM</h2></div>
+    <div id="crmFunilCorpo"></div>
   </div>
 </section>
 
@@ -1143,6 +1195,8 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/app.js?v=20261002h"></script>
+<script src="js/crm-logica.js?v=20261002a"></script>
+<script src="js/crm.js?v=20261002a"></script>
+<script src="js/app.js?v=20261002i"></script>
 </body>
 </html>

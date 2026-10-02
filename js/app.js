@@ -215,6 +215,7 @@ const App = {
       projEquipaId: document.getElementById('projEquipaId'),
       listaConsultoresProjeto: document.getElementById('listaConsultoresProjeto'),
       grupoBtnEquipa: document.getElementById('grupoBtnEquipa'),
+      grupoBtnComercial: document.getElementById('grupoBtnComercial'),
       grupoBtnFaturacao: document.getElementById('grupoBtnFaturacao'),
       tabBtnAcompanhamento: document.getElementById('tabBtnAcompanhamento'),
       acompanhamentoProjetoNome: document.getElementById('acompanhamentoProjetoNome'),
@@ -483,8 +484,10 @@ const App = {
       this.renderProjetoSelect();
       this.renderTudo();
       this.atualizarBotaoMigracao();
+      Crm.atualizarContagemFollowups();
     } else if (!autenticadoAgora && this.sessaoAtiva) {
       this.sessaoAtiva = false;
+      Crm.limpar();
       this.state = this.estadoVazio();
       this.renderProjetoSelect();
       this.renderTudo();
@@ -572,6 +575,7 @@ const App = {
       if (!confirm('Ainda há alterações a ser guardadas na nuvem. Se atualizares agora podes ver dados desatualizados por instantes. Continuar?')) return;
     }
     this._atualizandoDaNuvem = true;
+    Crm.carregado = false; // o CRM volta a ler da base de dados da próxima vez que se abrir
     const btn = document.getElementById('btnAtualizarDados');
     if (btn) btn.disabled = true;
     // "silencioso" (ao voltar à aba) tem de continuar mesmo invisível — como já não interrompe com
@@ -1288,7 +1292,10 @@ const App = {
   // ---------- Projetos: CRUD ----------
   // Só o Administrador cria projetos (é ele que atribui logo o Gestor de Projeto) — o botão que
   // chama isto já fica escondido para os restantes papéis, mas confirma-se aqui também.
-  criarProjeto() {
+  // "opts" (usado pelo CRM ao ganhar uma oportunidade): pré-preenche o ecrã com nome, cliente, valor,
+  // horas, referência GIAF e gestor, e chama opts.onCriado(projeto) depois de criado.
+  criarProjeto(opts) {
+    opts = opts || {};
     if (!this.souAdmin()) return;
     const opcoesGestor = '<option value="">Sem gestor atribuído</option>' +
       this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
@@ -1322,11 +1329,18 @@ const App = {
     };
     selTipoRef.addEventListener('change', atualizarRef);
     atualizarRef();
+    if (opts.nome) inpNome.value = opts.nome;
+    if (opts.gestorRecursoId && [...selGestor.options].some(o => o.value === opts.gestorRecursoId)) selGestor.value = opts.gestorRecursoId;
+    if (opts.refGiaf) inpRef.value = opts.refGiaf;
     inpNome.focus();
     this.els.modalCorpo.querySelector('#btnConfirmarNovoProjeto').addEventListener('click', () => {
       const nome = inpNome.value.trim();
       if (!nome) { inpNome.focus(); return; }
       const p = this.novoProjetoBase(nome, selGestor.value || null);
+      if (opts.cliente) p.cliente = opts.cliente;
+      if (opts.descricao) p.descricao = opts.descricao;
+      if (opts.valorVendido) p.valorVendido = Number(opts.valorVendido) || 0;
+      if (opts.horasVendidas) p.horasVendidas = Number(opts.horasVendidas) || 0;
       p.tipoReferencia = selTipoRef.value === 'interno' ? 'interno' : 'giaf';
       if (p.tipoReferencia === 'interno') {
         p.idInterno = this.proximoCodigoInterno();
@@ -1345,6 +1359,7 @@ const App = {
       this.renderTudo();
       this.irParaAba('gantt');
       this.toast('Projeto criado.');
+      if (opts.onCriado) opts.onCriado(p);
     });
   },
   duplicarProjeto() {
@@ -3457,6 +3472,11 @@ const App = {
     // "Faturação" fica só para Gestor de Projeto — um Team Leader puro (sem ser também gestor de
     // nenhum projeto) não gere dinheiro de projeto nenhum só por liderar pessoas.
     if (e.grupoBtnEquipa) e.grupoBtnEquipa.style.display = '';
+    // "Comercial" (CRM): só Administradores, Diretores e Team Leaders — o mesmo critério das regras da
+    // base de dados (ver crm_tem_acesso em schema.sql), que é quem realmente protege os dados.
+    const verCrm = Crm.podeVer();
+    if (e.grupoBtnComercial) e.grupoBtnComercial.style.display = verCrm ? '' : 'none';
+    if (!verCrm && this.abaAtiva && this.abaAtiva.startsWith('crm')) this.irParaAba('dashboard');
     if (e.tabBtnAlocacoes) e.tabBtnAlocacoes.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     if (e.tabBtnCapacidade) e.tabBtnCapacidade.style.display = (admin || gestorDeAlgo || liderDeAlgo) ? '' : 'none';
     // "Feriados" (nacionais/empresa, ficheiro central) é só do Administrador ver e editar — não tem
@@ -3485,7 +3505,7 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho', 'feriados'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho', 'feriados', 'crmFunil'].includes(this.abaAtiva)) this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
     if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
@@ -3598,6 +3618,7 @@ const App = {
     let n = 0;
     if (meuRecurso) n += this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length;
     n += this.meusPassosAtrasadosCount();
+    if (Crm.podeVer()) n += Crm.followupsAtrasados;
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       n += this.faturasAVencerCount();
       n += this.consultoresRiscoCount();
@@ -3634,6 +3655,7 @@ const App = {
     }
     const passosAtrasados = this.meusPassosAtrasadosCount();
     if (passosAtrasados) itens.push({ key: 'meusPassos', texto: `${passosAtrasados} next step(s) atrasado(s)`, sub: 'Os meus Next Steps' });
+    if (Crm.podeVer() && Crm.followupsAtrasados) itens.push({ key: 'crmFollowups', texto: `${Crm.followupsAtrasados} follow-up(s) comercial(is) em atraso`, sub: 'Comercial → Follow-ups' });
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       const faturas = this.faturasAVencerCount();
       if (faturas) itens.push({ key: 'faturacaoAVencer', texto: `${faturas} fatura(s) a vencer`, sub: 'Faturação a vencer (próx. 30 dias)' });
@@ -3665,6 +3687,8 @@ const App = {
   // Vai ao Dashboard e pisca o cartão com esta chave (ver data-cartao em cartaoDashboard) — se a
   // pessoa tiver o cartão escondido em "⚙ Personalizar", volta a mostrá-lo primeiro.
   irParaCartaoDashboard(key) {
+    // Follow-ups do CRM não são um cartão do Dashboard: levam ao separador respetivo.
+    if (key === 'crmFollowups') { this.irParaAba('crmFollowups'); return; }
     if (this.dashboardWidgetsOcultosSet().has(key)) this.alternarWidgetDashboard(key);
     this.irParaAba('dashboard');
     this.renderDashboard();
@@ -8289,8 +8313,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { inicio: 'dashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmOportunidades', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -8305,6 +8329,7 @@ const App = {
     if (nome === 'ausencias') this.aplicarModoAusencias();
     if (nome === 'analise') this.renderAnalise();
     if (nome === 'financeiro') this.renderFinanceiro();
+    if (nome.startsWith('crm')) Crm.aoAbrirAba(nome);
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
   // (se o mês mostrado o incluir) fica centrado no ecrã — nem encostado ao fundo nem ao topo.
