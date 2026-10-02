@@ -184,6 +184,7 @@ const App = {
       notifWrap: document.getElementById('notifWrap'),
       notifBadge: document.getElementById('notifBadge'),
       btnNotificacoes: document.getElementById('btnNotificacoes'),
+      notifDropdown: document.getElementById('notifDropdown'),
       diaModoPessoal: document.getElementById('diaModoPessoal'),
       diaModoEquipa: document.getElementById('diaModoEquipa'),
       btnModoDiaPessoal: document.getElementById('btnModoDiaPessoal'),
@@ -3402,8 +3403,11 @@ const App = {
     const aberto = this.els.painelPersonalizarDashboard.classList.toggle('aberto');
     if (aberto) this.renderPainelPersonalizarDashboard();
   },
-  cartaoDashboard(titulo, corpoHtml, extraHead) {
-    return `<div class="dash-cartao">
+  // "key", quando passado, casa com as chaves de "ocultos"/"contarNotificacoes" e marca o cartão
+  // com data-cartao="chave" — é assim que o popup do sino (ver irParaCartaoDashboard) sabe para
+  // onde saltar e qual destacar.
+  cartaoDashboard(titulo, corpoHtml, extraHead, key) {
+    return `<div class="dash-cartao"${key ? ` data-cartao="${key}"` : ''}>
       <div class="dash-cartao-head"><h3>${titulo}</h3>${extraHead || ''}</div>
       <div class="dash-cartao-corpo">${corpoHtml}</div>
     </div>`;
@@ -3470,6 +3474,62 @@ const App = {
     const n = this.contarNotificacoes();
     e.notifBadge.textContent = n > 99 ? '99+' : String(n);
     e.notifBadge.style.display = n > 0 ? '' : 'none';
+  },
+  // Lista detalhada por trás do número do sino — uma linha por categoria com contagem > 0, cada uma
+  // com a mesma chave do cartão do Dashboard de onde vem (ver cartaoDashboard/data-cartao), para
+  // irParaCartaoDashboard saber para onde saltar e o que destacar. Mesmas regras de visibilidade de
+  // contarNotificacoes, só decompostas em vez de somadas.
+  itensNotificacoes() {
+    const perfil = this.perfilAtual();
+    const meuRecurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
+    const itens = [];
+    if (meuRecurso) {
+      const n = this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length;
+      if (n) itens.push({ key: 'meusDiasIncompletos', texto: `${n} dia(s) por preencher`, sub: 'Os meus dias por preencher' });
+    }
+    const passosAtrasados = this.meusPassosAtrasadosCount();
+    if (passosAtrasados) itens.push({ key: 'meusPassos', texto: `${passosAtrasados} next step(s) atrasado(s)`, sub: 'Os meus Next Steps' });
+    if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
+      const faturas = this.faturasAVencerCount();
+      if (faturas) itens.push({ key: 'faturacaoAVencer', texto: `${faturas} fatura(s) a vencer`, sub: 'Faturação a vencer (próx. 30 dias)' });
+      const risco = this.consultoresRiscoCount();
+      if (risco) itens.push({ key: 'consultoresRisco', texto: `${risco} consultor(es) em risco`, sub: 'Sobre-alocação detetada' });
+    }
+    if (this.souAdmin() || this.souLiderDeAlgumaEquipa()) {
+      const aus = this.ausenciasParaAprovarCount();
+      if (aus) itens.push({ key: 'ausenciasParaAprovar', texto: `${aus} pedido(s) de ausência`, sub: 'Para aprovar' });
+      const eq = this.equipaDiasIncompletosCount();
+      if (eq) itens.push({ key: 'equipaDiasIncompletos', texto: `${eq} pessoa(s) da equipa`, sub: 'Com registos incompletos' });
+    }
+    return itens;
+  },
+  renderPainelNotificacoes() {
+    if (!this.els.notifDropdown) return;
+    const itens = this.itensNotificacoes();
+    this.els.notifDropdown.innerHTML = itens.length ? itens.map(it => `
+      <div class="dash-linha dash-linha-link" data-notif-cartao="${it.key}">
+        <span class="dash-linha-principal">${escapeHtml(it.texto)}</span>
+        <span class="dash-linha-sub">${escapeHtml(it.sub)}</span>
+      </div>`).join('') : '<p class="hint" style="margin:0;">Sem notificações.</p>';
+  },
+  alternarPainelNotificacoes() {
+    if (!this.els.notifDropdown) return;
+    const aberto = this.els.notifDropdown.classList.toggle('aberto');
+    if (aberto) this.renderPainelNotificacoes();
+  },
+  // Vai ao Dashboard e pisca o cartão com esta chave (ver data-cartao em cartaoDashboard) — se a
+  // pessoa tiver o cartão escondido em "⚙ Personalizar", volta a mostrá-lo primeiro.
+  irParaCartaoDashboard(key) {
+    if (this.dashboardWidgetsOcultosSet().has(key)) this.alternarWidgetDashboard(key);
+    this.irParaAba('dashboard');
+    this.renderDashboard();
+    requestAnimationFrame(() => {
+      const cartao = this.els.dashboardGrelha?.querySelector(`[data-cartao="${key}"]`);
+      if (!cartao) return;
+      cartao.scrollIntoView({ block: 'center' });
+      cartao.classList.add('linha-nova');
+      setTimeout(() => cartao.classList.remove('linha-nova'), 2000);
+    });
   },
   renderDashboard() {
     const e = this.els;
@@ -3550,7 +3610,7 @@ const App = {
             <span class="dash-linha-sub">${escapeHtml(p.nome)}${pp.dataPrevista ? ' · ' + DateUtil.formatShort(DateUtil.parseISO(pp.dataPrevista)) : ''}</span>
           </div>`).join('') : '<p class="hint">Sem next steps atribuídos.</p>';
       }
-      html += this.cartaoDashboard('✅ Os meus Next Steps', corpo);
+      html += this.cartaoDashboard('✅ Os meus Next Steps', corpo, null, 'meusPassos');
     }
 
     if (!ocultos.has('meusProjetos')) {
@@ -3576,7 +3636,7 @@ const App = {
             dias.map(d => `<div class="dash-linha dash-linha-link" data-dash-dia="${d.iso}"><span class="dash-linha-principal">${DateUtil.formatShort(DateUtil.parseISO(d.iso))}</span><span class="dash-linha-sub">faltam ${d.faltam.toFixed(1)}h</span></div>`).join('')
           : `<p class="hint">✅ Registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
       }
-      html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo);
+      html += this.cartaoDashboard('📋 Os meus dias por preencher', corpo, null, 'meusDiasIncompletos');
     }
 
     if (!ocultos.has('minhasAusencias')) {
@@ -3607,7 +3667,7 @@ const App = {
           <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))} · decidir →</span>
         </div>`;
       }).join('') : '<p class="hint">Sem pedidos pendentes.</p>';
-      html += this.cartaoDashboard('🕒 Pedidos de ausência para aprovar', corpo);
+      html += this.cartaoDashboard('🕒 Pedidos de ausência para aprovar', corpo, null, 'ausenciasParaAprovar');
     }
 
     if (gestorOuAdmin && !ocultos.has('faturacaoAVencer')) {
@@ -3623,7 +3683,7 @@ const App = {
           <span class="dash-linha-principal">${escapeHtml(p.nome)} — ${this.valorFatura(f, p).toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</span>
           <span class="dash-linha-sub">Prevista ${DateUtil.formatShort(DateUtil.parseISO(f.dataPrevista))}</span>
         </div>`).join('') : '<p class="hint">Sem faturas por emitir nos próximos 30 dias.</p>';
-      html += this.cartaoDashboard('💶 Faturação a vencer', corpo);
+      html += this.cartaoDashboard('💶 Faturação a vencer', corpo, null, 'faturacaoAVencer');
     }
 
     if (gestorOuAdmin && !ocultos.has('ausenciasEquipa')) {
@@ -3654,7 +3714,7 @@ const App = {
           <span class="dash-linha-principal">${escapeHtml(r.nome)}</span>
           <span class="dash-linha-sub">${nDias} dia(s) por preencher (últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis)</span>
         </div>`).join('') : `<p class="hint">✅ Toda a gente com o registo em dia nos últimos ${this.DIAS_JANELA_REGISTO_INCOMPLETO} dias úteis.</p>`;
-      html += this.cartaoDashboard('📋 Registos incompletos da equipa', corpo);
+      html += this.cartaoDashboard('📋 Registos incompletos da equipa', corpo, null, 'equipaDiasIncompletos');
     }
 
     if (gestorOuAdmin && !ocultos.has('consultoresRisco')) {
@@ -3681,7 +3741,7 @@ const App = {
           <span class="dash-linha-sub">${n} período(s) crítico(s), até ${piorExcesso.toFixed(1)}h de excesso — o mais próximo: ${periodo}</span>
         </div>`;
       }).join('') : '<p class="hint">✅ Sem sobre-alocação real detetada.</p>';
-      html += this.cartaoDashboard('⚠️ Consultores em risco', corpo);
+      html += this.cartaoDashboard('⚠️ Consultores em risco', corpo, null, 'consultoresRisco');
     }
 
     e.dashboardGrelha.innerHTML = html || '<p class="hint">Sem cartões para mostrar — liga alguns em "⚙ Personalizar".</p>';
@@ -8925,7 +8985,17 @@ const App = {
     e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
-    if (this.els.btnNotificacoes) this.els.btnNotificacoes.addEventListener('click', () => this.irParaAba('dashboard'));
+    if (this.els.btnNotificacoes) this.els.btnNotificacoes.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelNotificacoes(); });
+    if (e.notifDropdown) {
+      e.notifDropdown.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const el = ev.target.closest('[data-notif-cartao]');
+        if (!el) return;
+        e.notifDropdown.classList.remove('aberto');
+        this.irParaCartaoDashboard(el.dataset.notifCartao);
+      });
+      document.addEventListener('click', () => e.notifDropdown.classList.remove('aberto'));
+    }
     document.getElementById('btnExportCsv').addEventListener('click', () => this.exportarCsv());
     document.getElementById('btnExportImagem').addEventListener('click', () => this.exportarImagem());
     document.getElementById('btnExportPdf').addEventListener('click', () => this.exportarPdf());
