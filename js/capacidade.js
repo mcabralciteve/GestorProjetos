@@ -466,6 +466,12 @@ const Capacidade = {
     if (tarefaAtual && tarefaAtual.progresso >= 100 && fimISO < DateUtil.todayISO()) {
       return { nivel: 'ok', diasIndisponivel: 0, intervalosSobreAlocados: [], mesLabel: '' };
     }
+    // Uma tarefa que só cai em fim de semana não tem nenhum dia útil: as horas a alocar dão sempre 0 e
+    // a simulação abaixo nunca acharia sobre-alocação nenhuma — ficava "disponível" quando, na
+    // verdade, ninguém pode trabalhar nela nessas datas.
+    if (diasUteisEstaTarefa === 0) {
+      return { nivel: 'critico', diasIndisponivel: 0, intervalosSobreAlocados: [], mesLabel: '', semDiasUteis: true, inicio, fim };
+    }
     const intervalosSobreAlocados = this.intervalosCriticos(recurso, {
       excluir: { projetoId, taskId },
       extra: { inicio, fim, horas: estaHorasTotais },
@@ -503,6 +509,10 @@ const Capacidade = {
     return Object.assign({ nivel, diasIndisponivel: 0, intervalosSobreAlocados: [], mesLabel: pior.label }, pior.resumo);
   },
   descreverProblema(nomeRecurso, resultado) {
+    if (resultado.nivel === 'critico' && resultado.semDiasUteis) {
+      const periodo = +resultado.inicio === +resultado.fim ? DateUtil.formatShort(resultado.inicio) : `${DateUtil.formatShort(resultado.inicio)}–${DateUtil.formatShort(resultado.fim)}`;
+      return `${nomeRecurso} não pode trabalhar nesta tarefa: ${periodo} cai só em fim de semana (sem dias úteis). Ajusta as datas da tarefa.`;
+    }
     if (resultado.nivel === 'critico') {
       const partes = [];
       if (resultado.diasIndisponivel > 0) {
