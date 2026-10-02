@@ -4337,7 +4337,7 @@ const App = {
           }
         });
       }
-      tr.querySelector('[data-acao="alocacoes"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
+      tr.querySelector('[data-acao="alocacoes"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
       tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarRecurso(r.id));
       tbody.appendChild(tr);
     });
@@ -5249,7 +5249,7 @@ const App = {
           ${projetos.length ? projetos.map(pr => `<div class="cap-projeto-linha">${escapeHtml(pr.projeto.nome)}<span class="cap-projeto-datas">${DateUtil.formatShort(DateUtil.parseISO(pr.inicio))} – ${DateUtil.formatShort(DateUtil.parseISO(pr.fim))}</span></div>`).join('') : '<span style="color:var(--cinza-500)">Sem alocações.</span>'}
         </div>
         ${vejoValoresDesteRecurso ? '<button class="btn btn-sm" style="margin-top:8px;width:100%;" data-acao="ver-tarefas">📋 Ver todas as tarefas</button>' : ''}`;
-      if (vejoValoresDesteRecurso) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.abrirModalAlocacoesRecurso(r.id));
+      if (vejoValoresDesteRecurso) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
       e.gridCapacidade.appendChild(card);
     });
   },
@@ -8680,15 +8680,19 @@ const App = {
         const [projetoId, taskId, novoInicio, novoFim] = btn.dataset.aplicarDesloc.split('|');
         const projeto = this.state.projetos[projetoId];
         if (!projeto || !this.possoEditarProjeto(projetoId)) { this.toast('Não tens permissão para alterar este projeto.'); return; }
-        this.moverTarefa(taskId, novoInicio, novoFim, projeto);
-        this.abrirModalAlocacoesRecurso(recursoId);
+        this.comSinalDeProcessamento('A aplicar e a recalcular conflitos…', () => {
+          this.moverTarefa(taskId, novoInicio, novoFim, projeto);
+          this.abrirModalAlocacoesRecurso(recursoId);
+        });
       });
     });
     this.els.modalCorpo.querySelectorAll('[data-horas-alocacao-tarefa]').forEach(inp => {
       inp.addEventListener('change', () => {
         const projeto = this.state.projetos[inp.dataset.projetoAlocacao];
-        this.definirHorasRecursoTarefa(projeto, inp.dataset.horasAlocacaoTarefa, recursoId, inp.value);
-        this.abrirModalAlocacoesRecurso(recursoId);
+        this.comSinalDeProcessamento('A recalcular conflitos…', () => {
+          this.definirHorasRecursoTarefa(projeto, inp.dataset.horasAlocacaoTarefa, recursoId, inp.value);
+          this.abrirModalAlocacoesRecurso(recursoId);
+        });
       });
     });
   },
@@ -8981,6 +8985,15 @@ const App = {
     if (this._carregamentosAtivos > 0) return;
     if (!this.els) return;
     if (this.els.loadingOverlay) this.els.loadingOverlay.classList.remove('aberto');
+  },
+  // Corre "fn" depois de o browser ter pintado o sinal de "a processar" — o JavaScript é síncrono, por
+  // isso sem este setTimeout o spinner só seria pintado quando o trabalho já tivesse acabado (ver a
+  // nota em selecionarProjeto). O finally garante que nunca fica preso no ecrã.
+  comSinalDeProcessamento(texto, fn) {
+    this.mostrarCarregamento(texto);
+    setTimeout(() => {
+      try { fn(); } finally { this.esconderCarregamento(); }
+    }, 20);
   },
 
   // ---------- Tooltip automático para texto cortado ----------
