@@ -22,10 +22,11 @@ const Crm = {
     contas: { texto: '', estado: '', resp: '' },
     contactos: { texto: '' },
     propostas: { texto: '', estado: '' },
-    tarefas: { quem: 'minhas', estado: 'pendentes' }
+    tarefas: { quem: 'minhas', estado: 'pendentes' },
+    dash: { tipoId: '', periodo: 'ano', resp: 'todos' }
   },
   ABAS: {
-    crmOportunidades: 'crmOportunidadesCorpo', crmContas: 'crmContasCorpo', crmContactos: 'crmContactosCorpo',
+    crmDashboard: 'crmDashboardCorpo', crmOportunidades: 'crmOportunidadesCorpo', crmContas: 'crmContasCorpo', crmContactos: 'crmContactosCorpo',
     crmPropostas: 'crmPropostasCorpo', crmFollowups: 'crmFollowupsCorpo', crmFunil: 'crmFunilCorpo'
   },
   ORIGENS: ['Cliente existente', 'Recomendação', 'Evento / feira', 'Prospeção ativa', 'Candidatura / aviso', 'Parceiro', 'Outro'],
@@ -48,6 +49,7 @@ const Crm = {
     Object.keys(this.d).forEach(k => { this.d[k] = []; });
     this.idx = {};
     this.carregado = false;
+    this.erroCarga = null;
     this.followupsAtrasados = 0;
   },
   // Os pedidos do Supabase devolvem no máximo 1000 linhas — lê-se por páginas até acabar.
@@ -73,7 +75,9 @@ const Crm = {
       this.reindexar();
       this.recalcularFollowups();
     })();
-    try { await this._aCarregar; } finally { this._aCarregar = null; }
+    try { await this._aCarregar; this.erroCarga = null; }
+    catch (err) { this.erroCarga = this.msgErro(err); throw err; }
+    finally { this._aCarregar = null; }
   },
   reindexar() {
     const L = CrmLogica;
@@ -201,6 +205,7 @@ const Crm = {
     const el = document.getElementById(this.ABAS[aba]);
     if (!el || !this.carregado) return;
     ({
+      crmDashboard: () => this.renderDashboard(el),
       crmOportunidades: () => this.renderOportunidades(el),
       crmContas: () => this.renderContas(el),
       crmContactos: () => this.renderContactos(el),
@@ -281,7 +286,11 @@ const Crm = {
       'concluir-tarefa': () => this.alternarTarefa(id),
       'copiar': () => this.copiar(el.dataset.texto),
       'vista': () => { this.filtros.op.vista = el.dataset.valor; this.renderAtual(); },
-      'ir-conta': () => { App.fecharModal(); this.abrirConta(id); }
+      'ir-conta': () => { App.fecharModal(); this.abrirConta(id); },
+      'importar-contas': () => this.abrirImportacao('contas'),
+      'importar-contactos': () => this.abrirImportacao('contactos'),
+      'contas-projetos': () => this.abrirContasDosProjetos(),
+      'duplicados': () => this.abrirDuplicados()
     };
     const f = mapa[nome] || (() => this.acaoFunil(nome, el));
     f();
@@ -887,6 +896,7 @@ const Crm = {
   // ============================ Contas ============================
   renderContas(el) {
     const f = this.filtros.contas;
+    const nDup = CrmLogica.gruposDuplicados(this.d.contas).length;
     const lista = this.d.contas.filter(c => (!f.estado || c.estado === f.estado) && (!f.resp || c.responsavel_id === f.resp) &&
       this.contem(f.texto, c.nome, c.nif, c.setor)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
     el.innerHTML = `<div class="filters crm-barra">
@@ -894,6 +904,9 @@ const Crm = {
         <label class="zoom-label">Responsável <select data-crm-filtro="contas.resp">${this.optResponsaveis(f.resp, 'Todos')}</select></label>
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contas.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, NIF ou setor…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contas.length} contas</span>
+          ${nDup ? `<button type="button" class="btn" data-crm-acao="duplicados" title="Contas com o mesmo NIF ou nome">⚠ Duplicados (${nDup})</button>` : ''}
+          <button type="button" class="btn" data-crm-acao="contas-projetos" title="Cria contas para os clientes que já aparecem nos projetos">Dos projetos</button>
+          <button type="button" class="btn" data-crm-acao="importar-contas">⬆ Importar</button>
           <button type="button" class="btn btn-primary" data-crm-acao="nova-conta">+ Nova conta</button></span>
       </div>
       ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Conta</th><th>NIF</th><th>Estado</th><th>Setor</th><th>Responsável</th><th>Contactos</th><th>Oport. em curso</th><th>Valor em curso</th></tr></thead><tbody>
@@ -1066,6 +1079,7 @@ const Crm = {
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contactos.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, conta, email, cargo…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contactos.length} contactos</span>
+          <button type="button" class="btn" data-crm-acao="importar-contactos">⬆ Importar</button>
           <button type="button" class="btn btn-primary" data-crm-acao="novo-contacto">+ Novo contacto</button></span>
       </div>
       ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Nome</th><th>Conta</th><th>Cargo</th><th>Papel</th><th>Email</th><th>Telefone</th><th>RGPD</th></tr></thead><tbody>
@@ -1169,6 +1183,305 @@ const Crm = {
       }
     } catch (err) { this.avisoErro(err); }
     this.renderAtual();
+  },
+
+  // ============================ Fase 2: Dashboard comercial ============================
+  // Barras horizontais em CSS. Cada linha: { rotulo, valor, valor2 (opcional, camada mais clara por
+  // baixo, ex.: valor total vs ponderado), texto, cor }. A escala é a do maior valor do conjunto.
+  htmlBarras(linhas, vazio) {
+    if (!linhas.length) return this.vazioHtml(vazio || 'Sem dados.');
+    const max = Math.max(...linhas.map(l => Math.max(l.valor || 0, l.valor2 || 0)), 1);
+    return `<div class="crm-barras">${linhas.map(l => `<div class="crm-barra-linha">
+      <span class="crm-barra-rotulo" title="${escapeAttr(l.rotulo)}">${escapeHtml(l.rotulo)}</span>
+      <span class="crm-barra-pista">
+        ${l.valor2 != null ? `<i class="crm-barra-fundo" style="width:${Math.max(1, (l.valor2 / max) * 100)}%"></i>` : ''}
+        <i class="crm-barra-cheia" style="width:${l.valor ? Math.max(1, (l.valor / max) * 100) : 0}%;${l.cor ? `background:${l.cor};` : ''}"></i>
+      </span>
+      <span class="crm-barra-texto">${escapeHtml(l.texto)}</span></div>`).join('')}</div>`;
+  },
+  rotuloMes(k) { const M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']; return `${M[Number(k.slice(5, 7)) - 1]}/${k.slice(2, 4)}`; },
+  renderDashboard(el) {
+    const L = CrmLogica, f = this.filtros.dash, hoje = this.hoje();
+    const per = L.periodoPreset(f.periodo, hoje);
+    const meu = this.meuRecursoId();
+    const tipos = this.tiposAtivos();
+    const ops = this.d.oportunidades.filter(o => (!f.tipoId || o.tipo_id === f.tipoId) && (f.resp !== 'meus' || o.responsavel_id === meu));
+    const abertas = L.resumoFunil(ops, this.idx.etapa).abertas;
+    const fech = L.resumoFechadas(ops, this.idx.etapa, per.de, per.ate);
+    const risco = L.emRisco(ops, this.idx.etapa, this.d.tarefas, hoje);
+    const rotuloPer = { ano: 'este ano', '12m': 'últimos 12 meses', trimestre: 'este trimestre', todo: 'desde sempre' }[f.periodo];
+    const kpi = (n, t) => `<div class="crm-kpi"><b>${n}</b><span>${t}</span></div>`;
+    const kpis = `<div class="crm-kpis">
+      ${kpi(abertas.n, 'em curso')}${kpi(this.euro(abertas.valor), 'valor em curso')}${kpi(this.euro(abertas.ponderado), 'valor ponderado')}
+      ${kpi(`${fech.ganhas.n} · ${this.euro(fech.ganhas.valor)}`, 'ganhas, ' + rotuloPer)}${kpi(`${fech.perdidas.n} · ${this.euro(fech.perdidas.valor)}`, 'perdidas, ' + rotuloPer)}
+      ${kpi(fech.conversao === null ? '—' : Math.round(fech.conversao * 100) + '%', 'conversão, ' + rotuloPer)}
+      ${kpi(risco.length, 'a precisar de atenção')}</div>`;
+    const barra = `<div class="filters crm-barra">
+      <label class="zoom-label">Tipo <select data-crm-filtro="dash.tipoId"><option value="">Todos</option>${this.opcoes(tipos, f.tipoId, t => t.nome)}</select></label>
+      <label class="zoom-label">Período (ganhas/perdidas) <select data-crm-filtro="dash.periodo">${[['ano', 'Este ano'], ['12m', 'Últimos 12 meses'], ['trimestre', 'Este trimestre'], ['todo', 'Desde sempre']].map(([k, v]) => `<option value="${k}"${f.periodo === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="zoom-label">Responsável <select data-crm-filtro="dash.resp"><option value="todos"${f.resp === 'todos' ? ' selected' : ''}>Todos</option><option value="meus"${f.resp === 'meus' ? ' selected' : ''}>As minhas</option></select></label>
+    </div>`;
+
+    // Funil em curso, por etapa — um gráfico por tipo (cada tipo tem as suas etapas).
+    const tiposAMostrar = f.tipoId ? tipos.filter(t => t.id === f.tipoId) : tipos;
+    const funis = tiposAMostrar.map(t => {
+      const linhas = L.pipelinePorEtapa(ops.filter(o => o.tipo_id === t.id), L.etapasDoTipo(this.d.etapas, t.id))
+        .map(p => ({ rotulo: `${p.etapa.nome} (${Math.round(p.etapa.probabilidade)}%)`, valor: p.ponderado, valor2: p.valor, texto: `${p.n} · ${this.euro(p.valor)} → ${this.euro(p.ponderado)}` }));
+      return `<h4 class="crm-h">${escapeHtml(t.nome)}</h4>${this.htmlBarras(linhas, 'Sem etapas.')}`;
+    }).join('');
+
+    const prev = L.previsaoPorMes(ops, this.idx.etapa, hoje);
+    const linhasPrev = prev.meses.map(m => ({ rotulo: this.rotuloMes(m.mes), valor: m.ponderado, valor2: m.valor, texto: `${m.n} · ${this.euro(m.valor)} → ${this.euro(m.ponderado)}` }));
+    if (prev.atrasadas.n) linhasPrev.unshift({ rotulo: 'Data ultrapassada', valor: prev.atrasadas.ponderado, valor2: prev.atrasadas.valor, texto: `${prev.atrasadas.n} · ${this.euro(prev.atrasadas.valor)} → ${this.euro(prev.atrasadas.ponderado)}`, cor: 'var(--vermelho)' });
+    if (prev.semData.n) linhasPrev.push({ rotulo: 'Sem data', valor: prev.semData.ponderado, valor2: prev.semData.valor, texto: `${prev.semData.n} · ${this.euro(prev.semData.valor)} → ${this.euro(prev.semData.ponderado)}`, cor: 'var(--cinza-500)' });
+
+    const porMes = L.fechadasPorMes(ops, this.idx.etapa, per.de, per.ate);
+    const linhasFech = porMes.flatMap(m => [
+      { rotulo: `${this.rotuloMes(m.mes)} ganhas`, valor: m.ganhas.valor, texto: `${m.ganhas.n} · ${this.euro(m.ganhas.valor)}`, cor: 'var(--verde)' },
+      { rotulo: `${this.rotuloMes(m.mes)} perdidas`, valor: m.perdidas.valor, texto: `${m.perdidas.n} · ${this.euro(m.perdidas.valor)}`, cor: 'var(--vermelho)' }
+    ]);
+    const motivos = L.motivosDePerda(ops, this.idx.motivo, this.idx.etapa, per.de, per.ate)
+      .map(m => ({ rotulo: m.nome, valor: m.n, texto: `${m.n} · ${this.euro(m.valor)}`, cor: 'var(--vermelho)' }));
+
+    const listaRisco = risco.length ? `<div class="crm-lista">${risco.slice(0, 12).map(({ op, motivos: ms }) => {
+      const c = this.idx.conta.get(op.conta_id);
+      return `<div class="crm-item crm-item-linha crm-linha" data-crm-acao="abrir-op" data-id="${escapeAttr(op.id)}">
+        <span class="crm-item-texto"><b>${escapeHtml(op.titulo)}</b> · ${escapeHtml(c ? c.nome : '—')}</span>
+        <span class="crm-atrasada">${escapeHtml(ms.join(' · '))}</span><span class="hint">${this.euro(op.valor_estimado)} · ${escapeHtml(this._primeiroNome(op.responsavel_id))}</span></div>`;
+    }).join('')}${risco.length > 12 ? `<p class="hint">+ ${risco.length - 12} outras.</p>` : ''}</div>` : this.vazioHtml('Nada a precisar de atenção. 🎉');
+
+    el.innerHTML = `${barra}${kpis}
+      <div class="crm-grelha-dash">
+        <section class="crm-painel"><h3>Funil em curso <span class="hint">(valor ponderado sobre o total)</span></h3>${funis || this.vazioHtml('Sem tipos.')}</section>
+        <section class="crm-painel"><h3>Previsão de fecho <span class="hint">(em curso, por mês previsto)</span></h3>${this.htmlBarras(linhasPrev, 'Nada em curso.')}</section>
+        <section class="crm-painel"><h3>Ganhas e perdidas por mês <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(linhasFech, 'Ainda sem oportunidades fechadas neste período.')}</section>
+        <section class="crm-painel"><h3>Motivos de perda <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(motivos, 'Sem perdas neste período.')}</section>
+        <section class="crm-painel crm-painel-largo"><h3>A precisar de atenção</h3>${listaRisco}</section>
+      </div>`;
+  },
+
+  // ============================ Fase 2: cartão no Início ============================
+  // HTML do corpo do cartão "Comercial" do Início: as minhas oportunidades em curso e os meus
+  // follow-ups mais próximos. As linhas levam à ficha respetiva (ver App.renderDashboard).
+  htmlCartaoInicio() {
+    if (this.erroCarga) return `<p class="hint">${escapeHtml(this.erroCarga)}</p>`;
+    const meu = this.meuRecursoId(), hoje = this.hoje();
+    const mais7 = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hoje), 7));
+    const ops = this.d.oportunidades.filter(o => o.responsavel_id === meu && CrmLogica.categoriaDe(o, this.idx.etapa) === 'aberta')
+      .sort((a, b) => String(a.data_prevista_fecho || '9999').localeCompare(String(b.data_prevista_fecho || '9999')));
+    const tarefas = this.d.tarefas.filter(t => !t.concluida && t.responsavel_id === meu && (!t.data_limite || t.data_limite <= mais7))
+      .sort((a, b) => String(a.data_limite || '9999').localeCompare(String(b.data_limite || '9999')));
+    const linhaOp = o => { const c = this.idx.conta.get(o.conta_id), e = this.idx.etapa.get(o.etapa_id); const atr = o.data_prevista_fecho && o.data_prevista_fecho < hoje;
+      return `<div class="dash-linha dash-linha-link" data-dash-crm="op|${escapeAttr(o.id)}"><span class="dash-linha-principal">${escapeHtml(o.titulo)}</span>
+        <span class="dash-linha-sub">${escapeHtml(c ? c.nome : '—')} · ${escapeHtml(e ? e.nome : '')} · ${this.euro(o.valor_estimado)}${o.data_prevista_fecho ? ` · <span class="${atr ? 'crm-atrasada' : ''}">${this.data(o.data_prevista_fecho)}</span>` : ''}</span></div>`; };
+    const linhaT = t => { const atr = t.data_limite && t.data_limite < hoje;
+      return `<div class="dash-linha dash-linha-link" data-dash-crm="tarefa|${escapeAttr(t.id)}"><span class="dash-linha-principal">${escapeHtml(t.descricao)}</span>
+        <span class="dash-linha-sub"><span class="${atr ? 'crm-atrasada' : ''}">${t.data_limite ? (atr ? '⚠ ' : '') + this.data(t.data_limite) : 'sem data'}</span></span></div>`; };
+    return `<p class="dash-sub"><b>Follow-ups</b> (atrasados e próximos 7 dias)</p>${tarefas.length ? tarefas.slice(0, 6).map(linhaT).join('') : '<p class="hint">Nenhum.</p>'}
+      <p class="dash-sub" style="margin-top:8px;"><b>As minhas oportunidades em curso</b></p>${ops.length ? ops.slice(0, 5).map(linhaOp).join('') : '<p class="hint">Nenhuma.</p>'}
+      ${ops.length > 5 ? `<p class="hint">+ ${ops.length - 5} no separador Oportunidades.</p>` : ''}`;
+  },
+  // Abre uma ficha a partir de fora do módulo (cartão do Início): vai ao separador e abre-a quando os
+  // dados estiverem carregados.
+  async irPara(tipo, id) {
+    App.irParaAba(tipo === 'tarefa' ? 'crmFollowups' : 'crmOportunidades');
+    try { await this.carregar(); } catch (e) { return; }
+    if (tipo === 'tarefa') this.abrirTarefa(id); else this.abrirOportunidade(id);
+  },
+
+  // ============================ Fase 2: gravar em lote ============================
+  async gravarLote(chave, linhas) {
+    const TAM = 200;
+    for (let i = 0; i < linhas.length; i += TAM) {
+      const parte = linhas.slice(i, i + TAM).map(l => {
+        const r = Object.assign({}, l);
+        if (!r.id) r.id = crypto.randomUUID();
+        if (this.COM_ATUALIZADO_EM.includes(chave)) r.atualizado_em = new Date().toISOString();
+        return r;
+      });
+      const { error } = await supabaseClient.from(this.TABELAS[chave]).upsert(parte);
+      if (error) throw error;
+    }
+  },
+
+  // ============================ Fase 2: importar contas / contactos (Excel ou CSV) ============================
+  async lerFicheiro(ficheiro) {
+    const buf = await ficheiro.arrayBuffer();
+    if (/\.(csv|txt)$/i.test(ficheiro.name)) {
+      let texto;
+      try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { texto = new TextDecoder('windows-1252').decode(buf); }
+      return { folhas: [{ nome: ficheiro.name, matriz: CrmLogica.parseCsv(texto) }] };
+    }
+    if (typeof XLSX === 'undefined') await App.carregarScript('lib/xlsx.full.min.js');
+    const wb = XLSX.read(buf, { type: 'array' });
+    return { folhas: wb.SheetNames.map(n => ({ nome: n, matriz: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }).filter(l => l.some(c => String(c).trim() !== '')) })) };
+  },
+  abrirImportacao(tipo) {
+    const ehConta = tipo === 'contas';
+    this.abrir(ehConta ? 'Importar contas' : 'Importar contactos', `
+      <p class="hint" style="margin:0 0 8px;">Escolhe um ficheiro Excel (.xlsx/.xls) ou CSV com <b>uma linha de cabeçalho</b> e uma linha por ${ehConta ? 'conta' : 'contacto'}. Podes exportar do teu CRM atual. A seguir associas as colunas aos campos e vês uma pré-visualização — <b>nada é gravado até confirmares</b>.</p>
+      <label>Ficheiro <input type="file" id="impFicheiro" accept=".xlsx,.xls,.csv,.txt"></label>
+      <div id="impPasso"></div>`, true);
+    const m = this.corpo();
+    m.querySelector('#impFicheiro').addEventListener('change', async (ev) => {
+      const f = ev.target.files[0];
+      if (!f) return;
+      const passo = m.querySelector('#impPasso');
+      passo.innerHTML = this.vazioHtml('A ler o ficheiro…');
+      try {
+        const lido = await this.lerFicheiro(f);
+        const folhas = lido.folhas.filter(x => x.matriz.length > 1);
+        if (!folhas.length) { passo.innerHTML = '<p class="hint" style="color:var(--vermelho);">O ficheiro não tem linhas de dados (só o cabeçalho, ou está vazio).</p>'; return; }
+        this.passoMapeamento(passo, tipo, folhas);
+      } catch (err) { console.error(err); passo.innerHTML = `<p class="hint" style="color:var(--vermelho);">Não consegui ler o ficheiro: ${escapeHtml(err.message || err)}</p>`; }
+    });
+  },
+  passoMapeamento(raiz, tipo, folhas) {
+    const ehConta = tipo === 'contas';
+    const campos = ehConta ? CrmLogica.CAMPOS_CONTA : CrmLogica.CAMPOS_CONTACTO;
+    let folha = folhas[0];
+    const desenhar = () => {
+      const cab = folha.matriz[0].map(c => String(c));
+      const mapa = CrmLogica.autoMapear(cab, campos);
+      const opcoesCol = sel => `<option value="-1">— não importar —</option>${cab.map((c, i) => `<option value="${i}"${i === sel ? ' selected' : ''}>${escapeHtml(c || `(coluna ${i + 1})`)}</option>`).join('')}`;
+      raiz.innerHTML = `
+        ${folhas.length > 1 ? `<label>Folha <select id="impFolha">${folhas.map((f, i) => `<option value="${i}"${f === folha ? ' selected' : ''}>${escapeHtml(f.nome)} (${f.matriz.length - 1} linhas)</option>`).join('')}</select></label>` : `<p class="hint">${folha.matriz.length - 1} linhas de dados.</p>`}
+        <h4 class="crm-h">Associar colunas</h4>
+        <div class="crm-mapa">${campos.map(c => `<label>${escapeHtml(c.rotulo)}${c.obrig ? ' <span style="color:var(--vermelho);">*</span>' : ''}<select data-imp-campo="${c.k}">${opcoesCol(mapa[c.k])}</select></label>`).join('')}</div>
+        ${ehConta
+          ? `<label style="margin-top:8px;">Estado das contas sem essa informação <select id="impEstado"><option value="prospeto">Prospeto</option><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label>`
+          : `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="impCriarContas" checked> Criar a conta quando ainda não existir</label>`}
+        <div class="crm-acoes-form"><button class="btn btn-primary" id="impPrever">Pré-visualizar</button></div>
+        <div id="impPrevia"></div>`;
+      const fsel = raiz.querySelector('#impFolha');
+      if (fsel) fsel.addEventListener('change', () => { folha = folhas[Number(fsel.value)]; desenhar(); });
+      raiz.querySelector('#impPrever').addEventListener('click', () => {
+        const mp = {};
+        raiz.querySelectorAll('[data-imp-campo]').forEach(s => { mp[s.dataset.impCampo] = Number(s.value); });
+        if (mp.nome < 0) { raiz.querySelector('#impPrevia').innerHTML = '<p class="hint" style="color:var(--vermelho);">Associa pelo menos a coluna do nome.</p>'; return; }
+        if (ehConta) this.previaContas(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impEstado').value);
+        else this.previaContactos(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impCriarContas').checked);
+      });
+    };
+    desenhar();
+  },
+  htmlProblemas(titulo, itens, texto) {
+    if (!itens.length) return '';
+    return `<details class="crm-problemas"><summary>${titulo} (${itens.length})</summary><ul>${itens.slice(0, 15).map(i => `<li>${escapeHtml(texto(i))}</li>`).join('')}${itens.length > 15 ? `<li>… e mais ${itens.length - 15}.</li>` : ''}</ul></details>`;
+  },
+  previaContas(raiz, matriz, mapa, estadoPadrao) {
+    const r = CrmLogica.prepararContas(matriz, mapa, this.d.contas, { estadoPadrao });
+    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>contas a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.invalidas.length}</b><span>inválidas</span></div></div>
+      ${r.novas.length ? `<div class="table-scroll" style="max-height:200px;"><table class="tabela-crud"><thead><tr><th>Nome</th><th>NIF</th><th>Setor</th><th>Estado</th></tr></thead><tbody>${r.novas.slice(0, 8).map(c => `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.nif || '—')}</td><td>${escapeHtml(c.setor || '—')}</td><td>${this.ESTADOS_CONTA[c.estado]}</td></tr>`).join('')}</tbody></table></div>${r.novas.length > 8 ? `<p class="hint">Amostra das primeiras 8 de ${r.novas.length}.</p>` : ''}` : ''}
+      ${this.htmlProblemas('Duplicadas', r.duplicadas, d => `Linha ${d.linha}: "${d.nome}" já existe como "${d.com}"${d.noFicheiro ? ' (repetida no ficheiro)' : ''}`)}
+      ${this.htmlProblemas('Inválidas', r.invalidas, d => `Linha ${d.linha}: ${d.motivo}`)}
+      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length ? '' : ' disabled'}>Importar ${r.novas.length} contas</button></div>`;
+    const b = raiz.querySelector('#impConfirmar');
+    b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = 'A importar…';
+      try {
+        await this.gravarLote('contas', r.novas.map(c => Object.assign({}, c, { responsavel_id: null })));
+        await this.carregar(true);
+        App.fecharModal(); this.renderAtual();
+        App.toast(`${r.novas.length} contas importadas.`);
+      } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novas.length} contas`; }
+    });
+  },
+  previaContactos(raiz, matriz, mapa, criarContas) {
+    const r = CrmLogica.prepararContactos(matriz, mapa, this.d.contas, this.d.contactos, { criarContas });
+    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novos.length}</b><span>contactos a criar</span></div><div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.duplicados.length}</b><span>duplicados (ignorados)</span></div><div class="crm-kpi"><b>${r.semConta.length}</b><span>sem conta (ignorados)</span></div></div>
+      ${r.novos.length ? `<div class="table-scroll" style="max-height:200px;"><table class="tabela-crud"><thead><tr><th>Contacto</th><th>Conta</th><th>Cargo</th><th>Email</th></tr></thead><tbody>${r.novos.slice(0, 8).map(c => `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.conta_id ? (this.idx.conta.get(c.conta_id) || {}).nome : c.conta_ref.nome + ' (nova)')}</td><td>${escapeHtml(c.cargo || '—')}</td><td>${escapeHtml(c.email || '—')}</td></tr>`).join('')}</tbody></table></div>${r.novos.length > 8 ? `<p class="hint">Amostra dos primeiros 8 de ${r.novos.length}.</p>` : ''}` : ''}
+      ${this.htmlProblemas('Sem conta correspondente', r.semConta, d => `Linha ${d.linha}: ${d.nome}${d.conta ? ` (conta "${d.conta}" não existe)` : ' (sem empresa indicada)'}`)}
+      ${this.htmlProblemas('Duplicados', r.duplicados, d => `Linha ${d.linha}: ${d.nome}`)}
+      ${this.htmlProblemas('Avisos', r.avisos, d => `Linha ${d.linha}: ${d.motivo}`)}
+      ${this.htmlProblemas('Inválidos', r.invalidos, d => `Linha ${d.linha}: ${d.motivo}`)}
+      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novos.length ? '' : ' disabled'}>Importar ${r.novos.length} contactos</button></div>`;
+    const b = raiz.querySelector('#impConfirmar');
+    b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = 'A importar…';
+      try {
+        const novasContas = r.contasACriar.map(c => Object.assign({ id: crypto.randomUUID(), setor: '', dimensao: '', morada: '', website: '', estado: 'prospeto', notas: '', responsavel_id: null }, c));
+        const idDe = new Map(r.contasACriar.map((c, i) => [c, novasContas[i].id]));
+        if (novasContas.length) await this.gravarLote('contas', novasContas);
+        await this.gravarLote('contactos', r.novos.map(c => ({
+          conta_id: c.conta_id || idDe.get(c.conta_ref), nome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
+          papel_decisao: c.papel_decisao, notas: c.notas, consentimento_rgpd: false, consentimento_data: null
+        })));
+        await this.carregar(true);
+        App.fecharModal(); this.renderAtual();
+        App.toast(`${r.novos.length} contactos importados${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
+      } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novos.length} contactos`; }
+    });
+  },
+
+  // ============================ Fase 2: contas a partir dos projetos ============================
+  abrirContasDosProjetos() {
+    const lista = CrmLogica.clientesDosProjetos(Object.values(App.state.projetos), this.d.contas);
+    if (!lista.length) { App.toast('Todos os clientes dos projetos já têm conta no CRM.'); return; }
+    this.abrir('Criar contas a partir dos projetos', `
+      <p class="hint" style="margin:0 0 8px;">Clientes que aparecem nos projetos e ainda não têm conta. Desmarca os que não queiras criar. Ficam como contas <b>Ativas</b>, sem NIF nem contactos (completas depois). Grafias diferentes do mesmo cliente já vêm juntas.</p>
+      <div class="crm-lista" style="max-height:48vh;overflow:auto;">${lista.map((c, i) => `<label class="crm-item crm-item-linha"><input type="checkbox" data-cli="${i}" checked><span class="crm-item-texto">${escapeHtml(c.nome)}</span><span class="hint">${c.projetos} projeto(s)</span></label>`).join('')}</div>
+      <div class="crm-acoes-form"><button class="btn btn-primary" id="cliCriar">Criar contas</button></div>`, true);
+    const m = this.corpo();
+    m.querySelector('#cliCriar').addEventListener('click', async (ev) => {
+      const escolhidos = [...m.querySelectorAll('[data-cli]')].filter(c => c.checked).map(c => lista[Number(c.dataset.cli)]);
+      if (!escolhidos.length) { App.fecharModal(); return; }
+      ev.target.disabled = true; ev.target.textContent = 'A criar…';
+      try {
+        await this.gravarLote('contas', escolhidos.map(c => ({ nome: c.nome, nif: '', setor: '', dimensao: '', morada: '', website: '', estado: 'ativo', responsavel_id: null, notas: 'Criada a partir dos projetos.' })));
+        await this.carregar(true);
+        App.fecharModal(); this.renderAtual();
+        App.toast(`${escolhidos.length} contas criadas.`);
+      } catch (err) { this.avisoErro(err); ev.target.disabled = false; ev.target.textContent = 'Criar contas'; }
+    });
+  },
+
+  // ============================ Fase 2: duplicados e fusão de contas ============================
+  contagensConta(id) {
+    return { contactos: this.d.contactos.filter(c => c.conta_id === id).length, oportunidades: this.d.oportunidades.filter(o => o.conta_id === id).length,
+      interacoes: this.d.interacoes.filter(i => i.conta_id === id).length, tarefas: this.d.tarefas.filter(t => t.conta_id === id).length };
+  },
+  abrirDuplicados() {
+    const grupos = CrmLogica.gruposDuplicados(this.d.contas);
+    if (!grupos.length) { App.toast('Não há contas duplicadas.'); return; }
+    this.abrir('Contas duplicadas', `
+      <p class="hint" style="margin:0 0 8px;">Contas com o mesmo NIF ou o mesmo nome. Escolhe a que fica (por omissão a mais antiga) e funde: os contactos, oportunidades, interações e follow-ups das outras passam para ela, e as outras são eliminadas. Os campos vazios da conta que fica são preenchidos com os das outras. <b>Não se pode desfazer.</b></p>
+      ${grupos.map((g, gi) => `<section class="crm-funil-tipo" data-grupo="${gi}">
+        ${g.map((c, i) => { const n = this.contagensConta(c.id); return `<label class="crm-item crm-item-linha"><input type="radio" name="manter${gi}" value="${escapeAttr(c.id)}"${i === 0 ? ' checked' : ''}>
+          <span class="crm-item-texto"><b>${escapeHtml(c.nome)}</b> · ${escapeHtml(c.nif || 'sem NIF')}</span><span class="hint">${n.contactos} contactos · ${n.oportunidades} oportunidades · ${n.interacoes} interações · ${n.tarefas} follow-ups</span></label>`; }).join('')}
+        <div class="crm-acoes-form"><button class="btn btn-primary btn-sm" data-fundir="${gi}">Fundir este grupo</button></div></section>`).join('')}`, true);
+    const m = this.corpo();
+    m.querySelectorAll('[data-fundir]').forEach(b => b.addEventListener('click', async () => {
+      const gi = Number(b.dataset.fundir), g = grupos[gi];
+      const manter = m.querySelector(`input[name="manter${gi}"]:checked`).value;
+      const outras = g.filter(c => c.id !== manter);
+      if (!confirm(`Fundir ${outras.length} conta(s) em "${this.idx.conta.get(manter).nome}"? Não se pode desfazer.`)) return;
+      b.disabled = true; b.textContent = 'A fundir…';
+      try {
+        await this.fundirContas(manter, outras.map(c => c.id));
+        App.toast('Contas fundidas.');
+        this.renderAtual();
+        if (CrmLogica.gruposDuplicados(this.d.contas).length) this.abrirDuplicados(); else App.fecharModal();
+      } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = 'Fundir este grupo'; }
+    }));
+  },
+  // Passa tudo o que depende das contas "outras" para a conta "manter" e só depois as elimina — se um
+  // passo falhar a meio, nada foi apagado ainda (voltar a tentar é seguro).
+  async fundirContas(manterId, outrasIds) {
+    const manter = this.idx.conta.get(manterId);
+    for (const outraId of outrasIds) {
+      for (const tabela of ['contactos', 'oportunidades', 'interacoes', 'tarefas']) {
+        const { error } = await supabaseClient.from(this.TABELAS[tabela]).update({ conta_id: manterId }).eq('conta_id', outraId);
+        if (error) throw error;
+      }
+    }
+    const preenchida = Object.assign({}, manter);
+    outrasIds.map(id => this.idx.conta.get(id)).forEach(o => ['nif', 'setor', 'dimensao', 'morada', 'website', 'responsavel_id'].forEach(k => { if (!preenchida[k] && o[k]) preenchida[k] = o[k]; }));
+    const { error: e1 } = await supabaseClient.from(this.TABELAS.contas).update({ nif: preenchida.nif, setor: preenchida.setor, dimensao: preenchida.dimensao, morada: preenchida.morada, website: preenchida.website, responsavel_id: preenchida.responsavel_id, atualizado_em: new Date().toISOString() }).eq('id', manterId);
+    if (e1) throw e1;
+    const { error: e2 } = await supabaseClient.from(this.TABELAS.contas).delete().in('id', outrasIds);
+    if (e2) throw e2;
+    await this.carregar(true);
   },
 };
 if (typeof module !== 'undefined') module.exports = Crm;

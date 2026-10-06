@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261002c">
+<link rel="stylesheet" href="css/style.css?v=20261006b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -81,6 +81,7 @@
 </nav>
 <nav class="tabs" id="tabsNav">
   <div class="tabs-grupo" data-grupo="comercial">
+    <button class="tab-btn" data-tab="crmDashboard">Dashboard</button>
     <button class="tab-btn" data-tab="crmOportunidades">Oportunidades</button>
     <button class="tab-btn" data-tab="crmContas">Contas</button>
     <button class="tab-btn" data-tab="crmContactos">Contactos</button>
@@ -538,6 +539,13 @@
 </section>
 
 <!-- ===================== COMERCIAL (CRM) ===================== -->
+<section class="tab-panel" id="tab-crmDashboard">
+  <div class="pagina">
+    <div class="pagina-head"><h2>📊 Dashboard comercial</h2></div>
+    <p class="pagina-sub">Pipeline, previsão de fecho, ganhas e perdidas, motivos de perda e o que precisa de atenção. O valor ponderado é o valor de cada oportunidade vezes a probabilidade da sua etapa.</p>
+    <div id="crmDashboardCorpo"></div>
+  </div>
+</section>
 <section class="tab-panel" id="tab-crmOportunidades">
   <div class="pagina">
     <div class="pagina-head"><h2>💼 Oportunidades</h2></div>
@@ -1195,8 +1203,8 @@
 <script src="js/backup.js?v=20260928c"></script>
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
-<script src="js/crm-logica.js?v=20261002a"></script>
-<script src="js/crm.js?v=20261002a"></script>
-<script src="js/app.js?v=20261006a"></script>
+<script src="js/crm-logica.js?v=20261006a"></script>
+<script src="js/crm.js?v=20261006a"></script>
+<script src="js/app.js?v=20261006b"></script>
 </body>
 </html>

@@ -859,3 +859,22 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .crm-funil-tab input[type=text]{width:100%;min-width:180px;}
 .crm-ord{white-space:nowrap;width:1%;}
 @media (max-width:760px){.crm-coluna{flex-basis:78vw;}.crm-barra-fim{margin-left:0;}}
+
+/* ===== CRM Fase 2: dashboard, barras, importação ===== */
+.crm-grelha-dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;}
+.crm-painel{background:var(--branco);border:1px solid var(--cinza-200);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow);min-width:0;}
+.crm-painel h3{margin:0 0 8px;font-size:14px;font-family:var(--display);color:var(--cinza-900);}
+.crm-painel-largo{grid-column:1 / -1;}
+.crm-barras{display:flex;flex-direction:column;gap:5px;}
+.crm-barra-linha{display:grid;grid-template-columns:minmax(110px,200px) 1fr minmax(120px,auto);gap:8px;align-items:center;font-size:12px;}
+.crm-barra-rotulo{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cinza-700);}
+.crm-barra-pista{position:relative;height:14px;background:var(--cinza-100);border-radius:4px;overflow:hidden;}
+.crm-barra-pista i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;display:block;}
+.crm-barra-fundo{background:var(--cinza-300);}
+.crm-barra-cheia{background:var(--azul);}
+.crm-barra-texto{color:var(--cinza-900);white-space:nowrap;font-size:11.5px;text-align:right;}
+.crm-mapa{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;}
+.crm-problemas{margin:6px 0;font-size:12px;}
+.crm-problemas summary{cursor:pointer;color:var(--cinza-700);font-weight:600;}
+.crm-problemas ul{margin:4px 0 0 18px;padding:0;color:var(--cinza-500);}
+@media (max-width:760px){.crm-grelha-dash{grid-template-columns:1fr;}.crm-barra-linha{grid-template-columns:90px 1fr;}.crm-barra-texto{grid-column:1 / -1;text-align:left;}}

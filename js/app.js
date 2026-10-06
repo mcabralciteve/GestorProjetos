@@ -3535,10 +3535,11 @@ const App = {
     { key: 'faturacaoAVencer', label: 'Faturação a vencer (Gestor/Admin)' },
     { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
     { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Team Leader/Diretor/Admin)' },
-    { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' }
+    { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' },
+    { key: 'crmComercial', label: 'Comercial: as minhas oportunidades e follow-ups (Team Leader/Diretor/Admin)' }
   ],
   WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'consultoresRisco'],
-  WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar', 'equipaDiasIncompletos'],
+  WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar', 'equipaDiasIncompletos', 'crmComercial'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
   // browser/pessoa escolhe os seus, sem precisar de nenhuma tabela nova.
   dashboardWidgetsOcultosSet() {
@@ -3841,6 +3842,16 @@ const App = {
       html += this.cartaoDashboard('🕒 Pedidos de ausência para aprovar', corpo, null, 'ausenciasParaAprovar');
     }
 
+    if (liderOuAdmin && Crm.podeVer() && !ocultos.has('crmComercial')) {
+      // Os dados do CRM não vivem no estado da app: carregam-se à parte, uma vez, e o Início volta a desenhar-se.
+      let corpo;
+      if (!Crm.carregado && !Crm.erroCarga) {
+        corpo = '<p class="hint">A carregar…</p>';
+        if (!Crm._aCarregar) Crm.carregar().catch(() => {}).finally(() => { if (this.abaAtiva === 'dashboard') this.renderDashboard(); });
+      } else corpo = Crm.htmlCartaoInicio();
+      html += this.cartaoDashboard('💼 Comercial', corpo, null, 'crmComercial');
+    }
+
     if (gestorOuAdmin && !ocultos.has('faturacaoAVencer')) {
       const linhas = [];
       this.meusProjetosEnvolvidos().filter(p => this.possoEditarProjeto(p.id)).forEach(p => {
@@ -3959,6 +3970,8 @@ const App = {
       if (elFatura) { this.irParaFaturacaoDoProjeto(elFatura.dataset.dashFatura); return; }
       const elPessoaDia = ev.target.closest('[data-dash-pessoa-dia]');
       if (elPessoaDia) { this.irParaRegistoDoDia(null, elPessoaDia.dataset.dashPessoaDia); return; }
+      const elCrm = ev.target.closest('[data-dash-crm]');
+      if (elCrm) { const [tipo, id] = elCrm.dataset.dashCrm.split('|'); Crm.irPara(tipo, id); return; }
       const elPessoaRisco = ev.target.closest('[data-dash-pessoa-risco]');
       if (elPessoaRisco) { this.irParaCapacidadeDoRecurso(elPessoaRisco.dataset.dashPessoaRisco); return; }
     };
@@ -8352,8 +8365,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmOportunidades', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
