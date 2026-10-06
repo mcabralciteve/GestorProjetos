@@ -2393,9 +2393,11 @@ const App = {
   // capacidade desse dia o que já foi ocupado por outras atividades, antes de repartir o trabalho
   // de projeto pelos dias que restam (ver o pedido do utilizador: um dia gasto em "atividade
   // comercial" tem de sobrar menos um dia útil para os projetos, empurrando a carga para a
-  // frente). Ausências (férias/baixas) não entram aqui — essas já zeram o dia inteiro à parte,
-  // ver Capacidade.ehAusente; não há dupla contagem porque tipos "criaAusencia" nunca geram um
-  // registo com horas (ver abrirModalBlocoDia), só uma Ausência.
+  // frente). Ausências de dia(s) inteiro(s) (férias/baixas) não entram aqui — essas já zeram o dia
+  // à parte, ver Capacidade.ehAusente; não há dupla contagem porque um dia com ausência inteira fica
+  // bloqueado para registos (ver diaBloqueadoRegisto). Uma ausência só POR HORAS (tipo "criaAusencia"
+  // registado como horas, ver abrirModalBlocoDia) é um registo sem projeto como outro qualquer, por
+  // isso entra aqui: desconta essas horas à capacidade do dia.
   horasNaoProjetoNoDia(iso, recursoId) {
     const recurso = this.state.recursos.find(r => r.id === recursoId);
     if (!recurso) return 0;
@@ -4425,7 +4427,7 @@ const App = {
         <td><input type="text" value="${escapeAttr(tt.nome)}" data-campo="nome"></td>
         <td><input type="color" value="${escapeAttr(tt.cor || '#64748b')}" data-campo="cor" style="width:44px;padding:2px;"></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.ativo ? 'checked' : ''} data-campo="ativo"></td>
-        <td style="text-align:center;"><input type="checkbox" ${tt.criaAusencia ? 'checked' : ''} data-campo="criaAusencia" title="Em vez de pedir horas/projeto, o Registo do Dia passa a pedir um período (data início/fim) e cria uma Ausência (a mesma coisa que Feriados &amp; Ausências, que a Capacidade já usa)."></td>
+        <td style="text-align:center;"><input type="checkbox" ${tt.criaAusencia ? 'checked' : ''} data-campo="criaAusencia" title="No Registo do Dia, este tipo pode ser registado por DIAS (período início/fim; cria uma Ausência, a mesma coisa que Feriados &amp; Ausências, que a Capacidade já usa) ou só por HORAS de um dia (fica um registo normal, sem projeto)."></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="nome"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'nome', e.target.value));
       tr.querySelector('[data-campo="cor"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'cor', e.target.value));
@@ -5344,11 +5346,12 @@ const App = {
     }
     if (e.formRegisto) e.formRegisto.querySelectorAll('input,select,textarea,button').forEach(c => { if (c !== e.regPessoa) c.disabled = !recursosPermitidos.length; });
 
-    // Tipo de trabalho: "Projeto" (por omissão) ou qualquer outro tipo ativo que não exija projeto
-    // — os tipos "cria ausência" ficam de fora (pedem um período, tratado no Registo do Dia).
-    const tiposForm = this.tiposTrabalhoAtivos().filter(tt => !tt.criaAusencia);
+    // Tipo de trabalho: "Projeto" (por omissão) ou qualquer outro tipo ativo que não exija projeto.
+    // Os tipos "cria ausência" também aparecem, mas aqui só por HORAS de um dia (um período de
+    // vários dias pede-se no Registo do Dia, que cria a Ausência com aprovação).
+    const tiposForm = this.tiposTrabalhoAtivos();
     const tipoAtual = e.regTipo.value;
-    e.regTipo.innerHTML = tiposForm.map(tt => `<option value="${escapeAttr(tt.id || '')}">${escapeHtml(tt.nome)}</option>`).join('');
+    e.regTipo.innerHTML = tiposForm.map(tt => `<option value="${escapeAttr(tt.id || '')}">${escapeHtml(tt.nome)}${tt.criaAusencia ? ' (só horas)' : ''}</option>`).join('');
     e.regTipo.value = tiposForm.some(tt => String(tt.id || '') === tipoAtual) ? tipoAtual : '';
     this.aplicarTipoRegisto();
 
@@ -5595,6 +5598,22 @@ const App = {
         e.regMsg.textContent = 'Não tens permissão para registar horas nesta pessoa.';
         e.regMsg.style.color = 'var(--vermelho)';
         return;
+      }
+      // Horas de ausência (tipo "cria ausência"): só para quem pode gerir ausências desta pessoa, e
+      // nunca num dia já bloqueado (fim de semana, feriado, ou ausência de dia inteiro).
+      if (tipo.criaAusencia) {
+        const recursoAus = this.state.recursos.find(r => r.nome === pessoa);
+        const motivo = recursoAus ? this.diaBloqueadoRegisto(data, recursoAus) : '';
+        if (!recursoAus || !this.escopoAusenciasPermitido().some(r => r.id === recursoAus.id)) {
+          e.regMsg.textContent = 'Não podes marcar ausências para esta pessoa.';
+          e.regMsg.style.color = 'var(--vermelho)';
+          return;
+        }
+        if (motivo) {
+          e.regMsg.textContent = `Não é possível registar horas em ${DateUtil.formatShort(DateUtil.parseISO(data))} — ${motivo}.`;
+          e.regMsg.style.color = 'var(--vermelho)';
+          return;
+        }
       }
       this.submeterRegisto({
         data, pessoa, tipoTrabalhoId: tipo.id, projetoIdInterno: '', projetoNome: '', projetoId: null, cliente: '',
@@ -6370,6 +6389,13 @@ const App = {
         </select>
       </label>
       ${tipoOriginalEliminado ? '<p class="hint" style="color:var(--vermelho);">⚠ O tipo de trabalho original deste registo foi entretanto eliminado em Tipos de Trabalho. Continua marcado como tal — dá para editar horas/notas à mesma sem escolher outro; troca aqui o tipo só se quiseres mesmo reclassificar este registo.</p>' : ''}
+      <div id="blocoDuracaoWrap" style="display:none;">
+        <div class="row-2">
+          <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="radio" name="blocoDuracao" value="dias" checked> Um ou vários dias</label>
+          <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="radio" name="blocoDuracao" value="horas"> Só algumas horas</label>
+        </div>
+        <p class="hint" id="blocoDuracaoHint" style="margin:2px 0 8px;"></p>
+      </div>
       <div id="blocoProjetoWrap" class="row-2">
         <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
@@ -6394,6 +6420,10 @@ const App = {
     const wrapHoras = m.querySelector('#blocoHorasWrap');
     const selProjeto = m.querySelector('#blocoProjeto');
     const selTarefa = m.querySelector('#blocoTarefa');
+    const wrapDuracao = m.querySelector('#blocoDuracaoWrap');
+    const hintDuracao = m.querySelector('#blocoDuracaoHint');
+    // Num tipo "cria ausência" novo, escolhe-se entre período (dias) e só algumas horas de um dia.
+    const modoDias = () => { const r = m.querySelector('input[name="blocoDuracao"]:checked'); return !r || r.value === 'dias'; };
 
     const preencherTarefas = () => {
       const tarefas = recurso ? this.tarefasDoProjetoParaPessoaRegisto(selProjeto.value, pessoa) : [];
@@ -6422,19 +6452,28 @@ const App = {
       return this.tipoTrabalhoPorId(selTipo.value || null);
     };
     // Um tipo "cria ausência" (Férias, Baixa, etc. — ver App.state.tiposTrabalho / coluna "Cria
-    // Ausência" no separador Tipos de Trabalho) não pede horas nem projeto: pede antes um período
-    // (Data até Data fim) e, ao guardar, cria/atualiza uma linha em Ausências em vez de um registo
-    // — ver o "if (tipo.criaAusencia)" no botão Guardar, mais abaixo.
+    // Ausência" no separador Tipos de Trabalho) pode ser registado de duas formas: por DIAS (um período
+    // Data início → Data fim; ao guardar cria uma linha em Ausências, com aprovação) ou só por HORAS
+    // (um dia, X horas; fica um registo normal desse tipo, sem projeto — desconta essas horas à
+    // capacidade do dia e conta para as 8h, mas o resto do dia continua disponível). Um registo já
+    // existente de um destes tipos (as tais horas) edita-se sempre como horas.
     const atualizarCamposPorTipo = () => {
       const tipo = resolverTipoSelecionado();
+      const escolheDuracao = !!tipo.criaAusencia && !registoExistente;
+      const porDias = escolheDuracao && modoDias();
       wrapProjeto.style.display = tipo.requerProjeto ? '' : 'none';
       if (tipo.requerProjeto) preencherProjetos();
-      wrapDataFim.style.display = tipo.criaAusencia ? '' : 'none';
-      wrapHoras.style.display = tipo.criaAusencia ? 'none' : '';
-      lblData.textContent = tipo.criaAusencia ? 'Data início' : 'Data';
+      wrapDuracao.style.display = escolheDuracao ? '' : 'none';
+      hintDuracao.textContent = !escolheDuracao ? '' : (porDias
+        ? 'Cria uma ausência para esses dias (as tuas passam por aprovação do Team Leader/Diretor).'
+        : 'Fica registado como horas neste dia (sem aprovação) — o resto do dia continua disponível para trabalho.');
+      wrapDataFim.style.display = porDias ? '' : 'none';
+      wrapHoras.style.display = porDias ? 'none' : '';
+      lblData.textContent = porDias ? 'Data início' : 'Data';
     };
     atualizarCamposPorTipo();
     selTipo.addEventListener('change', atualizarCamposPorTipo);
+    m.querySelectorAll('input[name="blocoDuracao"]').forEach(r => r.addEventListener('change', atualizarCamposPorTipo));
     selProjeto.addEventListener('change', preencherTarefas);
 
     m.querySelector('#blocoGuardar').addEventListener('click', () => {
@@ -6443,8 +6482,8 @@ const App = {
       const tipo = resolverTipoSelecionado();
       const notas = m.querySelector('#blocoNotas').value.trim();
 
-      if (tipo.criaAusencia) {
-        if (!this.escopoAusenciasPermitido().some(r => r.id === recurso.id)) { this.toast('Não podes marcar ausências para esta pessoa.'); return; }
+      if (tipo.criaAusencia && !registoExistente && !this.escopoAusenciasPermitido().some(r => r.id === recurso.id)) { this.toast('Não podes marcar ausências para esta pessoa.'); return; }
+      if (tipo.criaAusencia && !registoExistente && modoDias()) {
         const dataFim = inpDataFim.value;
         if (!this.anoDataPlausivel(dataFim)) { this.toast('Indica uma data de fim válida.'); return; }
         if (DateUtil.parseISO(dataFim) < DateUtil.parseISO(data)) { this.toast('A data de fim não pode ser anterior à de início.'); return; }
