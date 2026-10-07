@@ -289,6 +289,7 @@ const Crm = {
       'ir-conta': () => { App.fecharModal(); this.abrirConta(id); },
       'importar-contas': () => this.abrirImportacao('contas'),
       'importar-contactos': () => this.abrirImportacao('contactos'),
+      'importar-oportunidades': () => this.abrirImportacao('oportunidades'),
       'contas-projetos': () => this.abrirContasDosProjetos(),
       'duplicados': () => this.abrirDuplicados()
     };
@@ -341,6 +342,7 @@ const Crm = {
       <span class="crm-barra-fim">
         <button type="button" class="chip-projeto${f.vista === 'quadro' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="quadro">▦ Quadro</button>
         <button type="button" class="chip-projeto${f.vista === 'lista' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="lista">☰ Lista</button>
+        <button type="button" class="btn" data-crm-acao="importar-oportunidades">⬆ Importar</button>
         <button type="button" class="btn btn-primary" data-crm-acao="nova-op">+ Nova oportunidade</button>
       </span>
     </div>`;
@@ -928,7 +930,7 @@ const Crm = {
       </div>
       <div class="row-2">
         <label>Setor <input type="text" id="ctSetor" value="${escapeAttr(c.setor || '')}" placeholder="Ex.: Têxtil, Calçado, Energia…"></label>
-        <label>Dimensão <select id="ctDimensao">${['', 'Micro', 'Pequena', 'Média', 'Grande'].map(v => `<option value="${v}"${c.dimensao === v ? ' selected' : ''}>${v || '—'}</option>`).join('')}</select></label>
+        <label>Dimensão <select id="ctDimensao">${['', 'Micro', 'PME', 'Pequena', 'Média', 'Grande'].map(v => `<option value="${v}"${c.dimensao === v ? ' selected' : ''}>${v || '—'}</option>`).join('')}</select></label>
       </div>
       <div class="row-2">
         <label>Estado <select id="ctEstado">${Object.entries(this.ESTADOS_CONTA).map(([k, v]) => `<option value="${k}"${c.estado === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -1317,9 +1319,9 @@ const Crm = {
     return { folhas: wb.SheetNames.map(n => ({ nome: n, matriz: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }).filter(l => l.some(c => String(c).trim() !== '')) })) };
   },
   abrirImportacao(tipo) {
-    const ehConta = tipo === 'contas';
-    this.abrir(ehConta ? 'Importar contas' : 'Importar contactos', `
-      <p class="hint" style="margin:0 0 8px;">Escolhe um ficheiro Excel (.xlsx/.xls) ou CSV com <b>uma linha de cabeçalho</b> e uma linha por ${ehConta ? 'conta' : 'contacto'}. Podes exportar do teu CRM atual. A seguir associas as colunas aos campos e vês uma pré-visualização — <b>nada é gravado até confirmares</b>.</p>
+    const nomes = { contas: ['Importar contas', 'conta'], contactos: ['Importar contactos', 'contacto'], oportunidades: ['Importar oportunidades', 'oportunidade'] }[tipo];
+    this.abrir(nomes[0], `
+      <p class="hint" style="margin:0 0 8px;">Escolhe um ficheiro Excel (.xlsx/.xls) ou CSV com <b>uma linha de cabeçalho</b> e uma linha por ${nomes[1]}. Podes exportar do teu CRM atual (ex.: SuiteCRM). A seguir associas as colunas aos campos e vês uma pré-visualização — <b>nada é gravado até confirmares</b>.</p>
       <label>Ficheiro <input type="file" id="impFicheiro" accept=".xlsx,.xls,.csv,.txt"></label>
       <div id="impPasso"></div>`, true);
     const m = this.corpo();
@@ -1337,8 +1339,8 @@ const Crm = {
     });
   },
   passoMapeamento(raiz, tipo, folhas) {
-    const ehConta = tipo === 'contas';
-    const campos = ehConta ? CrmLogica.CAMPOS_CONTA : CrmLogica.CAMPOS_CONTACTO;
+    const ehConta = tipo === 'contas', ehOp = tipo === 'oportunidades';
+    const campos = ehConta ? CrmLogica.CAMPOS_CONTA : ehOp ? CrmLogica.CAMPOS_OPORTUNIDADE : CrmLogica.CAMPOS_CONTACTO;
     let folha = folhas[0];
     const desenhar = () => {
       const cab = folha.matriz[0].map(c => String(c));
@@ -1351,6 +1353,8 @@ const Crm = {
         ${ehConta
           ? `<label style="margin-top:8px;">Estado das contas sem essa informação <select id="impEstado"><option value="prospeto">Prospeto</option><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label>`
           : `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="impCriarContas" checked> Criar a conta quando ainda não existir</label>`}
+        ${ehOp ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impFollowups" checked> Criar um follow-up (sem data) com o "Próximo passo", nas oportunidades em curso</label>
+          <label style="margin-top:4px;">Formato das datas <select id="impFormatoData"><option value="auto">Detetar automaticamente</option><option value="mdy">Mês/Dia/Ano (SuiteCRM em inglês)</option><option value="dmy">Dia/Mês/Ano</option><option value="ymd">Ano-Mês-Dia</option></select></label>` : ''}
         <div class="crm-acoes-form"><button class="btn btn-primary" id="impPrever">Pré-visualizar</button></div>
         <div id="impPrevia"></div>`;
       const fsel = raiz.querySelector('#impFolha');
@@ -1358,19 +1362,100 @@ const Crm = {
       raiz.querySelector('#impPrever').addEventListener('click', () => {
         const mp = {};
         raiz.querySelectorAll('[data-imp-campo]').forEach(s => { mp[s.dataset.impCampo] = Number(s.value); });
-        if (mp.nome < 0) { raiz.querySelector('#impPrevia').innerHTML = '<p class="hint" style="color:var(--vermelho);">Associa pelo menos a coluna do nome.</p>'; return; }
+        const faltam = campos.filter(c => c.obrig && mp[c.k] < 0);
+        if (faltam.length) { raiz.querySelector('#impPrevia').innerHTML = `<p class="hint" style="color:var(--vermelho);">Associa pelo menos: ${faltam.map(c => escapeHtml(c.rotulo)).join(', ')}.</p>`; return; }
         if (ehConta) this.previaContas(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impEstado').value);
+        else if (ehOp) this.previaOportunidades(raiz.querySelector('#impPrevia'), folha.matriz, mp, { criarContas: raiz.querySelector('#impCriarContas').checked, criarFollowups: raiz.querySelector('#impFollowups').checked, formatoData: raiz.querySelector('#impFormatoData').value });
         else this.previaContactos(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impCriarContas').checked);
       });
     };
     desenhar();
   },
+  // ---------- Importar oportunidades (ex.: exportação do SuiteCRM) ----------
+  // O passo de mapeamento é o mesmo das contas/contactos; aqui acrescentam-se as opções específicas e
+  // duas tabelas de correspondência (tipo do ficheiro → tipo novo; etapa do ficheiro → etapa nova) já
+  // com sugestão automática, que o utilizador pode corrigir antes de confirmar.
+  previaOportunidades(raiz, matriz, mapa, opts) {
+    const D = this.d;
+    const tiposAtivos = D.tipos.filter(t => t.ativo !== false);
+    const formato = opts.formatoData === 'auto' ? CrmLogica.detectarFormatoData(matriz.slice(1).map(l => CrmLogica._cel(l, mapa.fecho))) : opts.formatoData;
+    const comb = CrmLogica.combinacoesOportunidades(matriz, mapa, D.tipos, D.etapas, formato);
+    const mapaTipos = {}, mapaEtapas = {}, motivoPadrao = {};
+    const sugerirEtapa = (e, tipoId) => (CrmLogica.mapearEtapa(e.texto, e.prob, CrmLogica.etapasDoTipo(D.etapas, tipoId, true)) || {}).id || '';
+    comb.tipos.forEach(t => { mapaTipos[t.texto] = t.tipoId || ''; });
+    const reSugerir = (textoTipo) => comb.etapas.filter(e => e.tipoTexto === textoTipo).forEach(e => { mapaEtapas[e.tipoTexto + '|' + e.texto] = mapaTipos[textoTipo] ? sugerirEtapa(e, mapaTipos[textoTipo]) : ''; });
+    comb.tipos.forEach(t => reSugerir(t.texto));
+    const rotuloTxt = s => s || '(vazio)';
+    raiz.innerHTML = `
+      <h4 class="crm-h">Correspondência com o funil</h4>
+      <p class="hint" style="margin:0 0 6px;">Confirma como cada tipo e cada etapa do ficheiro passam para o novo funil (já vão sugeridos).</p>
+      <div id="impCorresp"></div>
+      <div id="impResultado"></div>`;
+    const desenharCorresp = () => {
+      const optTipos = sel => `<option value="">— sem correspondência —</option>${tiposAtivos.map(t => `<option value="${escapeAttr(t.id)}"${t.id === sel ? ' selected' : ''}>${escapeHtml(t.nome)}</option>`).join('')}`;
+      const optEtapas = (tipoId, sel) => `<option value="">— sem correspondência —</option>${CrmLogica.etapasDoTipo(D.etapas, tipoId, true).map(e => `<option value="${escapeAttr(e.id)}"${e.id === sel ? ' selected' : ''}>${escapeHtml(e.nome)} (${e.categoria === 'ganha' ? 'ganha' : e.categoria === 'perdida' ? 'perdida' : e.probabilidade + '%'})</option>`).join('')}`;
+      const temPerdida = comb.etapas.some(e => { const et = this.idx.etapa.get(mapaEtapas[e.tipoTexto + '|' + e.texto]); return et && et.categoria === 'perdida'; });
+      raiz.querySelector('#impCorresp').innerHTML = `
+        <div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Tipo no ficheiro</th><th></th><th>Tipo na app</th></tr></thead><tbody>
+          ${comb.tipos.map((t, i) => `<tr><td>${escapeHtml(rotuloTxt(t.texto))}</td><td class="hint">${t.n}×</td><td><select data-imp-tipo="${i}">${optTipos(mapaTipos[t.texto])}</select></td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="table-scroll" style="margin-top:8px;"><table class="tabela-crud"><thead><tr><th>Tipo</th><th>Etapa no ficheiro</th><th></th><th>Etapa na app</th></tr></thead><tbody>
+          ${comb.etapas.map((e, i) => `<tr><td>${escapeHtml(rotuloTxt(e.tipoTexto))}</td><td>${escapeHtml(rotuloTxt(e.texto))}${e.prob !== '' ? ` <span class="hint">(${escapeHtml(e.prob)}%)</span>` : ''}</td><td class="hint">${e.n}×</td><td><select data-imp-etapa="${i}"${mapaTipos[e.tipoTexto] ? '' : ' disabled'}>${optEtapas(mapaTipos[e.tipoTexto], mapaEtapas[e.tipoTexto + '|' + e.texto])}</select></td></tr>`).join('')}
+        </tbody></table></div>
+        ${temPerdida ? `<div style="margin-top:8px;"><b>Motivo de perda para as oportunidades perdidas</b> <span class="hint">(o ficheiro antigo não o indica; podes deixar em branco e preencher depois)</span>
+          ${comb.tipos.filter(t => mapaTipos[t.texto]).map(t => `<label>${escapeHtml(this.idx.tipo.get(mapaTipos[t.texto]).nome)} <select data-imp-motivo="${escapeAttr(mapaTipos[t.texto])}"><option value="">— em branco —</option>${D.motivos.filter(m => m.tipo_id === mapaTipos[t.texto] && m.ativo !== false).map(m => `<option value="${escapeAttr(m.id)}"${motivoPadrao[mapaTipos[t.texto]] === m.id ? ' selected' : ''}>${escapeHtml(m.nome)}</option>`).join('')}</select></label>`).join('')}</div>` : ''}`;
+      raiz.querySelectorAll('[data-imp-tipo]').forEach(s => s.addEventListener('change', () => {
+        const t = comb.tipos[Number(s.dataset.impTipo)];
+        mapaTipos[t.texto] = s.value; reSugerir(t.texto); desenharCorresp(); desenharResultado();
+      }));
+      raiz.querySelectorAll('[data-imp-etapa]').forEach(s => s.addEventListener('change', () => {
+        const e = comb.etapas[Number(s.dataset.impEtapa)];
+        mapaEtapas[e.tipoTexto + '|' + e.texto] = s.value; desenharResultado();
+      }));
+      raiz.querySelectorAll('[data-imp-motivo]').forEach(s => s.addEventListener('change', () => { motivoPadrao[s.dataset.impMotivo] = s.value || null; desenharResultado(); }));
+    };
+    const desenharResultado = () => {
+      const alvo = raiz.querySelector('#impResultado');
+      const r = CrmLogica.prepararOportunidades(matriz, mapa, {
+        contas: D.contas, oportunidades: D.oportunidades, tipos: D.tipos, etapas: D.etapas,
+        recursos: App.state.recursos, projetos: Object.values(App.state.projetos)
+      }, { formatoData: formato, criarContas: opts.criarContas, criarFollowups: opts.criarFollowups, mapaTipos, mapaEtapas, motivoPadrao });
+      const nomeEtapa = id => (this.idx.etapa.get(id) || {}).nome || '—';
+      alvo.innerHTML = `<h4 class="crm-h">Pré-visualização</h4>
+        <div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>oportunidades a criar</span></div><div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.followups}</b><span>follow-ups a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.semConta.length + r.invalidas.length}</b><span>ignoradas por problemas</span></div></div>
+        ${r.novas.length ? `<div class="table-scroll" style="max-height:220px;"><table class="tabela-crud"><thead><tr><th>Oportunidade</th><th>Conta</th><th>Etapa</th><th>Valor</th><th>Fecho</th></tr></thead><tbody>${r.novas.slice(0, 8).map(o => `<tr><td>${escapeHtml(o.titulo)}</td><td>${escapeHtml(o.conta_id ? (this.idx.conta.get(o.conta_id) || {}).nome : o.conta_ref.nome + ' (nova)')}</td><td>${escapeHtml(nomeEtapa(o.etapa_id))}</td><td>${escapeHtml(this.euro(o.valor_estimado))}</td><td>${escapeHtml(o.data_prevista_fecho || '—')}</td></tr>`).join('')}</tbody></table></div>${r.novas.length > 8 ? `<p class="hint">Amostra das primeiras 8 de ${r.novas.length}.</p>` : ''}` : ''}
+        ${this.htmlProblemas('Sem conta correspondente', r.semConta, d => `Linha ${d.linha}: ${d.titulo} (conta "${d.conta}" não existe)`)}
+        ${this.htmlProblemas('Duplicadas', r.duplicadas, d => `Linha ${d.linha}: ${d.titulo}`)}
+        ${this.htmlProblemas('Avisos', r.avisos, d => `Linha ${d.linha}: ${d.motivo}`)}
+        ${this.htmlProblemas('Inválidas', r.invalidas, d => `Linha ${d.linha}: ${d.motivo}`)}
+        <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length ? '' : ' disabled'}>Importar ${r.novas.length} oportunidades</button></div>`;
+      const b = alvo.querySelector('#impConfirmar');
+      b.addEventListener('click', async () => {
+        b.disabled = true; b.textContent = 'A importar…';
+        try {
+          const novasContas = r.contasACriar.map(c => Object.assign({ id: crypto.randomUUID(), setor: '', dimensao: '', morada: '', website: '', estado: 'prospeto', notas: '', responsavel_id: null }, c));
+          const idConta = new Map(r.contasACriar.map((c, i) => [c, novasContas[i].id]));
+          if (novasContas.length) await this.gravarLote('contas', novasContas);
+          const ops = r.novas.map(o => Object.assign({ id: crypto.randomUUID(), contacto_id: null, motivo_perda_notas: '' }, o, { conta_id: o.conta_id || idConta.get(o.conta_ref) }));
+          const tarefas = ops.filter(o => o.followup).map(o => ({ conta_id: o.conta_id, oportunidade_id: o.id, descricao: o.followup, responsavel_id: o.responsavel_id, data_limite: null, concluida: false, concluida_em: null }));
+          await this.gravarLote('oportunidades', ops.map(o => { const l = Object.assign({}, o); delete l.conta_ref; delete l.followup; return l; }));
+          if (tarefas.length) await this.gravarLote('tarefas', tarefas);
+          await this.carregar(true);
+          App.fecharModal(); this.renderAtual();
+          App.toast(`${ops.length} oportunidades importadas${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
+        } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novas.length} oportunidades`; }
+      });
+    };
+    desenharCorresp();
+    desenharResultado();
+  },
+
   htmlProblemas(titulo, itens, texto) {
     if (!itens.length) return '';
     return `<details class="crm-problemas"><summary>${titulo} (${itens.length})</summary><ul>${itens.slice(0, 15).map(i => `<li>${escapeHtml(texto(i))}</li>`).join('')}${itens.length > 15 ? `<li>… e mais ${itens.length - 15}.</li>` : ''}</ul></details>`;
   },
   previaContas(raiz, matriz, mapa, estadoPadrao) {
-    const r = CrmLogica.prepararContas(matriz, mapa, this.d.contas, { estadoPadrao });
+    const r = CrmLogica.prepararContas(matriz, mapa, this.d.contas, { estadoPadrao, recursos: App.state.recursos });
     raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>contas a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.invalidas.length}</b><span>inválidas</span></div></div>
       ${r.novas.length ? `<div class="table-scroll" style="max-height:200px;"><table class="tabela-crud"><thead><tr><th>Nome</th><th>NIF</th><th>Setor</th><th>Estado</th></tr></thead><tbody>${r.novas.slice(0, 8).map(c => `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.nif || '—')}</td><td>${escapeHtml(c.setor || '—')}</td><td>${this.ESTADOS_CONTA[c.estado]}</td></tr>`).join('')}</tbody></table></div>${r.novas.length > 8 ? `<p class="hint">Amostra das primeiras 8 de ${r.novas.length}.</p>` : ''}` : ''}
       ${this.htmlProblemas('Duplicadas', r.duplicadas, d => `Linha ${d.linha}: "${d.nome}" já existe como "${d.com}"${d.noFicheiro ? ' (repetida no ficheiro)' : ''}`)}
@@ -1380,7 +1465,7 @@ const Crm = {
     b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'A importar…';
       try {
-        await this.gravarLote('contas', r.novas.map(c => Object.assign({}, c, { responsavel_id: null })));
+        await this.gravarLote('contas', r.novas);
         await this.carregar(true);
         App.fecharModal(); this.renderAtual();
         App.toast(`${r.novas.length} contas importadas.`);

@@ -3055,16 +3055,22 @@ const App = {
   // em bloco do "Registo Diário" — só são atribuídos a esta tarefa se for a ÚNICA tarefa desta
   // pessoa neste projeto; havendo mais que uma, ficam por atribuir (contam à mesma no total do
   // projeto, só não sabemos a qual tarefa pertencem).
+  // Um registo com referência direta a uma tarefa do projeto (tarefaId) conta SÓ para essa tarefa, pelo
+  // id — renomear ou reestruturar tarefas não lhe tira as horas. O nome é só o recurso dos registos
+  // antigos/importados sem essa referência.
   horasReaisTarefa(p, t) {
     if (!p || !t) return 0;
     const normalizar = (s) => String(s || '').trim().toLowerCase();
     const nomeTarefa = normalizar(t.nome);
+    const idsTarefas = new Set(p.tarefas.map(x => x.id));
+    const ligado = (r) => !!r.tarefaId && idsTarefas.has(r.tarefaId);
     const registosProjeto = this.state.registos.filter(r => this.registoPertenceAoProjeto(r, p));
     // Nomes de TODAS as tarefas do projeto (resumo e folha) — um registo cujo texto bate certo com
     // o nome de qualquer uma delas já tem "casa" definida, mesmo que essa tarefa seja uma fase com
     // sub-tarefas (uma fase pode ter recursos e registos próprios, além dos das suas subtarefas).
     const nomesTodasTarefas = new Set(p.tarefas.map(x => normalizar(x.nome)));
     const diretas = registosProjeto.reduce((soma, r) => {
+      if (ligado(r)) return r.tarefaId === t.id ? soma + (parseFloat(r.horas) || 0) : soma;
       const nomeRegisto = normalizar(r.tarefaNome);
       return nomeRegisto && nomeRegisto === nomeTarefa ? soma + (parseFloat(r.horas) || 0) : soma;
     }, 0);
@@ -3076,6 +3082,7 @@ const App = {
     // tarefa desta pessoa neste projeto; havendo mais que uma, ficam por atribuir (contam à mesma no
     // total do projeto, só não sabemos a qual tarefa pertencem).
     const semCorrespondencia = registosProjeto.reduce((soma, r) => {
+      if (ligado(r)) return soma;
       const nomeRegisto = normalizar(r.tarefaNome);
       if (nomeRegisto && nomesTodasTarefas.has(nomeRegisto)) return soma;
       const recurso = this.state.recursos.find(x => normalizar(x.nome) === normalizar(r.pessoa));
@@ -5955,10 +5962,11 @@ const App = {
         }
         selProjeto.disabled = false;
         selProjeto.innerHTML = projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
-        selProjeto.value = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno) ? r.projetoIdInterno : projetos[0].idInterno;
-        preencherTarefas();
+        const mantemProjeto = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno);
+        selProjeto.value = mantemProjeto ? r.projetoIdInterno : projetos[0].idInterno;
+        preencherTarefas(mantemProjeto);
       };
-      const preencherTarefas = () => {
+      const preencherTarefas = (manterSelecao) => {
         const selTarefa = tr.querySelector('[data-campo="tarefaNome"]');
         const nomePessoa = tr.querySelector('[data-campo="pessoa"]').value;
         const idInternoProjeto = tr.querySelector('[data-campo="projetoIdInterno"]').value;
@@ -5971,8 +5979,16 @@ const App = {
         selTarefa.disabled = false;
         selTarefa.innerHTML = this.opcoesTarefasRegisto(idInternoProjeto, tarefas);
         // Prefere a referência direta (tarefaId); só recorre ao nome em registos antigos sem ela.
-        const atual = tarefas.find(t => r.tarefaId && t.id === r.tarefaId) || tarefas.find(t => t.nome === r.tarefaNome) || tarefas[0];
-        selTarefa.value = atual.id;
+        const atual = tarefas.find(t => r.tarefaId && t.id === r.tarefaId) || tarefas.find(t => t.nome === r.tarefaNome);
+        if (atual) { selTarefa.value = atual.id; return; }
+        // Registo antigo/importado cuja tarefa já não existe (renomeada, ou texto livre): mostrar a 1.ª
+        // da lista dava a ideia de estar atribuído a ela, sem estar — fica assinalado até escolherem.
+        if (manterSelecao) {
+          selTarefa.insertAdjacentHTML('afterbegin', '<option value="">⚠ Escolher tarefa…</option>');
+          selTarefa.value = '';
+          selTarefa.title = `Este registo não está ligado a nenhuma tarefa do projeto (guardado como "${r.tarefaNome || 'sem tarefa'}"). Escolhe a tarefa certa para as horas aparecerem nela.`;
+          selTarefa.style.outline = '2px solid var(--amarelo)';
+        } else selTarefa.value = tarefas[0].id;
       };
       preencherProjetos(true);
       tr.querySelector('[data-campo="pessoa"]').addEventListener('change', (ev) => {

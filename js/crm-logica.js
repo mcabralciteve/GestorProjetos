@@ -266,21 +266,28 @@ const CrmLogica = {
     { k: 'nome', rotulo: 'Nome', obrig: true, aliases: ['nome', 'name', 'empresa', 'cliente', 'razao social', 'organizacao', 'organization', 'company', 'conta', 'account', 'account name', 'designacao', 'denominacao'] },
     { k: 'nif', rotulo: 'NIF', aliases: ['nif', 'nipc', 'contribuinte', 'vat', 'vat id', 'vat number', 'tax id', 'n fiscal', 'numero fiscal', 'nr contribuinte'] },
     { k: 'setor', rotulo: 'Setor', aliases: ['setor', 'sector', 'industria', 'industry', 'cae', 'atividade', 'area de atividade'] },
-    { k: 'dimensao', rotulo: 'Dimensão', aliases: ['dimensao', 'size', 'tamanho', 'dimensao empresa'] },
-    { k: 'morada', rotulo: 'Morada', aliases: ['morada', 'endereco', 'address', 'localidade', 'cidade', 'city'] },
+    { k: 'dimensao', rotulo: 'Dimensão', aliases: ['dimensao', 'dimension', 'size', 'tamanho', 'dimensao empresa'] },
+    { k: 'morada', rotulo: 'Morada (rua)', aliases: ['morada', 'billing street', 'rua', 'endereco', 'address', 'cidade', 'city'] },
+    { k: 'cp', rotulo: 'Código postal (junta à morada)', aliases: ['billing postal code', 'codigo postal', 'cp', 'postal code', 'zip'] },
+    { k: 'localidade', rotulo: 'Localidade (junta à morada)', aliases: ['billing city', 'localidade', 'concelho'] },
     { k: 'website', rotulo: 'Website', aliases: ['website', 'site', 'web', 'url', 'pagina web'] },
-    { k: 'estado', rotulo: 'Estado', aliases: ['estado', 'status', 'tipo conta', 'tipo de cliente', 'fase'] },
-    { k: 'notas', rotulo: 'Notas', aliases: ['notas', 'observacoes', 'notes', 'comentarios', 'descricao'] }
+    { k: 'estado', rotulo: 'Estado', aliases: ['estado', 'tipo conta', 'tipo de cliente', 'fase'] },
+    { k: 'responsavel', rotulo: 'Responsável (utilizador)', aliases: ['assigned to', 'responsavel', 'owner', 'assigned user', 'atribuido a'] },
+    { k: 'notas', rotulo: 'Notas', aliases: ['notas', 'observacoes', 'notes', 'comentarios', 'descricao', 'description'] },
+    { k: 'apagado', rotulo: 'Apagado (ignora se 1)', aliases: ['deleted', 'apagado', 'eliminado'] }
   ],
   CAMPOS_CONTACTO: [
-    { k: 'nome', rotulo: 'Nome do contacto', obrig: true, aliases: ['nome', 'name', 'contacto', 'contact', 'nome completo', 'full name', 'pessoa'] },
+    { k: 'nome', rotulo: 'Nome do contacto', obrig: true, aliases: ['nome', 'first name', 'primeiro nome', 'name', 'contacto', 'contact', 'nome completo', 'full name', 'pessoa'] },
+    { k: 'apelido', rotulo: 'Apelido (junta ao nome)', aliases: ['apelido', 'last name', 'surname', 'sobrenome', 'ultimo nome'] },
     { k: 'conta_nome', rotulo: 'Conta (nome)', aliases: ['empresa', 'conta', 'cliente', 'organizacao', 'organization', 'company', 'account', 'account name', 'entidade'] },
     { k: 'conta_nif', rotulo: 'Conta (NIF)', aliases: ['nif', 'nipc', 'nif empresa', 'vat', 'contribuinte'] },
     { k: 'cargo', rotulo: 'Cargo', aliases: ['cargo', 'funcao', 'title', 'job title', 'position', 'posicao'] },
     { k: 'email', rotulo: 'Email', aliases: ['email', 'e mail', 'mail', 'correio eletronico'] },
-    { k: 'telefone', rotulo: 'Telefone', aliases: ['telefone', 'telemovel', 'phone', 'mobile', 'tel', 'contacto telefonico'] },
+    { k: 'telefone', rotulo: 'Telefone (telemóvel)', aliases: ['telefone', 'telemovel', 'phone', 'mobile', 'tel', 'contacto telefonico'] },
+    { k: 'telefone2', rotulo: 'Telefone alternativo (se faltar o 1.º)', aliases: ['office phone', 'telefone fixo', 'phone office', 'other phone', 'home'] },
     { k: 'papel_decisao', rotulo: 'Papel na decisão', aliases: ['papel', 'papel decisao', 'papel na decisao', 'decisor', 'role'] },
-    { k: 'notas', rotulo: 'Notas', aliases: ['notas', 'observacoes', 'notes', 'comentarios'] }
+    { k: 'notas', rotulo: 'Notas', aliases: ['notas', 'observacoes', 'notes', 'comentarios', 'description'] },
+    { k: 'apagado', rotulo: 'Apagado (ignora se 1)', aliases: ['deleted', 'apagado', 'eliminado'] }
   ],
   _normCab(s) {
     return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -302,7 +309,23 @@ const CrmLogica = {
     passar((h, al) => al.some(a => h.split(' ').includes(a) || (a.includes(' ') && h.includes(a)))); // contém-no como palavra
     return mapa;
   },
-  _cel(linha, i) { return i >= 0 && linha[i] != null ? String(linha[i]).trim() : ''; },
+  // Célula limpa: sem espaços, sem o apóstrofo que o SuiteCRM põe à frente de alguns valores ("'+351…") e
+  // sem os marcadores de "vazio" ("-").
+  _cel(linha, i) {
+    const v = i >= 0 && linha[i] != null ? String(linha[i]).trim().replace(/^'+/, '').trim() : '';
+    return /^-+$/.test(v) ? '' : v;
+  },
+  // Só fica um endereço web que o pareça mesmo (ignora "http://" sozinho e texto solto).
+  normalizarWebsite(v) {
+    const t = String(v || '').trim();
+    if (!t || /\s/.test(t)) return '';
+    if (/^https?:\/\/[^\s\/]+\.[^\s\/]+/i.test(t)) return t;
+    if (/^(www\.)?[^\s\/]+\.[a-z]{2,}(\/\S*)?$/i.test(t)) return 'https://' + t;
+    return '';
+  },
+  comporMorada(rua, cp, localidade) {
+    return [rua, [cp, localidade].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  },
   normalizarEstadoConta(v, padrao) {
     const n = this._normCab(v);
     if (/^(ativo|ativa|active|cliente|customer)$/.test(n)) return 'ativo';
@@ -312,6 +335,7 @@ const CrmLogica = {
   },
   normalizarDimensao(v) {
     const n = this._normCab(v);
+    if (/^pme|^sme/.test(n)) return 'PME';
     if (/^micro/.test(n)) return 'Micro';
     if (/^peq|^small/.test(n)) return 'Pequena';
     if (/^med|^medium/.test(n)) return 'Média';
@@ -333,7 +357,7 @@ const CrmLogica = {
     const r = { novas: [], duplicadas: [], invalidas: [] };
     const aceites = existentes.slice();
     matriz.slice(1).forEach((linha, idx) => {
-      if (!linha.some(x => String(x).trim() !== '')) return;
+      if (!linha.some(x => String(x).trim() !== '') || this._eApagado(this._cel(linha, mapa.apagado))) return;
       const nl = idx + 2;
       const nome = this._cel(linha, mapa.nome);
       if (!nome) { r.invalidas.push({ linha: nl, motivo: 'Sem nome' }); return; }
@@ -342,8 +366,10 @@ const CrmLogica = {
       if (dup) { r.duplicadas.push({ linha: nl, nome, com: dup.nome, noFicheiro: !existentes.includes(dup) }); return; }
       const conta = {
         nome, nif, setor: this._cel(linha, mapa.setor), dimensao: this.normalizarDimensao(this._cel(linha, mapa.dimensao)),
-        morada: this._cel(linha, mapa.morada), website: this._cel(linha, mapa.website),
-        estado: this.normalizarEstadoConta(this._cel(linha, mapa.estado), opts.estadoPadrao), notas: this._cel(linha, mapa.notas)
+        morada: this.comporMorada(this._cel(linha, mapa.morada), this._cel(linha, mapa.cp), this._cel(linha, mapa.localidade)),
+        website: this.normalizarWebsite(this._cel(linha, mapa.website)),
+        estado: this.normalizarEstadoConta(this._cel(linha, mapa.estado), opts.estadoPadrao), notas: this._cel(linha, mapa.notas),
+        responsavel_id: this.resolverResponsavel(this._cel(linha, mapa.responsavel), opts.recursos || [])
       };
       aceites.push(conta);
       r.novas.push(conta);
@@ -364,9 +390,9 @@ const CrmLogica = {
     const vistos = new Set(contactosExistentes.map(c => `${c.conta_id}|${this.normalizarNome(c.nome)}`));
     const emails = new Set(contactosExistentes.filter(c => c.email).map(c => `${c.conta_id}|${String(c.email).toLowerCase()}`));
     matriz.slice(1).forEach((linha, idx) => {
-      if (!linha.some(x => String(x).trim() !== '')) return;
+      if (!linha.some(x => String(x).trim() !== '') || this._eApagado(this._cel(linha, mapa.apagado))) return;
       const nl = idx + 2;
-      const nome = this._cel(linha, mapa.nome);
+      const nome = [this._cel(linha, mapa.nome), this._cel(linha, mapa.apelido)].filter(Boolean).join(' ');
       if (!nome) { r.invalidos.push({ linha: nl, motivo: 'Sem nome' }); return; }
       const nomeConta = this._cel(linha, mapa.conta_nome), nifConta = this.soDigitos(this._cel(linha, mapa.conta_nif));
       const conta = (nifConta && contaPorNif.get(nifConta)) || (nomeConta && contaPorNome.get(this.normalizarNome(nomeConta))) || null;
@@ -386,12 +412,213 @@ const CrmLogica = {
       vistos.add(chaveNome); if (email) emails.add(`${contaChave}|${email.toLowerCase()}`);
       r.novos.push({
         conta_id: conta ? conta.id : null, conta_ref: contaRef, nome, cargo: this._cel(linha, mapa.cargo), email,
-        telefone: this._cel(linha, mapa.telefone), papel_decisao: this.normalizarPapelDecisao(this._cel(linha, mapa.papel_decisao)), notas: this._cel(linha, mapa.notas)
+        telefone: this._cel(linha, mapa.telefone) || this._cel(linha, mapa.telefone2), papel_decisao: this.normalizarPapelDecisao(this._cel(linha, mapa.papel_decisao)), notas: this._cel(linha, mapa.notas)
       });
     });
     return r;
   },
 
+  // ============================ Importação de oportunidades (e extras do SuiteCRM) ============================
+  CAMPOS_OPORTUNIDADE: [
+    { k: 'titulo', rotulo: 'Título', obrig: true, aliases: ['opportunity name', 'titulo', 'nome', 'name', 'oportunidade'] },
+    { k: 'conta_nome', rotulo: 'Conta (nome)', obrig: true, aliases: ['account name', 'conta', 'empresa', 'cliente', 'organizacao', 'company', 'account'] },
+    { k: 'valor', rotulo: 'Valor (€)', aliases: ['opportunity amount', 'amount', 'valor', 'montante', 'valor estimado'] },
+    { k: 'fecho', rotulo: 'Data prevista de fecho', aliases: ['expected close date', 'close date', 'data de fecho', 'fecho previsto', 'data prevista'] },
+    { k: 'etapa', rotulo: 'Etapa', obrig: true, aliases: ['sales stage', 'etapa', 'fase', 'stage', 'estado'] },
+    { k: 'probabilidade', rotulo: 'Probabilidade (ajuda a escolher a etapa)', aliases: ['probability', 'probabilidade', 'probability %'] },
+    { k: 'tipo', rotulo: 'Tipo de oportunidade', obrig: true, aliases: ['type', 'tipo', 'tipo de oportunidade'] },
+    { k: 'responsavel', rotulo: 'Responsável (utilizador)', aliases: ['assigned to', 'responsavel', 'owner', 'assigned user', 'atribuido a'] },
+    { k: 'origem', rotulo: 'Origem', aliases: ['lead source', 'origem', 'source'] },
+    { k: 'descricao', rotulo: 'Descrição', aliases: ['description', 'descricao', 'notas'] },
+    { k: 'proximo_passo', rotulo: 'Próximo passo (vira follow-up)', aliases: ['next step', 'proximo passo', 'next steps'] },
+    { k: 'ref_giaf', rotulo: 'Referência GIAF (liga ao projeto)', aliases: ['ano obra referencia giaf', 'referencia giaf', 'ano obra', 'ref giaf', 'giaf'] },
+    { k: 'apagado', rotulo: 'Apagado (ignora se 1)', aliases: ['deleted', 'apagado', 'eliminado'] }
+  ],
+  ORIGENS_SUITECRM: { 'existing customer': 'Cliente existente', 'sales contact': 'Contacto comercial', conference: 'Evento / feira', 'trade show': 'Evento / feira', 'web site': 'Website', 'word of mouth': 'Recomendação', partner: 'Parceiro', employee: 'Colaborador', other: 'Outro' },
+  traduzirOrigem(v) { const n = this._normCab(v); return n ? (this.ORIGENS_SUITECRM[n] || String(v).trim()) : ''; },
+
+  // "€8.100,00" / "8100,5" / "8,100.50" / "700.000" → número. Aceita os formatos português e inglês.
+  parseValor(s) {
+    let t = String(s == null ? '' : s).trim().replace(/[€$£\s]/g, '').replace(/^'+/, '');
+    if (!t || !/\d/.test(t)) return null;
+    const negativo = t.startsWith('-');
+    t = t.replace(/[^\d.,]/g, '');
+    const ultimaVirg = t.lastIndexOf(','), ultimoPonto = t.lastIndexOf('.');
+    if (ultimaVirg !== -1 && ultimoPonto !== -1) {
+      // O separador que aparece por último é o decimal.
+      if (ultimaVirg > ultimoPonto) t = t.replace(/\./g, '').replace(',', '.');
+      else t = t.replace(/,/g, '');
+    } else if (ultimaVirg !== -1) {
+      t = /^\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, '') : t.replace(',', '.');
+    } else if (ultimoPonto !== -1) {
+      if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    }
+    const n = parseFloat(t);
+    return isNaN(n) ? null : (negativo ? -n : n);
+  },
+  // Descobre o formato das datas a partir dos valores: "mdy" (americano, SuiteCRM), "dmy" ou "ymd".
+  detectarFormatoData(valores) {
+    let mdy = true, dmy = true, viu = false;
+    for (const v of valores) {
+      const t = String(v || '').trim();
+      if (!t) continue;
+      if (/^\d{4}-\d{2}-\d{2}/.test(t)) return 'ymd';
+      const m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-]\d{2,4}/);
+      if (!m) continue;
+      viu = true;
+      if (Number(m[1]) > 12) mdy = false;
+      if (Number(m[2]) > 12) dmy = false;
+    }
+    if (!viu) return 'mdy';
+    if (mdy && !dmy) return 'mdy';
+    if (dmy && !mdy) return 'dmy';
+    return 'mdy'; // ambíguo: o SuiteCRM exporta no formato americano
+  },
+  parseData(s, formato) {
+    const t = String(s == null ? '' : s).trim();
+    if (!t) return null;
+    let a, m, d;
+    let x = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (x) { a = +x[1]; m = +x[2]; d = +x[3]; }
+    else {
+      x = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+      if (!x) return null;
+      const p1 = +x[1], p2 = +x[2];
+      a = +x[3] < 100 ? 2000 + +x[3] : +x[3];
+      if (formato === 'dmy') { d = p1; m = p2; } else { m = p1; d = p2; }
+    }
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const dt = new Date(Date.UTC(a, m - 1, d));
+    if (dt.getUTCMonth() !== m - 1) return null;
+    return dt.toISOString().slice(0, 10);
+  },
+  // Quem é "mcabral"? O utilizador do ficheiro antigo costuma ser a inicial do nome + apelido, ou a
+  // parte do email antes do @. Devolve o id do recurso ou null.
+  resolverResponsavel(valor, recursos) {
+    const v = this._normCab(valor).replace(/\s+/g, '');
+    if (!v) return null;
+    const achado = recursos.find(r => {
+      const mail = String(r.email || '').split('@')[0];
+      if (mail && this._normCab(mail).replace(/\s+/g, '') === v) return true;
+      const partes = this._normCab(r.nome).split(' ').filter(Boolean);
+      if (!partes.length) return false;
+      if (partes.join('') === v) return true;
+      return partes.length > 1 && (partes[0][0] + partes[partes.length - 1]) === v;
+    });
+    return achado ? achado.id : null;
+  },
+  // Texto da etapa do ficheiro antigo ("Ganho | Aprovada") → etapa nova do tipo dado. "Ganho/Aprovad…" vai
+  // para a etapa ganha, "Perdid/Abandon/Rejeit…" para a perdida; as restantes escolhem a etapa em curso
+  // com mais palavras parecidas (e, a desempatar, a probabilidade mais próxima).
+  mapearEtapa(texto, prob, etapasDoTipo) {
+    const norm = this._normCab(texto);
+    const abertas = etapasDoTipo.filter(e => e.categoria === 'aberta');
+    if (/\b(ganh|won|aprovad|adjudic)/.test(norm) && !/nao aprov|reprov/.test(norm)) { const g = etapasDoTipo.find(e => e.categoria === 'ganha'); if (g) return g; }
+    if (/\b(perd|abandon|rejeit|lost|cancel|reprov|nao aprov)/.test(norm)) { const p = etapasDoTipo.find(e => e.categoria === 'perdida'); if (p) return p; }
+    if (!abertas.length) return null;
+    const palavras = norm.split(' ').filter(p => p.length >= 3);
+    const parecidas = (a, b) => a === b || (Math.min(a.length, b.length) >= 5 && a.slice(0, 5) === b.slice(0, 5));
+    const p = Number.isFinite(Number(prob)) && String(prob).trim() !== '' ? Number(prob) : null;
+    let melhor = null, melhorScore = -Infinity;
+    abertas.forEach(e => {
+      const nomes = this._normCab(e.nome).split(' ').filter(x => x.length >= 3);
+      const acertos = palavras.filter(w => nomes.some(n => parecidas(w, n))).length;
+      const score = acertos * 10 - (p === null ? 0 : Math.abs(p - (Number(e.probabilidade) || 0)) / 10);
+      if (score > melhorScore) { melhorScore = score; melhor = e; }
+    });
+    return melhor;
+  },
+  mapearTipo(texto, tipos) {
+    const n = this._normCab(texto);
+    if (!n) return null;
+    const ativos = tipos.filter(t => t.ativo !== false);
+    return ativos.find(t => this._normCab(t.nome) === n) || ativos.find(t => { const tn = this._normCab(t.nome); return tn.includes(n) || n.includes(tn); }) || null;
+  },
+  // "2026/0829" e "2026/829" são a mesma referência GIAF; "2026/0000" é um marcador sem obra.
+  normalizarRefGiaf(s) {
+    const m = String(s || '').trim().match(/^(\d{4})\s*[\/\-]\s*0*(\d+)$/);
+    return m && Number(m[2]) > 0 ? `${m[1]}/${Number(m[2])}` : '';
+  },
+  _eApagado(v) { return /^(1|true|sim|yes|s|y)$/i.test(String(v || '').trim()); },
+
+  // Combinações distintas do ficheiro que o utilizador pode ajustar: tipos ("Serviços", "I&D") e pares
+  // (tipo, etapa do ficheiro) — com a sugestão automática para cada uma.
+  combinacoesOportunidades(matriz, mapa, tipos, etapas, formatoData) {
+    const tiposTxt = new Map(), pares = new Map();
+    matriz.slice(1).forEach(linha => {
+      if (!linha.some(x => String(x).trim() !== '') || this._eApagado(this._cel(linha, mapa.apagado))) return;
+      const tTxt = this._cel(linha, mapa.tipo), eTxt = this._cel(linha, mapa.etapa), prob = this._cel(linha, mapa.probabilidade);
+      if (!tiposTxt.has(tTxt)) tiposTxt.set(tTxt, { texto: tTxt, n: 0, tipoId: (this.mapearTipo(tTxt, tipos) || {}).id || null });
+      tiposTxt.get(tTxt).n++;
+      const chave = tTxt + '|' + eTxt;
+      if (!pares.has(chave)) pares.set(chave, { tipoTexto: tTxt, texto: eTxt, prob, n: 0 });
+      pares.get(chave).n++;
+    });
+    return { tipos: [...tiposTxt.values()], etapas: [...pares.values()] };
+  },
+  // Pré-visualização da importação de OPORTUNIDADES. ctx: { contas, oportunidades, tipos, etapas,
+  // recursos, projetos }; opts: { formatoData, criarContas, criarFollowups, mapaTipos {textoTipo→tipoId},
+  // mapaEtapas {textoTipo|textoEtapa→etapaId}, motivoPadrao {tipoId→motivoId} }.
+  prepararOportunidades(matriz, mapa, ctx, opts) {
+    opts = opts || {};
+    const r = { novas: [], contasACriar: [], duplicadas: [], semConta: [], invalidas: [], avisos: [], followups: 0, comProjeto: 0 };
+    const contaPorNome = new Map(ctx.contas.map(c => [this.normalizarNome(c.nome), c]));
+    const novasContas = new Map();
+    const tipoPorId = new Map(ctx.tipos.map(t => [t.id, t])), etapaPorId = new Map(ctx.etapas.map(e => [e.id, e]));
+    const vistos = new Set(ctx.oportunidades.map(o => `${o.conta_id}|${this.normalizarNome(o.titulo)}`));
+    const projetoPorRef = new Map();
+    (ctx.projetos || []).forEach(p => { const k = this.normalizarRefGiaf(p.idInterno); if (k) projetoPorRef.set(k, p); });
+    const formato = opts.formatoData || 'mdy';
+    matriz.slice(1).forEach((linha, idx) => {
+      if (!linha.some(x => String(x).trim() !== '') || this._eApagado(this._cel(linha, mapa.apagado))) return;
+      const nl = idx + 2;
+      const titulo = this._cel(linha, mapa.titulo);
+      if (!titulo) { r.invalidas.push({ linha: nl, motivo: 'Sem título' }); return; }
+      const tTxt = this._cel(linha, mapa.tipo), eTxt = this._cel(linha, mapa.etapa);
+      const tipoId = (opts.mapaTipos && opts.mapaTipos[tTxt]) || (this.mapearTipo(tTxt, ctx.tipos) || {}).id;
+      if (!tipoId) { r.invalidas.push({ linha: nl, motivo: `Tipo "${tTxt || '(vazio)'}" sem correspondência` }); return; }
+      const etapasDoTipo = this.etapasDoTipo(ctx.etapas, tipoId, false);
+      const etapaId = (opts.mapaEtapas && opts.mapaEtapas[tTxt + '|' + eTxt]) || (this.mapearEtapa(eTxt, this._cel(linha, mapa.probabilidade), etapasDoTipo.filter(e => e.ativo !== false)) || {}).id;
+      const etapa = etapaPorId.get(etapaId);
+      if (!etapa || etapa.tipo_id !== tipoId) { r.invalidas.push({ linha: nl, motivo: `Etapa "${eTxt || '(vazia)'}" sem correspondência` }); return; }
+      const nomeConta = this._cel(linha, mapa.conta_nome);
+      const chaveConta = this.normalizarNome(nomeConta);
+      if (!chaveConta) { r.invalidas.push({ linha: nl, motivo: 'Sem conta' }); return; }
+      let conta = contaPorNome.get(chaveConta) || null, contaRef = null;
+      if (!conta) {
+        if (!opts.criarContas) { r.semConta.push({ linha: nl, titulo, conta: nomeConta }); return; }
+        if (!novasContas.has(chaveConta)) { const nova = { nome: nomeConta, nif: '' }; novasContas.set(chaveConta, nova); r.contasACriar.push(nova); }
+        contaRef = novasContas.get(chaveConta);
+      }
+      const contaChave = conta ? conta.id : '@' + chaveConta;
+      const chaveOp = `${contaChave}|${this.normalizarNome(titulo)}`;
+      if (vistos.has(chaveOp)) { r.duplicadas.push({ linha: nl, titulo }); return; }
+      vistos.add(chaveOp);
+      const valorBruto = this._cel(linha, mapa.valor);
+      let valor = this.parseValor(valorBruto);
+      if (valor === null) { if (valorBruto) r.avisos.push({ linha: nl, motivo: `Valor "${valorBruto}" não percebido — ficou a 0` }); valor = 0; }
+      const fechoBruto = this._cel(linha, mapa.fecho);
+      const fecho = this.parseData(fechoBruto, formato);
+      if (fechoBruto && !fecho) r.avisos.push({ linha: nl, motivo: `Data "${fechoBruto}" não percebida — ficou sem data` });
+      const ref = this.normalizarRefGiaf(this._cel(linha, mapa.ref_giaf));
+      const projeto = ref ? projetoPorRef.get(ref) : null;
+      let descricao = this._cel(linha, mapa.descricao);
+      if (ref && !projeto) descricao = (descricao ? descricao + '\n\n' : '') + `Ref. GIAF (CRM anterior): ${ref}`;
+      if (projeto) r.comProjeto++;
+      const fechada = etapa.categoria !== 'aberta';
+      const proximo = this._cel(linha, mapa.proximo_passo);
+      const followup = opts.criarFollowups && proximo && !fechada ? proximo : '';
+      if (followup) r.followups++;
+      r.novas.push({
+        conta_id: conta ? conta.id : null, conta_ref: contaRef, tipo_id: tipoId, etapa_id: etapaId, titulo, descricao,
+        valor_estimado: valor, data_prevista_fecho: fecho, responsavel_id: this.resolverResponsavel(this._cel(linha, mapa.responsavel), ctx.recursos || []),
+        origem: this.traduzirOrigem(this._cel(linha, mapa.origem)),
+        motivo_perda_id: etapa.categoria === 'perdida' ? ((opts.motivoPadrao && opts.motivoPadrao[tipoId]) || null) : null,
+        data_fecho: fechada ? (fecho || null) : null, projeto_id: projeto ? projeto.id : null, followup
+      });
+    });
+    return r;
+  },
   // ============================ Fase 2: contas — projetos e duplicados ============================
   // Clientes (texto livre) dos projetos que ainda não têm conta no CRM, do mais frequente para o menos.
   // Variantes de grafia do mesmo cliente juntam-se; fica a grafia mais usada.
