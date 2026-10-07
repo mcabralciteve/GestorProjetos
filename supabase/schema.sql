@@ -386,7 +386,19 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_ligacoes jsonb;
 begin
+  -- Os registos de horas apontam para a tarefa por id (registos.tarefa_id, "on delete set null").
+  -- Como as tarefas do projeto são apagadas e recriadas (com os MESMOS ids) a cada gravação, sem
+  -- isto cada gravação de um projeto desligava TODOS os seus registos das tarefas — e bastava
+  -- depois renomear uma tarefa para as horas deixarem de aparecer nela. Guarda-se a ligação antes
+  -- de apagar e repõe-se no fim, para as tarefas que continuam a existir.
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'tarefa_id', r.tarefa_id)), '[]'::jsonb)
+    into v_ligacoes
+  from registos r join tarefas t on t.id = r.tarefa_id
+  where t.projeto_id = p_projeto_id;
+
   -- Ordem de apagar: "proximos_passos" antes de "pontos_situacao" (referencia-o), e antes de
   -- "tarefas" (também o referencia) — nunca deixa uma FK pendurada, mesmo por um instante.
   delete from proximos_passos where projeto_id = p_projeto_id;
@@ -434,6 +446,13 @@ begin
     nullif(x->>'fechado_em', '')::timestamptz, nullif(x->>'criado_por', '')::uuid,
     coalesce((x->>'criado_em')::timestamptz, now()), coalesce((x->>'atualizado_em')::timestamptz, now())
   from jsonb_array_elements(coalesce(p_proximos_passos, '[]'::jsonb)) as x;
+
+  -- Repõe a ligação registo -> tarefa (só se a tarefa ainda existir; uma tarefa apagada de propósito
+  -- deixa os registos sem tarefa, como sempre, mas as horas continuam no total do projeto).
+  update registos r set tarefa_id = (l->>'tarefa_id')::uuid
+  from jsonb_array_elements(v_ligacoes) as l
+  where r.id = (l->>'id')::uuid and r.tarefa_id is null
+    and exists (select 1 from tarefas t where t.id = (l->>'tarefa_id')::uuid);
 end;
 $$;
 grant execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated;

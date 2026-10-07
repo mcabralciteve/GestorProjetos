@@ -2054,11 +2054,34 @@ const App = {
     } else if (campo === 'progresso') {
       t.progresso = Math.max(0, Math.min(100, parseInt(valor, 10) || 0));
     } else if (campo === 'nome') {
+      this.religarRegistosAoRenomear(p, t, valor);
       t.nome = valor;
     }
     this.recalcularAgendamento(p);
     this.persist();
     this.renderTudo();
+  },
+  // Renomear uma tarefa nunca pode tirar-lhe as horas. Os registos ligados a ela (tarefaId) seguem o
+  // id e só precisam do texto novo; os antigos, só com o nome, ligam-se AGORA (antes de o nome mudar)
+  // se o nome antigo identificava uma só tarefa do projeto.
+  religarRegistosAoRenomear(p, t, novoNome) {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const antigo = norm(t.nome);
+    const unico = antigo !== '' && p.tarefas.filter(x => norm(x.nome) === antigo).length === 1;
+    const alterados = [];
+    this.state.registos.forEach(r => {
+      if (!this.registoPertenceAoProjeto(r, p)) return;
+      const campos = {};
+      if (!r.tarefaId && unico && norm(r.tarefaNome) === antigo) { r.tarefaId = t.id; campos.tarefa_id = t.id; }
+      if (r.tarefaId === t.id && r.tarefaNome !== novoNome) { r.tarefaNome = novoNome; campos.tarefa_nome = novoNome; }
+      if (Object.keys(campos).length) alterados.push([r.id, campos]);
+    });
+    if (!alterados.length) return;
+    this.invalidarIndiceRegistos();
+    (async () => {
+      try { for (const [id, campos] of alterados) await Sync.atualizarRegisto(id, campos); }
+      catch (err) { this.toast('Erro ao atualizar o nome da tarefa nos registos: ' + err.message); }
+    })();
   },
   // Formatação do rótulo (negrito/itálico/cor) — só o nome inteiro, aplicada na tabela e no Gantt.
   atualizarFormatoTarefa(id, campo, valor) {
@@ -2985,6 +3008,16 @@ const App = {
   // ---------- Registo de Horas ----------
   ULTIMA_PESSOA_KEY: 'gp_ultima_pessoa',
   novoRegistoObj(dados) {
+    // Um registo que só traga o NOME da tarefa (importações, texto livre) liga-se já à tarefa se esse
+    // nome identificar uma só tarefa do projeto — assim renomeá-la depois não lhe tira as horas.
+    let tarefaId = dados.tarefaId || null;
+    if (!tarefaId && dados.tarefaNome) {
+      const proj = (dados.projetoId && this.state.projetos[dados.projetoId]) ||
+        Object.values(this.state.projetos).find(x => dados.projetoIdInterno && x.idInterno === dados.projetoIdInterno);
+      const nome = String(dados.tarefaNome).trim().toLowerCase();
+      const candidatas = proj ? proj.tarefas.filter(t => String(t.nome || '').trim().toLowerCase() === nome) : [];
+      if (candidatas.length === 1) tarefaId = candidatas[0].id;
+    }
     return {
       id: crypto.randomUUID(),
       data: dados.data,
@@ -2994,7 +3027,7 @@ const App = {
       projetoId: dados.projetoId || null,
       cliente: dados.cliente || '',
       tarefaNome: dados.tarefaNome || '',
-      tarefaId: dados.tarefaId || null,
+      tarefaId,
       tipoTrabalhoId: dados.tipoTrabalhoId || null,
       horas: dados.horas,
       notas: dados.notas || '',
@@ -5488,6 +5521,13 @@ const App = {
     const p = Object.values(this.state.projetos).find(pr => pr.idInterno === idInternoProjeto);
     return tarefas.map(t => `<option value="${escapeAttr(t.id)}">${escapeHtml(p ? this.rotuloTarefaComPai(p, t) : t.nome)}</option>`).join('');
   },
+  // Nome ATUAL da tarefa de um registo (pelo id) — o texto guardado no registo (tarefaNome) pode ter
+  // ficado para trás se a tarefa foi renomeada.
+  nomeTarefaRegisto(r) {
+    const p = r.projetoId ? this.state.projetos[r.projetoId] : null;
+    const t = p && r.tarefaId ? this.tarefaPorId(p, r.tarefaId) : null;
+    return t ? t.nome : (r.tarefaNome || '');
+  },
   // Texto de um registo já gravado: com o pai, se a referência direta à tarefa (tarefaId) ainda existir.
   rotuloTarefaRegisto(r) {
     const p = r.projetoId ? this.state.projetos[r.projetoId] : null;
@@ -5822,7 +5862,7 @@ const App = {
     switch (campo) {
       case 'tipo': return this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome.toLowerCase();
       case 'projeto': return `${r.projetoIdInterno || ''} ${r.projetoNome || ''}`.toLowerCase();
-      case 'tarefaNome': return (r.tarefaNome || '').toLowerCase();
+      case 'tarefaNome': return this.nomeTarefaRegisto(r).toLowerCase();
       case 'horas': return parseFloat(r.horas) || 0;
       case 'notas': return (r.notas || '').toLowerCase();
       case 'cliente': return (r.cliente || '').toLowerCase();
@@ -5846,7 +5886,7 @@ const App = {
       if (f.projeto && r.projetoIdInterno !== f.projeto) return false;
       if (f.de && r.data < f.de) return false;
       if (f.ate && r.data > f.ate) return false;
-      if (f.texto && !((r.tarefaNome || '').toLowerCase().includes(f.texto) || r.notas.toLowerCase().includes(f.texto))) return false;
+      if (f.texto && !(this.nomeTarefaRegisto(r).toLowerCase().includes(f.texto) || r.notas.toLowerCase().includes(f.texto))) return false;
       return true;
     }).sort((a, b) => {
       const va = this.valorOrdenacaoRegisto(a, campo), vb = this.valorOrdenacaoRegisto(b, campo);
@@ -6142,10 +6182,10 @@ const App = {
         // o nome do Tipo de Trabalho no lugar, para nunca mostrar uma barra em branco.
         const rotulo = r.projetoNome || this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome;
         const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(rotulo)}` : escapeHtml(rotulo);
-        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${r.tarefaNome ? ' · ' + escapeAttr(r.tarefaNome) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
+        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${this.nomeTarefaRegisto(r) ? ' · ' + escapeAttr(this.nomeTarefaRegisto(r)) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
         return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
           <span class="cal-bloco-linha1">${linha1}</span>
-          <span class="cal-bloco-linha2">${escapeHtml(r.tarefaNome || '')} · ${horas}h</span>
+          <span class="cal-bloco-linha2">${escapeHtml(this.nomeTarefaRegisto(r))} · ${horas}h</span>
         </div>`;
       }).join('');
       html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
@@ -6308,7 +6348,7 @@ const App = {
         const largura = denom > 0 ? (horas / denom * 100) : 0;
         // Só junta "Projeto — " ao título quando há mesmo um projeto (senão repete o nome do tipo
         // duas vezes seguidas, já que sem projeto o rótulo do bloco É o nome do tipo).
-        const titulo = `${r.projetoNome ? r.projetoNome + ' — ' : ''}${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${r.tarefaNome ? ' · ' + r.tarefaNome : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
+        const titulo = `${r.projetoNome ? r.projetoNome + ' — ' : ''}${tipo.nome}${r.projetoNome ? ' · ' + r.projetoNome : ''}${this.nomeTarefaRegisto(r) ? ' · ' + this.nomeTarefaRegisto(r) : ''} · ${horas}h${r.notas ? ' · ' + r.notas : ''}`;
         return `<div class="dia-bloco-mini" style="width:${largura}%;background:${tipo.cor}" data-editar-bloco="${r.id}" title="${escapeAttr(titulo)}"></div>`;
       }).join('');
       const ausenciaDoDia = this.ausenciaNoDia(iso, recurso);
@@ -6810,7 +6850,7 @@ const App = {
       <tr>
         <td>${DateUtil.parseISO(r.data).toLocaleDateString('pt-PT')}</td>
         <td>${escapeHtml(r.pessoa)}</td>
-        <td>${escapeHtml(r.tarefaNome || '—')}</td>
+        <td>${escapeHtml(this.nomeTarefaRegisto(r) || '—')}</td>
         <td style="text-align:right;">${fmtHoras(parseFloat(r.horas) || 0)}</td>
         <td>${escapeHtml(r.notas || '')}</td>
       </tr>`).join('');
@@ -7835,7 +7875,7 @@ const App = {
     const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
     filtrados.forEach(r => linhas.push([
       r.data, r.pessoa, this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
-      r.tarefaNome || '', parseFloat(r.horas) || 0, r.notas || '', r.origem || ''
+      this.nomeTarefaRegisto(r), parseFloat(r.horas) || 0, r.notas || '', r.origem || ''
     ]));
     this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${DateUtil.todayISO()}.csv`);
   },
