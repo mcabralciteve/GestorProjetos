@@ -11,8 +11,9 @@ import {
 } from '../_shared/comum.ts';
 import { ehDiaUtil, formatarDia, hojeEmLisboa, horaAtualEmLisboa } from '../lembrete-horas/logica.ts';
 import { montarEmail } from './email.ts';
+import type { CrmConta, CrmEtapa, CrmOportunidade, CrmTarefa, Departamento, Equipa } from './extras.ts';
 import {
-  indexarAgenda, indexarRegistadas, resumoDoDia, resumoVazio,
+  indexarAgenda, indexarRegistadas, resumoDoDia, resumoVazio, totalItens,
   type Ausencia, type Passo, type Projeto, type RegistoHoras, type Tarefa, type TarefaRecurso,
 } from './logica.ts';
 
@@ -41,23 +42,41 @@ Deno.serve(async (req) => {
   if (!ehDiaUtil(hoje, feriados) && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'hoje não é dia útil' });
 
   const [ausencias, recursos, projetos, tarefas, atribuicoes, passos, registos] = await Promise.all([
-    lerTudo<Ausencia>((de, ate) => db.from('ausencias').select('recurso_id,data_inicio,data_fim,estado').range(de, ate)),
-    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes').range(de, ate)),
+    lerTudo<Ausencia>((de, ate) => db.from('ausencias').select('recurso_id,data_inicio,data_fim,estado,tipo').range(de, ate)),
+    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id').range(de, ate)),
     lerTudo<Projeto>((de, ate) => db.from('projetos').select('id,id_interno,nome,cliente,ativo').range(de, ate)),
     lerTudo<Tarefa>((de, ate) => db.from('tarefas').select('id,projeto_id,parent_id,nome,inicio,fim,progresso').range(de, ate)),
     lerTudo<TarefaRecurso>((de, ate) => db.from('tarefa_recursos').select('tarefa_id,recurso_id,horas').range(de, ate)),
     lerTudo<Passo>((de, ate) => db.from('proximos_passos').select('id,projeto_id,tarefa_id,descricao,estado,fechado,data_prevista,responsavel_id').range(de, ate)),
     lerTudo<RegistoHoras>((de, ate) => db.from('registos').select('tarefa_id,pessoa,horas').not('tarefa_id', 'is', null).range(de, ate)),
   ]);
-  const contexto = { indice: indexarAgenda(projetos, tarefas, atribuicoes), ausencias, passos, projetos, tarefas, registadas: indexarRegistadas(registos) };
+  // Organização (para "por aprovar" e para saber quem vê o Comercial) e dados do CRM. Se o CRM ainda
+  // não existir (ou falhar), o resumo segue sem a secção Comercial — nunca bloqueia o email.
+  const [equipas, departamentos] = await Promise.all([
+    lerTudo<Equipa>((de, ate) => db.from('equipas').select('id,lider_id,departamento_id').range(de, ate)),
+    lerTudo<Departamento>((de, ate) => db.from('departamentos').select('id,diretor_id').range(de, ate)),
+  ]);
+  let comercial;
+  try {
+    const [ctarefas, oportunidades, etapas, contas] = await Promise.all([
+      lerTudo<CrmTarefa>((de, ate) => db.from('crm_tarefas').select('id,conta_id,oportunidade_id,descricao,responsavel_id,data_limite,concluida').eq('concluida', false).range(de, ate)),
+      lerTudo<CrmOportunidade>((de, ate) => db.from('crm_oportunidades').select('id,conta_id,titulo,etapa_id,valor_estimado,data_prevista_fecho,responsavel_id').range(de, ate)),
+      lerTudo<CrmEtapa>((de, ate) => db.from('crm_etapas').select('id,nome,categoria').range(de, ate)),
+      lerTudo<CrmConta>((de, ate) => db.from('crm_contas').select('id,nome').range(de, ate)),
+    ]);
+    comercial = { tarefas: ctarefas, oportunidades, etapas, contas };
+  } catch (_) { comercial = undefined; }
+  const contexto = {
+    indice: indexarAgenda(projetos, tarefas, atribuicoes), ausencias, passos, projetos, tarefas, registadas: indexarRegistadas(registos),
+    org: { recursos, equipas, departamentos }, comercial,
+  };
 
   const candidatos = elegiveis(recursos, p.apenas, cfg?.lembretes_piloto_ativo === true);
   const resultado: Resultado[] = [];
   for (const r of candidatos) {
     const resumo = resumoDoDia(r, hoje, contexto);
     if (resumoVazio(resumo)) continue;
-    const itens = resumo.hoje.length + resumo.atrasadas.length + resumo.passos.length + resumo.proximas.length;
-    resultado.push(await despachar(r, itens, montarEmail(r.nome, formatarDia(hoje), resumo, APP_URL), p));
+    resultado.push(await despachar(r, totalItens(resumo), montarEmail(r.nome, formatarDia(hoje), resumo, APP_URL), p));
   }
   // Só uma chamada "a sério" marca o dia como feito — ver a mesma nota em lembrete-horas/index.ts.
   if (!p.dry && !p.forcar) await db.from('configuracoes').update({ lembrete_agenda_ultimo_envio: hoje }).eq('id', 1);

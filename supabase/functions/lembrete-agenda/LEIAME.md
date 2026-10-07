@@ -10,6 +10,9 @@ Cada secção só aparece se tiver conteúdo; quem não tem nada, ou está ausen
 | Em atraso | tarefas suas com data de fim passada e menos de 100% (as mais recentes primeiro) |
 | Next steps abertos | next steps de que é responsável (abertos ou em curso, não fechados), os atrasados primeiro |
 | Nos próximos dias | tarefas que começam nos próximos 7 dias |
+| Pedidos de ausência por aprovar | só para quem decide: o Administrador (todos), o líder da equipa e o diretor do departamento (os da sua equipa/departamento, nunca o próprio pedido) |
+| Comercial — follow-ups | só para quem vê o Comercial (Administrador, diretores, líderes): os seus follow-ups por fazer até hoje, os atrasados primeiro |
+| Comercial — oportunidades a fechar | idem: as suas oportunidades em curso com fecho previsto ultrapassado ou nos próximos 7 dias, com valor |
 
 Cada lista mostra no máximo 8 tarefas / 10 next steps ("… e mais N"). As horas registadas só contam registos
 ligados à tarefa por id. Cada pessoa pode desligar estes emails em **A minha conta**.

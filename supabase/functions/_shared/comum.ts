@@ -15,6 +15,7 @@ export interface Email { assunto: string; texto: string; html: string }
 export interface Recurso {
   id: string; nome: string; email: string; auth_user_id: string | null; lembretes_email: boolean | null;
   piloto_lembretes: boolean | null;
+  acesso?: string | null; equipa_id?: string | null;
 }
 
 export const resposta = (corpo: unknown, status = 200) =>

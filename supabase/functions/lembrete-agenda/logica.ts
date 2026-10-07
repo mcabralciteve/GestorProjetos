@@ -7,7 +7,12 @@
 export interface Projeto { id: string; id_interno: string | null; nome: string; cliente: string | null; ativo: boolean | null }
 export interface Tarefa { id: string; projeto_id: string; parent_id: string | null; nome: string; inicio: string; fim: string; progresso: number | null }
 export interface TarefaRecurso { tarefa_id: string; recurso_id: string; horas?: number | string | null }
-export interface Ausencia { recurso_id: string; data_inicio: string; data_fim: string; estado: string }
+import {
+  aprovacoesPendentes, resumoComercial, temAcessoCrm,
+  type ContextoAprovacao, type ContextoComercial, type ItemAprovacao, type ItemFollowup, type ItemOportunidade,
+} from './extras.ts';
+
+export interface Ausencia { recurso_id: string; data_inicio: string; data_fim: string; estado: string; tipo?: string | null }
 export interface Passo {
   id: string; projeto_id: string; tarefa_id: string | null; descricao: string; estado: string;
   fechado: boolean | null; data_prevista: string | null; responsavel_id: string | null;
@@ -18,7 +23,11 @@ export interface ItemAgenda {
   horasPrevistas: number | null; registadas: number;
 }
 export interface ItemPasso { descricao: string; projeto: string; tarefa: string | null; prazo: string | null; atrasado: boolean; estado: string }
-export interface ResumoDia { hoje: ItemAgenda[]; atrasadas: ItemAgenda[]; proximas: ItemAgenda[]; passos: ItemPasso[] }
+export interface ResumoDia {
+  hoje: ItemAgenda[]; atrasadas: ItemAgenda[]; proximas: ItemAgenda[]; passos: ItemPasso[];
+  // Só para quem tem papel de chefia (ver extras.ts); em falta = vazio.
+  aprovacoes?: ItemAprovacao[]; followups?: ItemFollowup[]; oportunidades?: ItemOportunidade[];
+}
 
 // Sempre "idInterno — nome (cliente)" — nunca só o código do projeto (ver memória do projeto).
 export function rotuloProjeto(p: Projeto): string {
@@ -91,10 +100,13 @@ export interface ContextoResumo {
   tarefas: Tarefa[];
   registadas: Map<string, number>;
   diasAFrente?: number;
+  // Estrutura da organização (quem lidera quem) — para "por aprovar" e para saber quem vê o Comercial.
+  org?: ContextoAprovacao;
+  comercial?: ContextoComercial;
 }
 
 // Tudo o que a pessoa deve ver hoje. Tudo vazio se estiver ausente (de férias não se manda nada).
-export function resumoDoDia(rec: { id: string; nome: string }, hojeISO: string, c: ContextoResumo): ResumoDia {
+export function resumoDoDia(rec: { id: string; nome: string; acesso?: string | null }, hojeISO: string, c: ContextoResumo): ResumoDia {
   const vazio: ResumoDia = { hoje: [], atrasadas: [], proximas: [], passos: [] };
   if (estaAusente(rec.id, hojeISO, c.ausencias)) return vazio;
   const comRegistadas = (i: ItemAgenda): ItemAgenda => ({ ...i, registadas: c.registadas.get(i.id + '|' + rec.nome) ?? 0 });
@@ -121,7 +133,17 @@ export function resumoDoDia(rec: { id: string; nome: string }, hojeISO: string, 
   }
   // Atrasados primeiro (o mais antigo no topo), depois por prazo; sem prazo no fim.
   passos.sort((a, b) => Number(b.atrasado) - Number(a.atrasado) || (a.prazo ?? '9999').localeCompare(b.prazo ?? '9999') || a.projeto.localeCompare(b.projeto, 'pt'));
-  return { hoje, atrasadas, proximas, passos };
+  const pessoa = { id: rec.id, nome: rec.nome, acesso: rec.acesso, equipa_id: null };
+  const aprovacoes = c.org ? aprovacoesPendentes(pessoa, c.ausencias, c.org) : [];
+  const comercial = c.org && c.comercial && temAcessoCrm(pessoa, c.org.equipas, c.org.departamentos)
+    ? resumoComercial(rec, hojeISO, c.comercial, c.diasAFrente ?? 7) : { followups: [], oportunidades: [] };
+  return { hoje, atrasadas, proximas, passos, aprovacoes, followups: comercial.followups, oportunidades: comercial.oportunidades };
 }
 
-export const resumoVazio = (r: ResumoDia) => !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length;
+export const resumoVazio = (r: ResumoDia) =>
+  !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length &&
+  !(r.aprovacoes?.length) && !(r.followups?.length) && !(r.oportunidades?.length);
+
+export const totalItens = (r: ResumoDia) =>
+  r.hoje.length + r.atrasadas.length + r.proximas.length + r.passos.length +
+  (r.aprovacoes?.length ?? 0) + (r.followups?.length ?? 0) + (r.oportunidades?.length ?? 0);

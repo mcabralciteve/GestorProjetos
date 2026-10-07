@@ -1,5 +1,6 @@
 // Montagem do email do resumo diário (texto + HTML) — pura, para se poder testar sem enviar nada.
 import type { ItemAgenda, ItemPasso, ResumoDia } from './logica.ts';
+import type { ItemAprovacao, ItemFollowup, ItemOportunidade } from './extras.ts';
 
 export interface EmailMontado { assunto: string; texto: string; html: string }
 
@@ -28,6 +29,22 @@ function linhaPasso(p: ItemPasso): Linha {
   return { titulo: p.descricao, detalhe: partes.join(' · '), destaque: p.atrasado };
 }
 
+const euro = (v: number) => `${Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
+
+function linhaAprovacao(a: ItemAprovacao): Linha {
+  const periodo = a.inicio === a.fim ? dm(a.inicio) : `${dm(a.inicio)} a ${dm(a.fim)}`;
+  return { titulo: a.pessoa, detalhe: `${a.tipo} · ${periodo}` };
+}
+
+function linhaFollowup(f: ItemFollowup): Linha {
+  return { titulo: f.descricao, detalhe: [f.contexto, f.atrasado ? `prazo ${dm(f.prazo)} — em atraso` : 'prazo hoje'].filter(Boolean).join(' · '), destaque: f.atrasado };
+}
+
+function linhaOportunidade(o: ItemOportunidade): Linha {
+  const fecho = o.ultrapassado ? `fecho previsto ${dm(o.fecho)} — ultrapassado` : `fecho previsto ${dm(o.fecho)}`;
+  return { titulo: o.titulo, detalhe: [o.conta, o.etapa, euro(o.valor), fecho].filter(Boolean).join(' · '), destaque: o.ultrapassado };
+}
+
 interface Seccao { titulo: string; linhas: Linha[]; total: number }
 
 function seccoes(r: ResumoDia): Seccao[] {
@@ -36,6 +53,9 @@ function seccoes(r: ResumoDia): Seccao[] {
     { titulo: 'Tarefas de hoje', linhas: corta(r.hoje, MAX_TAREFAS).map(i => linhaTarefa(i, '')), total: r.hoje.length },
     { titulo: 'Em atraso', linhas: corta(r.atrasadas, MAX_TAREFAS).map(i => linhaTarefa(i, `devia terminar a ${dm(i.fim)}`)), total: r.atrasadas.length },
     { titulo: 'Next steps abertos', linhas: corta(r.passos, MAX_PASSOS).map(linhaPasso), total: r.passos.length },
+    { titulo: 'Pedidos de ausência por aprovar', linhas: corta(r.aprovacoes ?? [], MAX_PASSOS).map(linhaAprovacao), total: (r.aprovacoes ?? []).length },
+    { titulo: 'Comercial — follow-ups', linhas: corta(r.followups ?? [], MAX_PASSOS).map(linhaFollowup), total: (r.followups ?? []).length },
+    { titulo: 'Comercial — oportunidades a fechar', linhas: corta(r.oportunidades ?? [], MAX_PASSOS).map(linhaOportunidade), total: (r.oportunidades ?? []).length },
     { titulo: 'Nos próximos dias', linhas: corta(r.proximas, MAX_TAREFAS).map(i => linhaTarefa(i, `começa a ${dm(i.inicio)}`)), total: r.proximas.length },
   ];
   return todas.filter(s => s.total > 0);
@@ -46,6 +66,8 @@ export function assuntoDoResumo(r: ResumoDia): string {
   if (r.hoje.length) partes.push(`${r.hoje.length} tarefa(s) hoje`);
   if (r.atrasadas.length) partes.push(`${r.atrasadas.length} em atraso`);
   if (r.passos.length) partes.push(`${r.passos.length} next step(s)`);
+  if (r.aprovacoes?.length) partes.push(`${r.aprovacoes.length} por aprovar`);
+  if (r.followups?.length) partes.push(`${r.followups.length} follow-up(s)`);
   return `O teu resumo de hoje${partes.length ? ' — ' + partes.join(', ') : ''}`;
 }
 
