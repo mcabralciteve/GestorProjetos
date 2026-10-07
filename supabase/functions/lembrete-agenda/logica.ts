@@ -1,17 +1,41 @@
-// Lógica pura da agenda do dia — espelha o cartão "A minha agenda de hoje" do Início (js/app.js,
-// renderDashboard): tarefas-folha (sem subtarefas) de projetos ativos, atribuídas à pessoa, cujo
-// período inclui hoje. Se uma das duas mudar, a outra tem de mudar também.
+// Lógica pura do resumo diário por email. A secção "Tarefas de hoje" espelha o cartão "A minha agenda
+// de hoje" do Início (js/app.js, renderDashboard): tarefas-folha (sem subtarefas) de projetos ativos,
+// atribuídas à pessoa, cujo período inclui hoje. Se uma das duas mudar, a outra tem de mudar também.
+// Além disso o email leva, por pessoa: tarefas em atraso, o que começa nos próximos dias e os
+// next steps abertos de que é responsável (cada secção só aparece se tiver conteúdo).
 
 export interface Projeto { id: string; id_interno: string | null; nome: string; cliente: string | null; ativo: boolean | null }
 export interface Tarefa { id: string; projeto_id: string; parent_id: string | null; nome: string; inicio: string; fim: string; progresso: number | null }
-export interface TarefaRecurso { tarefa_id: string; recurso_id: string }
+export interface TarefaRecurso { tarefa_id: string; recurso_id: string; horas?: number | string | null }
 export interface Ausencia { recurso_id: string; data_inicio: string; data_fim: string; estado: string }
-export interface ItemAgenda { projeto: string; tarefa: string; inicio: string; fim: string; progresso: number }
+export interface Passo {
+  id: string; projeto_id: string; tarefa_id: string | null; descricao: string; estado: string;
+  fechado: boolean | null; data_prevista: string | null; responsavel_id: string | null;
+}
+export interface RegistoHoras { tarefa_id: string | null; pessoa: string; horas: number | string | null }
+export interface ItemAgenda {
+  id: string; projeto: string; tarefa: string; inicio: string; fim: string; progresso: number;
+  horasPrevistas: number | null; registadas: number;
+}
+export interface ItemPasso { descricao: string; projeto: string; tarefa: string | null; prazo: string | null; atrasado: boolean; estado: string }
+export interface ResumoDia { hoje: ItemAgenda[]; atrasadas: ItemAgenda[]; proximas: ItemAgenda[]; passos: ItemPasso[] }
 
 // Sempre "idInterno — nome (cliente)" — nunca só o código do projeto (ver memória do projeto).
 export function rotuloProjeto(p: Projeto): string {
   return `${p.id_interno ? p.id_interno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`;
 }
+
+export function somarDias(iso: string, n: number): string {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+const numero = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 // Uma passagem por todas as tarefas: devolve, por pessoa, as suas tarefas-folha de projetos ativos.
 export function indexarAgenda(projetos: Projeto[], tarefas: Tarefa[], atribuicoes: TarefaRecurso[]): Map<string, ItemAgenda[]> {
@@ -24,18 +48,80 @@ export function indexarAgenda(projetos: Projeto[], tarefas: Tarefa[], atribuicoe
     const p = t && ativos.get(t.projeto_id);
     if (!t || !p || temFilhos.has(t.id)) continue;
     const lista = mapa.get(a.recurso_id) ?? [];
-    lista.push({ projeto: rotuloProjeto(p), tarefa: t.nome, inicio: t.inicio, fim: t.fim, progresso: t.progresso ?? 0 });
+    lista.push({
+      id: t.id, projeto: rotuloProjeto(p), tarefa: t.nome, inicio: t.inicio, fim: t.fim, progresso: t.progresso ?? 0,
+      horasPrevistas: numero(a.horas), registadas: 0,
+    });
     mapa.set(a.recurso_id, lista);
   }
   return mapa;
 }
 
+const estaAusente = (recursoId: string, dia: string, ausencias: Ausencia[]) =>
+  ausencias.some(a => a.recurso_id === recursoId && a.estado !== 'rejeitada' && dia >= a.data_inicio && dia <= a.data_fim);
+
+const porProjetoETarefa = (a: ItemAgenda, b: ItemAgenda) =>
+  a.projeto.localeCompare(b.projeto, 'pt') || a.tarefa.localeCompare(b.tarefa, 'pt');
+
 // Tarefas de hoje de uma pessoa; [] se estiver ausente (não rejeitada) — não faz sentido mandar
 // a agenda a quem está de férias.
 export function agendaDoDia(recursoId: string, hojeISO: string, indice: Map<string, ItemAgenda[]>, ausencias: Ausencia[]): ItemAgenda[] {
-  const ausente = ausencias.some(a => a.recurso_id === recursoId && a.estado !== 'rejeitada' && hojeISO >= a.data_inicio && hojeISO <= a.data_fim);
-  if (ausente) return [];
+  if (estaAusente(recursoId, hojeISO, ausencias)) return [];
   return (indice.get(recursoId) ?? [])
     .filter(i => hojeISO >= i.inicio && hojeISO <= i.fim)
-    .sort((a, b) => a.projeto.localeCompare(b.projeto, 'pt') || a.tarefa.localeCompare(b.tarefa, 'pt'));
+    .sort(porProjetoETarefa);
 }
+
+// Horas já registadas por (tarefa, pessoa) — só conta registos ligados a uma tarefa por id.
+export function indexarRegistadas(registos: RegistoHoras[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of registos) {
+    if (!r.tarefa_id) continue;
+    const k = r.tarefa_id + '|' + r.pessoa;
+    m.set(k, (m.get(k) ?? 0) + (numero(r.horas) ?? 0));
+  }
+  return m;
+}
+
+export interface ContextoResumo {
+  indice: Map<string, ItemAgenda[]>;
+  ausencias: Ausencia[];
+  passos: Passo[];
+  projetos: Projeto[];
+  tarefas: Tarefa[];
+  registadas: Map<string, number>;
+  diasAFrente?: number;
+}
+
+// Tudo o que a pessoa deve ver hoje. Tudo vazio se estiver ausente (de férias não se manda nada).
+export function resumoDoDia(rec: { id: string; nome: string }, hojeISO: string, c: ContextoResumo): ResumoDia {
+  const vazio: ResumoDia = { hoje: [], atrasadas: [], proximas: [], passos: [] };
+  if (estaAusente(rec.id, hojeISO, c.ausencias)) return vazio;
+  const comRegistadas = (i: ItemAgenda): ItemAgenda => ({ ...i, registadas: c.registadas.get(i.id + '|' + rec.nome) ?? 0 });
+  const minhas = c.indice.get(rec.id) ?? [];
+  const limite = somarDias(hojeISO, c.diasAFrente ?? 7);
+
+  const hoje = agendaDoDia(rec.id, hojeISO, c.indice, c.ausencias).map(comRegistadas);
+  // Mais recentes primeiro: tarefas esquecidas há anos não escondem as que acabaram de falhar o prazo.
+  const atrasadas = minhas.filter(i => i.fim < hojeISO && i.progresso < 100)
+    .sort((a, b) => b.fim.localeCompare(a.fim) || porProjetoETarefa(a, b)).map(comRegistadas);
+  const proximas = minhas.filter(i => i.inicio > hojeISO && i.inicio <= limite)
+    .sort((a, b) => a.inicio.localeCompare(b.inicio) || porProjetoETarefa(a, b)).map(comRegistadas);
+
+  const ativos = new Map(c.projetos.filter(p => p.ativo !== false).map(p => [p.id, p]));
+  const nomeTarefa = new Map(c.tarefas.map(t => [t.id, t.nome]));
+  const passos: ItemPasso[] = [];
+  for (const p of c.passos) {
+    const proj = ativos.get(p.projeto_id);
+    if (p.responsavel_id !== rec.id || !proj || p.fechado || !['aberto', 'em_curso'].includes(p.estado)) continue;
+    passos.push({
+      descricao: p.descricao, projeto: rotuloProjeto(proj), tarefa: p.tarefa_id ? (nomeTarefa.get(p.tarefa_id) ?? null) : null,
+      prazo: p.data_prevista, atrasado: !!p.data_prevista && p.data_prevista < hojeISO, estado: p.estado,
+    });
+  }
+  // Atrasados primeiro (o mais antigo no topo), depois por prazo; sem prazo no fim.
+  passos.sort((a, b) => Number(b.atrasado) - Number(a.atrasado) || (a.prazo ?? '9999').localeCompare(b.prazo ?? '9999') || a.projeto.localeCompare(b.projeto, 'pt'));
+  return { hoje, atrasadas, proximas, passos };
+}
+
+export const resumoVazio = (r: ResumoDia) => !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length;

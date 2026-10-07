@@ -8574,7 +8574,7 @@ const App = {
       </label>
       <div class="calc-line">Email: <b>${escapeHtml(perfil.email || '')}</b></div>
       <label style="flex-direction:row;align-items:center;gap:8px;">
-        <input type="checkbox" id="contaLembretes" ${receberLembretes ? 'checked' : ''}> Receber lembretes automáticos por email (horas em falta, agenda do dia)
+        <input type="checkbox" id="contaLembretes" ${receberLembretes ? 'checked' : ''}> Receber lembretes automáticos por email (horas em falta, resumo diário das tarefas)
       </label>
       <label>Nova password <span class="hint">(deixa em branco para não alterar)</span>
         <input type="password" id="contaPassword" minlength="6" placeholder="••••••" autocomplete="new-password">
