@@ -53,7 +53,7 @@ const App = {
   abaAtiva: 'dashboard',
   filtroGestorGantt: '',
   filtroEquipaCap: '',
-  filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '' },
+  filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '', ligacao: '' },
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
   // Sem "dept" de propósito (ao contrário dos outros filtros Direção/Área/Colaborador) — ver
@@ -330,6 +330,7 @@ const App = {
       fRegProjeto: document.getElementById('fRegProjeto'),
       fRegDe: document.getElementById('fRegDe'),
       fRegAte: document.getElementById('fRegAte'),
+      fRegLigacao: document.getElementById('fRegLigacao'),
       fRegTexto: document.getElementById('fRegTexto'),
       statsRegisto: document.getElementById('statsRegisto'),
       corpoTabelaRegistos: document.getElementById('corpoTabelaRegistos'),
@@ -1046,6 +1047,15 @@ const App = {
   // livre, ver o campo na tabela de Projetos). Só cai para comparar "projetoIdInterno" em registos
   // anteriores a esse campo existir. Sem isto, mudar o ID interno de um projeto "perdia" todo o
   // histórico de horas reais desses registos mais antigos (Gantt, Portefólio, Reprevisão/EAC).
+  // Uma tarefa pelo NOME, só se esse nome identificar uma única tarefa do projeto. Com nomes repetidos
+  // (ex.: "Atividades de Preparação" em cada sessão) um registo só com o nome não diz a qual pertence:
+  // atribuí-lo a todas contava as mesmas horas várias vezes, e a "primeira" era um palpite.
+  tarefaUnicaPorNome(p, nome) {
+    const n = String(nome || '').trim().toLowerCase();
+    if (!p || !n) return null;
+    const c = p.tarefas.filter(t => String(t.nome || '').trim().toLowerCase() === n);
+    return c.length === 1 ? c[0] : null;
+  },
   registoPertenceAoProjeto(r, p) {
     return r.projetoId ? r.projetoId === p.id : (!!p.idInterno && r.projetoIdInterno === p.idInterno);
   },
@@ -1066,7 +1076,7 @@ const App = {
       if (horas <= 0) return;
       const projeto = this.projetoDoRegisto(r);
       if (!projeto) return;
-      const tarefa = r.tarefaId ? this.tarefaPorId(projeto, r.tarefaId) : projeto.tarefas.find(t => t.nome === r.tarefaNome);
+      const tarefa = r.tarefaId ? this.tarefaPorId(projeto, r.tarefaId) : this.tarefaUnicaPorNome(projeto, r.tarefaNome);
       if (!tarefa || this.temFilhos(projeto, tarefa.id)) return;
       const chave = projeto.id + '|' + tarefa.id;
       if (!porTarefa.has(chave)) porTarefa.set(chave, { projeto, tarefa, horas: 0 });
@@ -3102,10 +3112,13 @@ const App = {
     // o nome de qualquer uma delas já tem "casa" definida, mesmo que essa tarefa seja uma fase com
     // sub-tarefas (uma fase pode ter recursos e registos próprios, além dos das suas subtarefas).
     const nomesTodasTarefas = new Set(p.tarefas.map(x => normalizar(x.nome)));
+    // Só conta pelo nome se for ÚNICO no projeto; com nomes repetidos, o registo (sem ligação por id)
+    // fica por atribuir — não se soma a todas as tarefas com esse nome — até alguém escolher a certa.
+    const nomeUnico = p.tarefas.filter(x => normalizar(x.nome) === nomeTarefa).length === 1;
     const diretas = registosProjeto.reduce((soma, r) => {
       if (ligado(r)) return r.tarefaId === t.id ? soma + (parseFloat(r.horas) || 0) : soma;
       const nomeRegisto = normalizar(r.tarefaNome);
-      return nomeRegisto && nomeRegisto === nomeTarefa ? soma + (parseFloat(r.horas) || 0) : soma;
+      return nomeUnico && nomeRegisto && nomeRegisto === nomeTarefa ? soma + (parseFloat(r.horas) || 0) : soma;
     }, 0);
     if (this.temFilhos(p, t.id)) {
       return diretas + this.filhosDe(p, t.id).reduce((soma, filho) => soma + this.horasReaisTarefa(p, filho), 0);
@@ -5852,7 +5865,8 @@ const App = {
     const e = this.els;
     this.filtrosRegisto = {
       pessoa: e.fRegPessoa.value, projeto: e.fRegProjeto.value,
-      de: e.fRegDe.value, ate: e.fRegAte.value, texto: e.fRegTexto.value.trim().toLowerCase()
+      de: e.fRegDe.value, ate: e.fRegAte.value, texto: e.fRegTexto.value.trim().toLowerCase(),
+      ligacao: e.fRegLigacao ? e.fRegLigacao.value : ''
     };
     this.paginaRegistos = 1;
     this.renderTabelaRegistos();
@@ -5871,6 +5885,34 @@ const App = {
       default: return r.data || '';
     }
   },
+  // Auditoria da ligação de um registo à tarefa. null = não se aplica (registo sem projeto: ausência,
+  // formação…). Senão { ok, motivo }: ok quando tarefaId aponta para uma tarefa que existe hoje no
+  // projeto do registo; o motivo explica o que está mal e, se o nome antigo ajudar, porquê.
+  auditarLigacaoRegisto(r) {
+    if (!r.projetoId && !r.projetoIdInterno) return null;
+    const p = this.projetoDoRegisto(r);
+    if (!p) return { ok: false, motivo: 'O projeto do registo já não existe' };
+    if (r.tarefaId) {
+      return this.tarefaPorId(p, r.tarefaId)
+        ? { ok: true, motivo: '' }
+        : { ok: false, motivo: 'A tarefa ligada já não existe no projeto' };
+    }
+    const norm = (x) => String(x || '').trim().toLowerCase();
+    const nome = norm(r.tarefaNome);
+    const iguais = nome ? p.tarefas.filter(t => norm(t.nome) === nome).length : 0;
+    if (!nome) return { ok: false, motivo: 'Sem tarefa (registo sem nome de tarefa)' };
+    if (iguais > 1) return { ok: false, motivo: `Sem ligação: ${iguais} tarefas atuais têm o nome "${r.tarefaNome}"` };
+    if (iguais === 1) return { ok: false, motivo: `Sem ligação (existe uma tarefa com o nome "${r.tarefaNome}")` };
+    return { ok: false, motivo: `Sem ligação: a tarefa "${r.tarefaNome}" já não existe com esse nome` };
+  },
+  // Registos que o utilizador pode ver e que não têm tarefa atual bem identificada.
+  registosSemTarefaAtual() {
+    return this.state.registos.filter(r => {
+      if (!this.possoVerRegisto(r)) return false;
+      const a = this.auditarLigacaoRegisto(r);
+      return a && !a.ok;
+    });
+  },
   // Registos filtrados (filtrosRegisto) e ordenados (ordenacaoRegistos) — partilhado entre a
   // tabela (paginada) e a exportação CSV (sempre tudo, sem paginar), para nunca poderem divergir.
   // CRÍTICO: começa sempre em possoVerRegisto, nunca em state.registos diretamente — sem isto, a
@@ -5886,6 +5928,7 @@ const App = {
       if (f.projeto && r.projetoIdInterno !== f.projeto) return false;
       if (f.de && r.data < f.de) return false;
       if (f.ate && r.data > f.ate) return false;
+      if (f.ligacao === 'auditoria') { const a = this.auditarLigacaoRegisto(r); if (!a || a.ok) return false; }
       if (f.texto && !(this.nomeTarefaRegisto(r).toLowerCase().includes(f.texto) || r.notas.toLowerCase().includes(f.texto))) return false;
       return true;
     }).sort((a, b) => {
@@ -5914,7 +5957,14 @@ const App = {
       <span><b>${filtrados.length}</b> registo(s)</span>
       <span><b>${totalHoras.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}h</b> total</span>
       <span><b>${nomesPessoas}</b> pessoa(s)</span>
-      <span><b>${nomesProjetos}</b> projeto(s)</span>`;
+      <span><b>${nomesProjetos}</b> projeto(s)</span>${(() => {
+        const sem = this.registosSemTarefaAtual();
+        if (!sem.length) return '';
+        const h = sem.reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
+        return `<button type="button" class="btn btn-sm" id="btnVerSemTarefa" title="Registos de projeto que não estão ligados a nenhuma tarefa atual — clica para os listar">⚠ ${sem.length} sem tarefa atual (${h.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}h)</button>`;
+      })()}`;
+    const btnSem = document.getElementById('btnVerSemTarefa');
+    if (btnSem) btnSem.addEventListener('click', () => { e.fRegLigacao.value = 'auditoria'; this.aplicarFiltrosRegisto(); });
 
     const tamanho = this.TAMANHO_PAGINA_REGISTOS;
     const totalPaginas = Math.max(1, Math.ceil(filtrados.length / tamanho));
@@ -6019,7 +6069,9 @@ const App = {
         selTarefa.disabled = false;
         selTarefa.innerHTML = this.opcoesTarefasRegisto(idInternoProjeto, tarefas);
         // Prefere a referência direta (tarefaId); só recorre ao nome em registos antigos sem ela.
-        const atual = tarefas.find(t => r.tarefaId && t.id === r.tarefaId) || tarefas.find(t => t.nome === r.tarefaNome);
+        const projetoReg = Object.values(this.state.projetos).find(pr => pr.idInterno === idInternoProjeto);
+        const porNome = projetoReg ? this.tarefaUnicaPorNome(projetoReg, r.tarefaNome) : null;
+        const atual = tarefas.find(t => r.tarefaId && t.id === r.tarefaId) || (porNome && tarefas.find(t => t.id === porNome.id));
         if (atual) { selTarefa.value = atual.id; return; }
         // Registo antigo/importado cuja tarefa já não existe (renomeada, ou texto livre): mostrar a 1.ª
         // da lista dava a ideia de estar atribuído a ela, sem estar — fica assinalado até escolherem.
@@ -7872,11 +7924,15 @@ const App = {
   exportarRegistosCsv() {
     const filtrados = this.registosFiltradosOrdenados();
     if (!filtrados.length) { this.toast('Sem registos para exportar — revê os filtros.'); return; }
-    const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem']];
-    filtrados.forEach(r => linhas.push([
-      r.data, r.pessoa, this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
-      this.nomeTarefaRegisto(r), parseFloat(r.horas) || 0, r.notas || '', r.origem || ''
-    ]));
+    const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem', 'Ligação à tarefa', 'Texto guardado no registo']];
+    filtrados.forEach(r => {
+      const a = this.auditarLigacaoRegisto(r);
+      linhas.push([
+        r.data, r.pessoa, this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
+        this.nomeTarefaRegisto(r), parseFloat(r.horas) || 0, r.notas || '', r.origem || '',
+        !a ? 'n/a (sem projeto)' : (a.ok ? 'OK' : a.motivo), r.tarefaNome || ''
+      ]);
+    });
     this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${DateUtil.todayISO()}.csv`);
   },
   // Copia, do SVG ainda ligado ao documento (onde var(--...) e as classes CSS já estão
@@ -9272,10 +9328,10 @@ const App = {
     if (e.regTarefa) e.regTarefa.addEventListener('change', () => this.aplicarModoLoteRegisto());
     if (e.regModoLote) e.regModoLote.addEventListener('change', () => this.aplicarModoLoteRegisto());
     e.formRegisto.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormRegisto(); });
-    [e.fRegPessoa, e.fRegProjeto, e.fRegDe, e.fRegAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosRegisto()));
+    [e.fRegPessoa, e.fRegProjeto, e.fRegLigacao, e.fRegDe, e.fRegAte].filter(Boolean).forEach(el => el.addEventListener('change', () => this.aplicarFiltrosRegisto()));
     e.fRegTexto.addEventListener('input', () => this.aplicarFiltrosRegisto());
     document.getElementById('btnLimparFiltrosRegisto').addEventListener('click', () => {
-      e.fRegPessoa.value = ''; e.fRegProjeto.value = ''; e.fRegDe.value = ''; e.fRegAte.value = ''; e.fRegTexto.value = '';
+      e.fRegPessoa.value = ''; e.fRegProjeto.value = ''; e.fRegDe.value = ''; e.fRegAte.value = ''; e.fRegTexto.value = ''; if (e.fRegLigacao) e.fRegLigacao.value = '';
       this.aplicarFiltrosRegisto();
     });
     document.getElementById('btnExportRegistosCsv').addEventListener('click', () => this.exportarRegistosCsv());
