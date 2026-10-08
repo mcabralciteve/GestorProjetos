@@ -140,6 +140,15 @@ export function resumoDoDia(rec: { id: string; nome: string; acesso?: string | n
   return { hoje, atrasadas, proximas, passos, aprovacoes, followups: comercial.followups, oportunidades: comercial.oportunidades };
 }
 
+// Aplica as escolhas da pessoa ("A minha conta"): uma secção marcada false fica vazia. Em falta = ligada.
+export const CHAVES_SECCOES = ['hoje', 'atrasadas', 'passos', 'proximas', 'aprovacoes', 'followups', 'oportunidades'] as const;
+export function aplicarPreferencias(r: ResumoDia, prefs: Record<string, boolean> | null | undefined): ResumoDia {
+  if (!prefs) return r;
+  const copia: ResumoDia = { ...r };
+  for (const k of CHAVES_SECCOES) if (prefs[k] === false) (copia as unknown as Record<string, unknown[]>)[k] = [];
+  return copia;
+}
+
 export const resumoVazio = (r: ResumoDia) =>
   !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length &&
   !(r.aprovacoes?.length) && !(r.followups?.length) && !(r.oportunidades?.length);

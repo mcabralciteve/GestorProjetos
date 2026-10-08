@@ -16,6 +16,8 @@ export interface Recurso {
   id: string; nome: string; email: string; auth_user_id: string | null; lembretes_email: boolean | null;
   piloto_lembretes: boolean | null;
   acesso?: string | null; equipa_id?: string | null;
+  // Secções do resumo diário que a pessoa desligou ({chave: false}) — ver lembrete-agenda.
+  resumo_secoes?: Record<string, boolean> | null;
 }
 
 export const resposta = (corpo: unknown, status = 200) =>

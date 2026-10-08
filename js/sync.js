@@ -260,7 +260,7 @@ const Sync = {
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
-      authUserId: r.auth_user_id, acesso: r.acesso, lembretesEmail: r.lembretes_email !== false,
+      authUserId: r.auth_user_id, acesso: r.acesso, lembretesEmail: r.lembretes_email !== false, resumoSecoes: r.resumo_secoes || {},
       pilotoLembretes: !!r.piloto_lembretes
     }));
     // "Utilizadores" não é uma tabela à parte — é só os recursos que já têm conta na plataforma
@@ -382,7 +382,7 @@ const Sync = {
   // "nome" vive em dois sítios: user_metadata (é o que a topbar mostra, via Auth.atualizarUI) e
   // recursos.nome (é o que o resto da app usa — tabelas, seletor de gestor, etc.). Escrevem-se os
   // dois; a password só se mexe se vier preenchida.
-  async atualizarConta({ nome, password, recursoId, lembretesEmail }) {
+  async atualizarConta({ nome, password, recursoId, lembretesEmail, resumoSecoes }) {
     const payloadAuth = {};
     if (password) payloadAuth.password = password;
     if (nome) payloadAuth.data = { nome };
@@ -398,6 +398,11 @@ const Sync = {
     // assim uma edição de Pessoas feita por um Administrador nunca repõe a escolha de outra pessoa.
     if (lembretesEmail !== undefined && recursoId) {
       const { error } = await supabaseClient.from('recursos').update({ lembretes_email: !!lembretesEmail }).eq('id', recursoId);
+      if (error) throw error;
+    }
+    // Secções do resumo diário que a pessoa desligou ({chave: false}) — também escrito logo, só aqui.
+    if (resumoSecoes !== undefined && recursoId) {
+      const { error } = await supabaseClient.from('recursos').update({ resumo_secoes: resumoSecoes }).eq('id', recursoId);
       if (error) throw error;
     }
   },

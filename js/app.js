@@ -8563,11 +8563,24 @@ const App = {
     });
     header.addEventListener('pointerup', () => { arrastando = false; });
   },
+  // Secções do resumo diário por email que cada pessoa pode ligar/desligar. A chave é a mesma do servidor
+  // (supabase/functions/lembrete-agenda, ResumoDia); "so" limita a quem faz sentido (chefias).
+  SECOES_RESUMO: [
+    { k: 'hoje', rotulo: 'Tarefas de hoje (com horas previstas e registadas)' },
+    { k: 'atrasadas', rotulo: 'Tarefas em atraso' },
+    { k: 'passos', rotulo: 'Next steps abertos (os meus)' },
+    { k: 'proximas', rotulo: 'Tarefas que começam nos próximos 7 dias' },
+    { k: 'aprovacoes', rotulo: 'Pedidos de ausência por aprovar', so: 'decisor' },
+    { k: 'followups', rotulo: 'Comercial — follow-ups', so: 'crm' },
+    { k: 'oportunidades', rotulo: 'Comercial — oportunidades a fechar', so: 'crm' }
+  ],
   abrirModalMinhaConta() {
     const perfil = this.perfilAtual();
     if (!perfil) return;
     const meuRecurso = this.state.recursos.find(r => r.id === perfil.recursoId);
     const receberLembretes = !meuRecurso || meuRecurso.lembretesEmail !== false;
+    const prefsResumo = (meuRecurso && meuRecurso.resumoSecoes) || {};
+    const secoesVisiveis = this.SECOES_RESUMO.filter(s => !s.so || (s.so === 'decisor' ? (this.souAdmin() || this.souLiderDeAlgumaEquipa()) : Crm.podeVer()));
     const html = `
       <label>Nome
         <input type="text" id="contaNome" value="${escapeAttr(perfil.nome || '')}">
@@ -8576,6 +8589,11 @@ const App = {
       <label style="flex-direction:row;align-items:center;gap:8px;">
         <input type="checkbox" id="contaLembretes" ${receberLembretes ? 'checked' : ''}> Receber lembretes automáticos por email (horas em falta, resumo diário das tarefas)
       </label>
+      <fieldset id="contaResumo" style="border:1px solid var(--cinza-200);border-radius:8px;padding:8px 12px;margin:4px 0;">
+        <legend class="hint" style="padding:0 6px;">O que quero receber no resumo diário</legend>
+        ${secoesVisiveis.map(s => `<label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" data-resumo="${s.k}" ${prefsResumo[s.k] === false ? '' : 'checked'}> ${escapeHtml(s.rotulo)}</label>`).join('')}
+        <span class="hint">Cada secção só aparece no email quando tiver alguma coisa para mostrar; se desligares tudo, deixas de receber o resumo.</span>
+      </fieldset>
       <label>Nova password <span class="hint">(deixa em branco para não alterar)</span>
         <input type="password" id="contaPassword" minlength="6" placeholder="••••••" autocomplete="new-password">
       </label>
@@ -8603,10 +8621,17 @@ const App = {
         // funcionar mesmo antes de a coluna lembretes_email existir na base de dados.
         const querLembretes = m.querySelector('#contaLembretes').checked;
         const mudouLembretes = querLembretes !== receberLembretes;
-        await Sync.atualizarConta({ nome, password: password || null, recursoId: perfil.recursoId, lembretesEmail: mudouLembretes ? querLembretes : undefined });
+        // Guarda só o que ficou DESLIGADO — secções que esta pessoa nem vê (chefias) mantêm o que já tinham.
+        const novasPrefs = { ...prefsResumo };
+        m.querySelectorAll('[data-resumo]').forEach(c => { if (c.checked) delete novasPrefs[c.dataset.resumo]; else novasPrefs[c.dataset.resumo] = false; });
+        const mudouResumo = JSON.stringify(novasPrefs) !== JSON.stringify(prefsResumo);
+        await Sync.atualizarConta({
+          nome, password: password || null, recursoId: perfil.recursoId,
+          lembretesEmail: mudouLembretes ? querLembretes : undefined, resumoSecoes: mudouResumo ? novasPrefs : undefined
+        });
         perfil.nome = nome;
         const recurso = this.state.recursos.find(r => r.id === perfil.recursoId);
-        if (recurso) { recurso.nome = nome; if (mudouLembretes) recurso.lembretesEmail = querLembretes; }
+        if (recurso) { recurso.nome = nome; if (mudouLembretes) recurso.lembretesEmail = querLembretes; if (mudouResumo) recurso.resumoSecoes = novasPrefs; }
         this.fecharModal();
         this.renderTudo();
         this.toast('Conta atualizada.');

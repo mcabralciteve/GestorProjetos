@@ -13,7 +13,7 @@ import { ehDiaUtil, formatarDia, hojeEmLisboa, horaAtualEmLisboa } from '../lemb
 import { montarEmail } from './email.ts';
 import type { CrmConta, CrmEtapa, CrmOportunidade, CrmTarefa, Departamento, Equipa } from './extras.ts';
 import {
-  indexarAgenda, indexarRegistadas, resumoDoDia, resumoVazio, totalItens,
+  aplicarPreferencias, indexarAgenda, indexarRegistadas, resumoDoDia, resumoVazio, totalItens,
   type Ausencia, type Passo, type Projeto, type RegistoHoras, type Tarefa, type TarefaRecurso,
 } from './logica.ts';
 
@@ -43,7 +43,10 @@ Deno.serve(async (req) => {
 
   const [ausencias, recursos, projetos, tarefas, atribuicoes, passos, registos] = await Promise.all([
     lerTudo<Ausencia>((de, ate) => db.from('ausencias').select('recurso_id,data_inicio,data_fim,estado,tipo').range(de, ate)),
-    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id').range(de, ate)),
+    // resumo_secoes (escolhas de cada pessoa) só existe depois de correr supabase/resumo_preferencias.sql —
+    // sem a coluna, lê-se sem ela e todos recebem tudo, como antes.
+    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id,resumo_secoes').range(de, ate))
+      .catch(() => lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id').range(de, ate))),
     lerTudo<Projeto>((de, ate) => db.from('projetos').select('id,id_interno,nome,cliente,ativo').range(de, ate)),
     lerTudo<Tarefa>((de, ate) => db.from('tarefas').select('id,projeto_id,parent_id,nome,inicio,fim,progresso').range(de, ate)),
     lerTudo<TarefaRecurso>((de, ate) => db.from('tarefa_recursos').select('tarefa_id,recurso_id,horas').range(de, ate)),
@@ -74,7 +77,7 @@ Deno.serve(async (req) => {
   const candidatos = elegiveis(recursos, p.apenas, cfg?.lembretes_piloto_ativo === true);
   const resultado: Resultado[] = [];
   for (const r of candidatos) {
-    const resumo = resumoDoDia(r, hoje, contexto);
+    const resumo = aplicarPreferencias(resumoDoDia(r, hoje, contexto), r.resumo_secoes);
     if (resumoVazio(resumo)) continue;
     resultado.push(await despachar(r, totalItens(resumo), montarEmail(r.nome, formatarDia(hoje), resumo, APP_URL), p));
   }

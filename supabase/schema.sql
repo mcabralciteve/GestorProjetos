@@ -512,6 +512,10 @@ alter table public.configuracoes add column if not exists lembrete_horas_ativo b
 alter table public.configuracoes add column if not exists lembrete_agenda_ativo boolean not null default false;
 -- Cada pessoa pode desligar os lembretes automáticos que lhe são enviados ("A minha conta").
 alter table public.recursos add column if not exists lembretes_email boolean not null default true;
+-- Cada pessoa escolhe que secções do resumo diário por email quer receber ("A minha conta"). Guarda só o que
+-- DESLIGOU: {"proximas": false, "followups": false}; uma secção em falta continua ligada (por omissão recebe tudo).
+-- Chaves: hoje, atrasadas, passos, proximas, aprovacoes, followups, oportunidades.
+alter table public.recursos add column if not exists resumo_secoes jsonb not null default '{}'::jsonb;
 -- "Modo piloto": enquanto a app ainda não está disseminada a toda a gente, os lembretes automáticos
 -- (horas em falta + agenda do dia) só saem para quem o Administrador marcou explicitamente em
 -- Pessoas (piloto_lembretes) — desligado por omissão, o que mantém o comportamento de sempre

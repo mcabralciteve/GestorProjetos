@@ -15,7 +15,8 @@ Cada secção só aparece se tiver conteúdo; quem não tem nada, ou está ausen
 | Comercial — oportunidades a fechar | idem: as suas oportunidades em curso com fecho previsto ultrapassado ou nos próximos 7 dias, com valor |
 
 Cada lista mostra no máximo 8 tarefas / 10 next steps ("… e mais N"). As horas registadas só contam registos
-ligados à tarefa por id. Cada pessoa pode desligar estes emails em **A minha conta**.
+ligados à tarefa por id. Cada pessoa pode desligar estes emails, ou escolher só as secções que quer, em **A minha conta** (guarda em
+`recursos.resumo_secoes`; precisa de correr `supabase/resumo_preferencias.sql` uma vez).
 
 Usa a mesma infraestrutura do lembrete de horas (Microsoft Graph, `CRON_SECRET`, Modo piloto, hora
 de envio configurável, parâmetros de teste `dry`/`apenas`/`destino`/`forcar`) — instala primeiro
