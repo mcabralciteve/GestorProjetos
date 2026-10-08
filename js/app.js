@@ -8583,7 +8583,7 @@ const App = {
     const secoesVisiveis = this.SECOES_RESUMO.filter(s => !s.so || (s.so === 'decisor' ? (this.souAdmin() || this.souLiderDeAlgumaEquipa()) : Crm.podeVer()));
     const html = `
       <label>Nome
-        <input type="text" id="contaNome" value="${escapeAttr(perfil.nome || '')}">
+        <input type="text" id="contaNome" value="${escapeAttr(perfil.nome || '')}" autocomplete="off" name="nome-completo" data-lpignore="true" data-1p-ignore>
       </label>
       <div class="calc-line">Email: <b>${escapeHtml(perfil.email || '')}</b></div>
       <label style="flex-direction:row;align-items:center;gap:8px;">
@@ -8605,8 +8605,13 @@ const App = {
     this.abrirModal('A minha conta', html);
     const m = this.els.modalCorpo;
     const msg = m.querySelector('#contaMsg');
+    // O gestor de passwords do browser trata o campo de texto antes de um campo de password como "utilizador"
+    // e preenche-o com o email guardado — e gravar assim trocava o NOME da pessoa pelo email em toda a app.
+    this.bloquearPreenchimentoAutomatico(m.querySelector('#contaNome'));
     m.querySelector('#btnGuardarConta').addEventListener('click', async () => {
       const nome = m.querySelector('#contaNome').value.trim();
+      const nomeMudou = nome !== (perfil.nome || '');
+      if (nomeMudou && /@/.test(nome)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'O nome não pode ser um endereço de email — escreve o teu nome (o browser pode ter preenchido o campo sozinho).'; return; }
       const password = m.querySelector('#contaPassword').value;
       const password2 = m.querySelector('#contaPassword2').value;
       if (!nome) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'O nome não pode ficar vazio.'; return; }
@@ -8626,12 +8631,12 @@ const App = {
         m.querySelectorAll('[data-resumo]').forEach(c => { if (c.checked) delete novasPrefs[c.dataset.resumo]; else novasPrefs[c.dataset.resumo] = false; });
         const mudouResumo = JSON.stringify(novasPrefs) !== JSON.stringify(prefsResumo);
         await Sync.atualizarConta({
-          nome, password: password || null, recursoId: perfil.recursoId,
+          nome: nomeMudou ? nome : undefined, password: password || null, recursoId: perfil.recursoId,
           lembretesEmail: mudouLembretes ? querLembretes : undefined, resumoSecoes: mudouResumo ? novasPrefs : undefined
         });
-        perfil.nome = nome;
+        if (nomeMudou) perfil.nome = nome;
         const recurso = this.state.recursos.find(r => r.id === perfil.recursoId);
-        if (recurso) { recurso.nome = nome; if (mudouLembretes) recurso.lembretesEmail = querLembretes; if (mudouResumo) recurso.resumoSecoes = novasPrefs; }
+        if (recurso) { if (nomeMudou) recurso.nome = nome; if (mudouLembretes) recurso.lembretesEmail = querLembretes; if (mudouResumo) recurso.resumoSecoes = novasPrefs; }
         this.fecharModal();
         this.renderTudo();
         this.toast('Conta atualizada.');
