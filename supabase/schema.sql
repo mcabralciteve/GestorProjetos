@@ -1086,3 +1086,6 @@ notify pgrst, 'reload schema';
 alter table public.projetos add column if not exists orcamento_id uuid references public.crm_orcamentos(id) on delete set null;
 alter table public.projetos add column if not exists orcamento_base jsonb;
 alter table public.faturas add column if not exists rubricas jsonb;
+
+-- (Envio de propostas: ver supabase/orcamentos_envio.sql)
+alter table public.crm_orc_parametros add column if not exists sharepoint_url text not null default '';

@@ -74,7 +74,7 @@ export function elegiveis(recursos: Recurso[], apenas: string, pilotoAtivo: bool
 // execução que despache dezenas de emails pediria um token novo por cada um.
 let tokenCache: { valor: string; expiraEm: number } | null = null;
 
-async function obterTokenGraph(): Promise<string> {
+export async function obterTokenGraph(): Promise<string> {
   if (tokenCache && Date.now() < tokenCache.expiraEm) return tokenCache.valor;
   const r = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
     method: 'POST',
@@ -109,6 +109,27 @@ export async function enviar(para: string, email: Email) {
   });
   // sendMail devolve 202 sem corpo quando corre bem; qualquer outro código é erro (ex.: 403 se a
   // Application Access Policy do Exchange não deixar esta app enviar por MS_SENDER_EMAIL).
+  if (!r.ok) throw new Error(`Microsoft Graph sendMail ${r.status}: ${await r.text()}`);
+}
+
+// Email com anexos, cópia e "responder para" (propostas enviadas ao cliente). Vai pela caixa do sistema (MS_SENDER_EMAIL) e fica
+// guardado nos Itens Enviados dela, para haver registo do que foi enviado.
+export interface Anexo { nome: string; tipo: string; base64: string }
+export async function enviarComAnexos(m: { para: string[]; cc?: string[]; responderPara?: string[]; assunto: string; html: string; anexos: Anexo[] }) {
+  const token = await obterTokenGraph();
+  const dest = (l: string[]) => l.map(a => ({ emailAddress: { address: a } }));
+  const r = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(MS_SENDER_EMAIL)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        subject: m.assunto, body: { contentType: 'HTML', content: m.html }, toRecipients: dest(m.para),
+        ccRecipients: dest(m.cc ?? []), replyTo: dest(m.responderPara ?? []),
+        attachments: m.anexos.map(a => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.nome, contentType: a.tipo, contentBytes: a.base64 })),
+      },
+      saveToSentItems: true,
+    }),
+  });
   if (!r.ok) throw new Error(`Microsoft Graph sendMail ${r.status}: ${await r.text()}`);
 }
 

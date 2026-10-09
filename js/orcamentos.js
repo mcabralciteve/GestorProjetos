@@ -5,7 +5,7 @@
 // alguém abre uma proposta; o valor/hora de cada consultor vem das Pessoas (preço de venda/custo) e fica COPIADO para a linha.
 const Orc = {
   d: { resumos: [], carregado: false },
-  PADRAO: { aluguer_saida: 45, custo_km: 0.16, validade_dias: 30 },
+  PADRAO: { aluguer_saida: 45, custo_km: 0.16, validade_dias: 30, sharepoint_url: '' },
   parametros: null,
   indisponivel: null,
   atual: null,          // orçamento aberto no editor (objeto completo, com áreas e linhas)
@@ -232,7 +232,9 @@ const Orc = {
       </div>
       <div class="crm-acoes-form orc-botoes">
         ${editavel ? '<button type="button" class="btn btn-primary" data-orc-acao="guardar">Guardar</button>' : ''}
-        ${btnEstado('enviado', o.estado === 'rascunho' ? 'Marcar como enviado' : 'Reabrir como enviado')}
+        ${o.estado === 'rascunho' ? '<button type="button" class="btn btn-primary" data-orc-acao="enviar" title="Envia a proposta por email ao contacto da oportunidade e copia os ficheiros para a pasta da proposta no SharePoint">✉ Enviar ao cliente</button>' : ''}
+        ${o.estado === 'enviado' ? '<button type="button" class="btn" data-orc-acao="enviar" title="Volta a enviar o email com a proposta">✉ Reenviar ao cliente</button>' : ''}
+        ${btnEstado('enviado', o.estado === 'rascunho' ? 'Marcar como enviado (sem email)' : 'Reabrir como enviado')}
         ${btnEstado('validado', '✔ Validar (adjudicado)', 'btn-primary')}${btnEstado('rejeitado', 'Rejeitar')}
         ${!editavel ? '<button type="button" class="btn" data-orc-acao="nova-versao">Nova versão a partir deste</button>' : ''}
         ${editavel ? '<button type="button" class="btn" data-orc-acao="atualizar-tarifas" title="Volta a copiar o valor/hora de cada consultor das Pessoas">Atualizar valores/hora</button>' : ''}
@@ -308,6 +310,7 @@ const Orc = {
       else if (acao === 'atualizar-tarifas') this.atualizarTarifas();
       else if (acao === 'excel') this.exportarExcel();
       else if (acao === 'word') this.abrirWord();
+      else if (acao === 'enviar') this.abrirEnvio();
       else if (acao === 'voltar') this.voltar();
       else if (acao === 'eliminar') this.eliminar();
     });
@@ -410,6 +413,121 @@ const Orc = {
     this.render();
   },
 
+  // ============================ Enviar ao cliente (email + pasta no SharePoint) ============================
+  async abrirEnvio() {
+    const o = this.atual;
+    if (!o) return;
+    const E = OrcLogica, { op, conta } = this.contexto();
+    const par = await this.carregarParametros(true);
+    const comEmail = Crm.d.contactos.filter(c => c.conta_id === op.conta_id && OrcEnvio.emailValido(c.email));
+    const total = E.calcOrcamento(o).total;
+    const erros = E.verificar(o).erros.concat(OrcEnvio.verificar({ total, contactos: comEmail }));
+    if (erros.length) { App.toast(erros[0]); return; }
+    const principal = comEmail.find(c => c.id === op.contacto_id) || comEmail[0];
+    const meu = App.state.recursos.find(r => r.id === Crm.meuRecursoId()), resp = App.state.recursos.find(r => r.id === (op.responsavel_id || Crm.meuRecursoId())) || meu;
+    const referencia = this.proposta.referencia_giaf || '', titulo = o.titulo || op.titulo || '';
+    const nomes = OrcEnvio.nomesFicheiros({ cliente: conta.nome, referencia, versao: o.versao });
+    const pastaNome = OrcEnvio.nomePastaProposta(referencia, titulo);
+    const modeloWord = OrcWord.modeloGuardado();
+    const sp = par.sharepoint_url ? OrcEnvio.lerLinkSharePoint(par.sharepoint_url) : null;
+    const avisos = OrcEnvio.avisos({ referencia, sharepointConfigurado: !!sp });
+    const cc = OrcEnvio.listaEmails([resp && resp.email, meu && meu.email].filter(Boolean).join(','));
+    const jaEnviado = o.estado === 'enviado';
+    Crm.abrir(jaEnviado ? 'Reenviar proposta ao cliente' : 'Enviar proposta ao cliente', `
+      <p class="hint" style="margin:0 0 8px;">${escapeHtml(conta.nome)} · ${escapeHtml(titulo)} · orçamento v${o.versao} (<b>${E.euro(total)}</b>)${jaEnviado ? ' — já enviado; isto repete o email.' : ''}</p>
+      <div class="row-2">
+        <label>Para (contacto da oportunidade) <select id="envPara">${comEmail.map(c => `<option value="${escapeAttr(c.email)}"${c.id === principal.id ? ' selected' : ''}>${escapeHtml(c.nome)} &lt;${escapeHtml(c.email)}&gt;</option>`).join('')}</select></label>
+        <label>Outro endereço (opcional) <input type="text" id="envOutro" placeholder="nome@empresa.pt"></label>
+      </div>
+      <label>Cópia (CC) <span class="hint">(o responsável também recebe as respostas)</span> <input type="text" id="envCc" value="${escapeAttr(cc.join(', '))}"></label>
+      <label>Assunto <input type="text" id="envAssunto" value="${escapeAttr(OrcEnvio.assuntoPadrao({ referencia, titulo }))}"></label>
+      <label>Mensagem <textarea id="envMensagem" rows="9">${escapeHtml(OrcEnvio.mensagemPadrao({ referencia, titulo, contacto: principal.nome, validadeDias: o.validade_dias, responsavel: resp && resp.nome }))}</textarea></label>
+      <h4 class="crm-h">Anexos do email</h4>
+      <p style="margin:2px 0;">📎 <b>${escapeHtml(nomes.excel)}</b> <span class="hint">(proposta do cliente — sem margens nem valores/hora)</span></p>
+      <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="envWord"${modeloWord ? ' checked' : ''}> 📎 <b>${escapeHtml(nomes.word)}</b> <span class="hint">(capa e honorários do modelo DG015)</span></label>
+      <div id="envWordModelo" style="${modeloWord ? 'display:none;' : ''}margin:0 0 6px 24px;"><label>Modelo DG015 (.docx) <input type="file" id="envWordFicheiro" accept=".docx"></label></div>
+      <h4 class="crm-h">Pasta no SharePoint</h4>
+      <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="envCopiar"${sp ? ' checked' : ' disabled'}> Copiar para <b>${sp ? escapeHtml([...sp.pasta, OrcEnvio.limparNome(conta.nome), pastaNome].join(' / ')) : '— (link não configurado)'}</b></label>
+      <p class="hint" style="margin:2px 0 6px 24px;">Vão os mesmos anexos e, na subpasta <b>Interno</b>, o orçamento completo (com margens): <b>${escapeHtml(nomes.interno)}</b>. O email nunca leva o orçamento interno.${this.proposta.caminho_documento ? ` A proposta já tem pasta registada — os ficheiros são acrescentados/substituídos nela.` : ''}</p>
+      <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="envTeste"> Só um <b>teste para mim</b> (email para ${escapeHtml((meu && meu.email) || 'o meu endereço')}; não copia para o SharePoint nem muda o estado)</label>
+      ${avisos.length ? `<ul class="orc-avisos">${avisos.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>` : ''}
+      <p id="envMsg" class="hint" style="margin:8px 0;"></p>
+      <div class="crm-acoes-form"><button type="button" class="btn btn-primary" id="envEnviar">✉ Enviar</button><button type="button" class="btn" id="envVoltar">← Voltar ao orçamento</button></div>`, true);
+    const m = Crm.corpo(), msg = m.querySelector('#envMsg');
+    m.querySelector('#envVoltar').addEventListener('click', () => this.reabrirEditor());
+    m.querySelector('#envWord').addEventListener('change', ev => { if (!modeloWord) m.querySelector('#envWordModelo').style.display = ev.target.checked ? '' : 'none'; });
+    if (!modeloWord) m.querySelector('#envWordModelo').style.display = 'none';
+    const erro = (t) => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
+    m.querySelector('#envEnviar').addEventListener('click', async ev => {
+      const btn = ev.target;
+      const outro = m.querySelector('#envOutro').value.trim();
+      const para = [m.querySelector('#envPara').value, ...(outro ? [outro] : [])];
+      const ccLista = OrcEnvio.listaEmails(m.querySelector('#envCc').value);
+      const invalido = [...para, ...ccLista].find(a => !OrcEnvio.emailValido(a));
+      if (invalido) { erro(`Endereço inválido: ${invalido}`); return; }
+      const assunto = m.querySelector('#envAssunto').value.trim(), mensagem = m.querySelector('#envMensagem').value.trim();
+      if (!assunto || !mensagem) { erro('O assunto e a mensagem não podem ficar vazios.'); return; }
+      const teste = m.querySelector('#envTeste').checked, copiar = m.querySelector('#envCopiar').checked && !teste;
+      const querWord = m.querySelector('#envWord').checked, ficheiroWord = m.querySelector('#envWordFicheiro') && m.querySelector('#envWordFicheiro').files[0];
+      if (querWord && !modeloWord && !ficheiroWord) { erro('Escolhe o ficheiro do modelo DG015 (.docx) ou desmarca o Word.'); return; }
+      if (!teste && !confirm(`Enviar a proposta a ${para.join(', ')}${copiar ? ' e copiar os ficheiros para o SharePoint' : ''}?`)) return;
+      btn.disabled = true; msg.style.color = ''; msg.textContent = 'A preparar os ficheiros…';
+      try {
+        if (E.editavel(o) && this.sujo && !(await this.guardar(true))) { btn.disabled = false; msg.textContent = ''; return; }
+        const pc = E.propostaCliente(o), dataHoje = DateUtil.todayISO();
+        const dadosExcel = { cliente: conta.nome || '', projeto: titulo, data: dataHoje, validadeDias: o.validade_dias, responsavel: resp ? resp.nome : '', pc };
+        const bufExcel = await (await OrcExport.blobDaProposta(dadosExcel)).arrayBuffer();
+        const anexos = [{ nome: nomes.excel, tipo: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', base64: OrcEnvio.base64DeBuffer(bufExcel) }];
+        if (querWord) {
+          const bufModelo = ficheiroWord ? await ficheiroWord.arrayBuffer() : OrcWord.bufferDoModelo(modeloWord);
+          const v = OrcWord.valoresPadrao({ titulo, cliente: conta.nome, referencia, areas: o.areas.map(a => a.nome), versaoProposta: this.proposta.versao, hojeISO: dataHoje, total: pc.total, validadeDias: o.validade_dias, rubricas: E.RUBRICAS.map(r => ({ rotulo: r.rotulo, valor: pc.investimento[r.k] })) });
+          const { blob } = await OrcWord.gerar(bufModelo, v);
+          if (ficheiroWord) OrcWord.guardarModelo(ficheiroWord.name, bufModelo);
+          anexos.push({ nome: nomes.word, tipo: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', base64: OrcEnvio.base64DeBuffer(await blob.arrayBuffer()) });
+        }
+        if (typeof XLSX === 'undefined') await App.carregarScript('lib/xlsx.full.min.js');
+        const interno = { nome: nomes.interno, tipo: 'application/octet-stream', base64: OrcEnvio.base64DeBuffer(OrcExport.interno(o, { cliente: conta.nome, projeto: titulo, referencia, data: dataHoje })), subpasta: 'Interno' };
+        const body = {
+          para, cc: ccLista, responderPara: resp && resp.email ? [resp.email] : [], assunto, corpoHtml: OrcEnvio.htmlDoTexto(mensagem), anexos, teste,
+          pasta: copiar ? { cliente: conta.nome, proposta: pastaNome, ficheiros: [...anexos, interno] } : null
+        };
+        msg.textContent = teste ? 'A enviar o teste…' : 'A enviar…';
+        const { data, error } = await supabaseClient.functions.invoke('proposta-enviar', { body });
+        if (error) {
+          let texto = error.message || 'Erro ao enviar.';
+          try { const j = await error.context.json(); if (j && j.erro) texto = j.erro; } catch (e) { /* mantém a mensagem */ }
+          if (/Failed to send a request|non-2xx/i.test(texto) && !error.context) texto = 'Não consegui contactar a função de envio. Já foi instalada no Supabase (proposta-enviar)?';
+          btn.disabled = false; erro(texto); return;
+        }
+        if (teste) { btn.disabled = false; msg.style.color = 'var(--verde)'; msg.textContent = `Teste enviado para ${(data.email && data.email.para || []).join(', ')} — confirma o email e os anexos na tua caixa.`; return; }
+        await this.aposEnvio(data, { o, conta, op, para, anexos: anexos.map(a => a.nome), referencia, total, dataHoje });
+      } catch (err) { console.error(err); btn.disabled = false; erro(err.message || 'Não consegui enviar.'); }
+    });
+  },
+  // Depois de enviado: estado do orçamento, dados de envio na proposta, link da pasta e interação na conta.
+  async aposEnvio(r, c) {
+    const o = this.atual, E = OrcLogica, linhas = [];
+    const ok = (t) => linhas.push(`<p style="margin:4px 0;color:var(--verde);">✔ ${escapeHtml(t)}</p>`), aviso = (t) => linhas.push(`<p style="margin:4px 0;color:var(--vermelho);">⚠ ${escapeHtml(t)}</p>`);
+    ok(`Email enviado a ${c.para.join(', ')}.`);
+    const url = r.sharepoint && r.sharepoint.estado === 'ok' ? r.sharepoint.url : '';
+    if (r.sharepoint && r.sharepoint.estado === 'ok') ok(`Ficheiros copiados para o SharePoint (${(r.sharepoint.copiados || []).join(', ')}).`);
+    else if (r.sharepoint && r.sharepoint.estado === 'erro') aviso(`Não consegui copiar para o SharePoint: ${r.sharepoint.erro} O email foi enviado; podes colar o link da pasta no campo "Documento" da proposta.`);
+    try {
+      if (o.estado === 'rascunho') await this.mudarEstado('enviado');
+      const p = Crm.idx.proposta.get(o.proposta_id);
+      const validade = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(c.dataHoje), o.validade_dias));
+      const nova = await Crm.gravar('propostas', Object.assign({}, p, { estado: p.estado === 'aceite' ? p.estado : 'enviada', data_envio: c.dataHoje, data_validade: validade, caminho_documento: url || p.caminho_documento }));
+      this.proposta = nova;
+      const contacto = Crm.d.contactos.find(x => x.conta_id === c.op.conta_id && x.email === c.para[0]);
+      await Crm.gravar('interacoes', { id: null, conta_id: c.op.conta_id, contacto_id: contacto ? contacto.id : null, oportunidade_id: c.op.id, tipo: 'email', data: c.dataHoje, resumo: OrcEnvio.resumoInteracao({ referencia: c.referencia, versao: o.versao, totalTexto: E.euro(c.total), para: c.para, anexos: c.anexos, pastaUrl: url }), criado_por: Crm.meuRecursoId() });
+      Crm.renderAtual();
+      ok('Orçamento marcado como enviado, proposta com a data de envio e interação registada na conta.');
+    } catch (err) { aviso(`O email foi enviado, mas não consegui registar tudo no CRM: ${this.msgErro(err)}`); }
+    Crm.corpo().innerHTML = `<h4 class="crm-h" style="margin-top:0;">Proposta enviada</h4>${linhas.join('')}${url ? `<p style="margin:8px 0;"><a href="${escapeAttr(url)}" target="_blank" rel="noopener">📂 Abrir a pasta no SharePoint</a></p>` : ''}
+      <div class="crm-acoes-form"><button type="button" class="btn btn-primary" id="envFechar">← Voltar ao orçamento</button></div>`;
+    Crm.corpo().querySelector('#envFechar').addEventListener('click', () => this.reabrirEditor());
+  },
+
   // ============================ Proposta em Word (modelo DG015) ============================
   abrirWord() {
     const o = this.atual;
@@ -473,7 +591,27 @@ const Orc = {
         <label>Custo por km (€/km) <input type="number" step="any" min="0" data-orc-par="custo_km" value="${escapeAttr(p.custo_km)}"></label>
       </div>
       <label style="max-width:300px;">Validade das propostas por omissão (dias) <input type="number" min="1" data-orc-par="validade_dias" value="${escapeAttr(p.validade_dias)}"></label>
+      <label style="max-width:900px;margin-top:8px;">Link da pasta CLIENTES no SharePoint <span class="hint">(as propostas ficam em CLIENTES / nome do cliente / proposta)</span>
+        <input type="text" data-orc-par-txt="sharepoint_url" value="${escapeAttr(p.sharepoint_url || '')}" placeholder="https://citeve2.sharepoint.com/…" spellcheck="false"></label>
+      <span class="hint" id="orcSpMsg"></span><br>
       <span class="hint" id="orcParMsg"></span>`;
+    const mostrarSp = () => {
+      const el2 = el.querySelector('#orcSpMsg'), l = OrcEnvio.lerLinkSharePoint(el.querySelector('[data-orc-par-txt]').value);
+      el2.style.color = ''; el2.textContent = l ? `Site ${l.sitio} · biblioteca "${l.biblioteca}" · pasta ${l.pasta.join('/') || '(raiz)'}` : (el.querySelector('[data-orc-par-txt]').value.trim() ? 'Não reconheço este link (tem de ser um link de uma pasta do SharePoint).' : 'Sem link: os ficheiros não são copiados para o SharePoint.');
+      if (!l && el.querySelector('[data-orc-par-txt]').value.trim()) el2.style.color = 'var(--vermelho)';
+    };
+    mostrarSp();
+    el.querySelector('[data-orc-par-txt]').addEventListener('change', async ev => {
+      const msg = el.querySelector('#orcParMsg'), v = ev.target.value.trim();
+      mostrarSp();
+      if (v && !OrcEnvio.lerLinkSharePoint(v)) { msg.textContent = 'Link inválido — não foi guardado.'; msg.style.color = 'var(--vermelho)'; return; }
+      try {
+        const { error } = await supabaseClient.from('crm_orc_parametros').upsert({ id: 1, sharepoint_url: v, atualizado_em: new Date().toISOString() });
+        if (error) throw error;
+        this.parametros = Object.assign({}, this.parametros, { sharepoint_url: v });
+        msg.textContent = 'Guardado.'; msg.style.color = 'var(--verde)';
+      } catch (err) { msg.textContent = this.msgErro(err) + ' (Falta correr supabase/orcamentos_envio.sql?)'; msg.style.color = 'var(--vermelho)'; }
+    });
     el.querySelectorAll('[data-orc-par]').forEach(i => i.addEventListener('change', async () => {
       const campo = i.dataset.orcPar, v = Number(i.value);
       const msg = el.querySelector('#orcParMsg');

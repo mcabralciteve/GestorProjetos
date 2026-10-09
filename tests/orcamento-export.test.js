@@ -53,3 +53,21 @@ test('ficheiro gerado: valores nas células certas, estilo do modelo mantido, te
 test('modelo sem a célula esperada: erro claro', () => {
   assert.throws(() => E.preencherXml('<worksheet></worksheet>', { B4: { t: 's', v: 'x' } }), /não tem a célula B4/);
 });
+
+test('orçamento interno: Excel com resumo e uma folha por área, com margens (para arquivo, nunca para o cliente)', async () => {
+  global.XLSX = require('../lib/xlsx.full.min.js'); global.OrcLogica = O;
+  const o = { id: 'o', versao: 2, estado: 'enviado', aluguer_saida: 45, custo_km: 0.16, areas: [
+    area('DCS', [linha('consultoria', { horas: 10, valor_hora: 50, custo_hora: 30 }, 'Diagnóstico'), linha('produto', { quantidade: 2, preco_custo: 100, preco_venda: 150, desconto: 10 }, 'Sensor'), linha('deslocacao', { saidas: 1, km: 100, horas: 1, valor_hora: 50, custo_hora: 30 }, 'Visita')], 100),
+    area('ROB', [linha('consumivel', { valor: 40 }, 'Material')])] };
+  const buf = E.interno(o, { cliente: 'Alfa', projeto: 'IA', referencia: '2026/829-01', data: '2026-10-09' });
+  const wb = XLSX.read(buf, { type: 'array' });
+  assert.deepEqual(wb.SheetNames, ['Resumo', 'DCS', 'ROB']);
+  const resumo = XLSX.utils.sheet_to_json(wb.Sheets.Resumo, { header: 1, defval: '' });
+  assert.equal(resumo[0][0], 'ORÇAMENTO INTERNO — não enviar ao cliente');
+  const total = resumo.find(l => l[0] === 'TOTAL');
+  const calc = O.calcOrcamento(o);
+  assert.equal(total[6], O.arred(calc.total)); assert.equal(total[7], O.arred(calc.margem));       // preço final e margem
+  const dcs = XLSX.utils.sheet_to_json(wb.Sheets.DCS, { header: 1, defval: '' }).flat().join('|');
+  assert.match(dcs, /Diagnóstico/); assert.match(dcs, /Sensor/); assert.match(dcs, /Visita/); assert.match(dcs, /PREÇO FINAL DA ÁREA/);
+  assert.match(E.interno(o, {}) && 'ok', /ok/);
+});
