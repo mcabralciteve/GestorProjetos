@@ -1174,8 +1174,14 @@ const App = {
   // nem fechado) — é precisamente o que vale a pena destacar antes da próxima reunião de
   // acompanhamento. Um next step concluído ou abandonado com data prevista no passado não é um
   // atraso, é só histórico.
+  // Ainda por fazer: não está fechado, nem concluído/abandonado, nem tem data de execução real. Um next step
+  // "concluído" pode ainda não estar "fechado" (o Administrador só o arruma numa reunião seguinte) — mas já não
+  // é uma tarefa por fazer, por isso não pode aparecer em "Os meus Next Steps" nem contar como atrasado.
+  proximoPassoPendente(pp) {
+    return !pp.fechado && pp.estado !== 'concluido' && pp.estado !== 'abandonado' && !pp.dataReal;
+  },
   proximoPassoAtrasado(pp) {
-    return !!pp.dataPrevista && pp.dataPrevista < DateUtil.todayISO() && pp.estado !== 'concluido' && pp.estado !== 'abandonado' && !pp.fechado;
+    return !!pp.dataPrevista && pp.dataPrevista < DateUtil.todayISO() && this.proximoPassoPendente(pp);
   },
 
   // UUID gerado no cliente — aceite tal e qual pelo Postgres como chave primária (a base de
@@ -3641,7 +3647,7 @@ const App = {
     if (!perfil || !perfil.recursoId) return 0;
     let n = 0;
     Object.values(this.state.projetos).forEach(p => (p.proximosPassos || []).forEach(pp => {
-      if (pp.responsavelId === perfil.recursoId && !pp.fechado && this.proximoPassoAtrasado(pp)) n++;
+      if (pp.responsavelId === perfil.recursoId && this.proximoPassoAtrasado(pp)) n++;
     }));
     return n;
   },
@@ -3827,7 +3833,7 @@ const App = {
       if (meuRecurso) {
         const passos = [];
         Object.values(this.state.projetos).forEach(p => (p.proximosPassos || []).forEach(pp => {
-          if (pp.responsavelId === meuRecurso.id && !pp.fechado) passos.push({ p, pp });
+          if (pp.responsavelId === meuRecurso.id && this.proximoPassoPendente(pp)) passos.push({ p, pp });
         }));
         passos.sort((a, b) => (a.pp.dataPrevista || '9999').localeCompare(b.pp.dataPrevista || '9999'));
         corpo = passos.length ? passos.map(({ p, pp }) => `

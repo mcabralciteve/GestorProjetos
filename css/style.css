@@ -824,8 +824,13 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .crm-estado-rejeitada,.crm-estado-expirada{background:rgba(192,57,43,.14);color:var(--vermelho);}
 .crm-caminho{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-size:12px;}
 /* Quadro por etapas */
-.crm-quadro{display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;align-items:flex-start;}
-.crm-coluna{flex:0 0 248px;background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:var(--radius);display:flex;flex-direction:column;max-height:68vh;}
+/* Todas as etapas cabem no ecrã: as colunas repartem a largura (mínimo 170px); só se o ecrã for mesmo estreito
+   aparece a barra horizontal, bem visível. */
+.crm-quadro{display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;align-items:flex-start;scrollbar-width:auto;}
+.crm-quadro::-webkit-scrollbar{height:14px;}
+.crm-quadro::-webkit-scrollbar-track{background:var(--cinza-100);border-radius:7px;}
+.crm-quadro::-webkit-scrollbar-thumb{background:var(--cinza-500);border-radius:7px;border:2px solid var(--cinza-100);}
+.crm-coluna{flex:1 1 0;min-width:170px;background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:var(--radius);display:flex;flex-direction:column;max-height:68vh;}
 .crm-coluna.crm-coluna-alvo{outline:2px dashed var(--azul);outline-offset:-2px;}
 .crm-coluna-head{padding:8px 10px;border-bottom:1px solid var(--cinza-200);display:flex;flex-direction:column;gap:1px;}
 .crm-coluna-head b{font-size:12.5px;color:var(--cinza-900);}
