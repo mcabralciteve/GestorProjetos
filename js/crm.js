@@ -1531,6 +1531,7 @@ const Crm = {
         ${ehConta
           ? `<label style="margin-top:8px;">Estado das contas sem essa informação <select id="impEstado"><option value="prospeto">Prospeto</option><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label>`
           : `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="impCriarContas" checked> Criar a conta quando ainda não existir</label>`}
+        ${!ehOp ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impAtualizar" checked> Atualizar ${ehConta ? 'as contas' : 'os contactos'} que já existem — só os campos que o ficheiro traz e são diferentes (um campo vazio nunca apaga)</label>` : ''}
         ${ehOp ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impAtualizar" checked> Atualizar as oportunidades que já existem (mesma conta e título) — só os campos que o ficheiro traz e são diferentes</label>
           <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impFollowups" checked> Criar um follow-up (sem data) com o "Próximo passo", nas oportunidades em curso</label>
           <label style="margin-top:4px;">Formato das datas <select id="impFormatoData"><option value="auto">Detetar automaticamente</option><option value="mdy">Mês/Dia/Ano (SuiteCRM em inglês)</option><option value="dmy">Dia/Mês/Ano</option><option value="ymd">Ano-Mês-Dia</option></select></label>` : ''}
@@ -1543,9 +1544,9 @@ const Crm = {
         raiz.querySelectorAll('[data-imp-campo]').forEach(s => { mp[s.dataset.impCampo] = Number(s.value); });
         const faltam = campos.filter(c => c.obrig && mp[c.k] < 0);
         if (faltam.length) { raiz.querySelector('#impPrevia').innerHTML = `<p class="hint" style="color:var(--vermelho);">Associa pelo menos: ${faltam.map(c => escapeHtml(c.rotulo)).join(', ')}.</p>`; return; }
-        if (ehConta) this.previaContas(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impEstado').value);
+        if (ehConta) this.previaContas(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impEstado').value, raiz.querySelector('#impAtualizar').checked);
         else if (ehOp) this.previaOportunidades(raiz.querySelector('#impPrevia'), folha.matriz, mp, { criarContas: raiz.querySelector('#impCriarContas').checked, criarFollowups: raiz.querySelector('#impFollowups').checked, atualizarExistentes: raiz.querySelector('#impAtualizar').checked, formatoData: raiz.querySelector('#impFormatoData').value });
-        else this.previaContactos(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impCriarContas').checked);
+        else this.previaContactos(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impCriarContas').checked, raiz.querySelector('#impAtualizar').checked);
       });
     };
     desenhar();
@@ -1653,33 +1654,53 @@ const Crm = {
     if (!itens.length) return '';
     return `<details class="crm-problemas"><summary>${titulo} (${itens.length})</summary><ul>${itens.slice(0, 15).map(i => `<li>${escapeHtml(texto(i))}</li>`).join('')}${itens.length > 15 ? `<li>… e mais ${itens.length - 15}.</li>` : ''}</ul></details>`;
   },
-  previaContas(raiz, matriz, mapa, estadoPadrao) {
-    const r = CrmLogica.prepararContas(matriz, mapa, this.d.contas, { estadoPadrao, recursos: App.state.recursos });
-    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>contas a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.invalidas.length}</b><span>inválidas</span></div></div>
+  // Tabela das alterações a aplicar a registos que já existem (contas/contactos), com uma caixa por linha.
+  htmlAtualizacoes(titulo, lista, textoMudanca) {
+    if (!lista.length) return '';
+    return `<h4 class="crm-h">${titulo}</h4><p class="hint" style="margin:0 0 4px;">Desmarca as que não queres tocar.</p>
+      <div class="table-scroll" style="max-height:240px;"><table class="tabela-crud"><thead><tr><th></th><th>Registo</th><th>Alterações</th></tr></thead><tbody>${lista.map((u, i) => `<tr><td><input type="checkbox" data-imp-upd="${i}" checked></td>
+        <td>${escapeHtml(u.nome)}<br><span class="hint">linha ${u.linha}</span></td><td>${u.mudancas.map(m => escapeHtml(textoMudanca(m))).join('<br>')}</td></tr>`).join('')}</tbody></table></div>`;
+  },
+  escolhidasAtualizar(raiz, lista) {
+    const marcadas = new Set([...raiz.querySelectorAll('[data-imp-upd]')].filter(c => c.checked).map(c => Number(c.dataset.impUpd)));
+    return lista.filter((u, i) => marcadas.has(i));
+  },
+  previaContas(raiz, matriz, mapa, estadoPadrao, atualizar) {
+    const r = CrmLogica.prepararContas(matriz, mapa, this.d.contas, { estadoPadrao, recursos: App.state.recursos, atualizarExistentes: atualizar });
+    const rot = { nif: 'NIF', setor: 'setor', dimensao: 'dimensão', morada: 'morada', website: 'website', notas: 'notas' };
+    const textoMudanca = m => m.k === 'estado' ? `estado: ${this.ESTADOS_CONTA[m.de] || '—'} → ${this.ESTADOS_CONTA[m.para]}`
+      : m.k === 'responsavel_id' ? `responsável: ${m.de ? this.recursoNome(m.de) : '—'} → ${this.recursoNome(m.para)}` : `${rot[m.k] || m.k}: ${m.de || '—'} → ${m.para}`;
+    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>contas a criar</span></div>${atualizar ? `<div class="crm-kpi"><b>${r.atualizar.length}</b><span>a atualizar</span></div><div class="crm-kpi"><b>${r.iguais}</b><span>já iguais (sem alterações)</span></div>` : ''}<div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.invalidas.length}</b><span>inválidas</span></div></div>
+      ${this.htmlAtualizacoes('Contas que já existem e vão ser atualizadas', r.atualizar, textoMudanca)}
+      ${this.htmlProblemas('Avisos', r.avisos, d => `Linha ${d.linha}: ${d.motivo}`)}
       ${r.novas.length ? `<div class="table-scroll" style="max-height:200px;"><table class="tabela-crud"><thead><tr><th>Nome</th><th>NIF</th><th>Setor</th><th>Estado</th></tr></thead><tbody>${r.novas.slice(0, 8).map(c => `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.nif || '—')}</td><td>${escapeHtml(c.setor || '—')}</td><td>${this.ESTADOS_CONTA[c.estado]}</td></tr>`).join('')}</tbody></table></div>${r.novas.length > 8 ? `<p class="hint">Amostra das primeiras 8 de ${r.novas.length}.</p>` : ''}` : ''}
       ${this.htmlProblemas('Duplicadas', r.duplicadas, d => `Linha ${d.linha}: "${d.nome}" já existe como "${d.com}"${d.noFicheiro ? ' (repetida no ficheiro)' : ''}`)}
       ${this.htmlProblemas('Inválidas', r.invalidas, d => `Linha ${d.linha}: ${d.motivo}`)}
-      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length ? '' : ' disabled'}>Importar ${r.novas.length} contas</button></div>`;
+      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length || r.atualizar.length ? '' : ' disabled'}>Importar ${r.novas.length} contas${r.atualizar.length ? ` e atualizar ${r.atualizar.length}` : ''}</button></div>`;
     const b = raiz.querySelector('#impConfirmar');
     b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'A importar…';
       try {
-        await this.gravarLote('contas', r.novas);
+        const aAtualizar = this.escolhidasAtualizar(raiz, r.atualizar);
+        await this.gravarLote('contas', r.novas.concat(aAtualizar.map(u => Object.assign({}, u.existente, u.patch))));
         await this.carregar(true);
         App.fecharModal(); this.renderAtual();
-        App.toast(`${r.novas.length} contas importadas.`);
+        App.toast(`${r.novas.length} contas importadas${aAtualizar.length ? `, ${aAtualizar.length} atualizadas` : ''}.`);
       } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novas.length} contas`; }
     });
   },
-  previaContactos(raiz, matriz, mapa, criarContas) {
-    const r = CrmLogica.prepararContactos(matriz, mapa, this.d.contas, this.d.contactos, { criarContas });
-    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novos.length}</b><span>contactos a criar</span></div><div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.duplicados.length}</b><span>duplicados (ignorados)</span></div><div class="crm-kpi"><b>${r.semConta.length}</b><span>sem conta (ignorados)</span></div></div>
+  previaContactos(raiz, matriz, mapa, criarContas, atualizar) {
+    const r = CrmLogica.prepararContactos(matriz, mapa, this.d.contas, this.d.contactos, { criarContas, atualizarExistentes: atualizar });
+    const rot = { nome: 'nome', cargo: 'cargo', email: 'email', telefone: 'telefone', notas: 'notas' };
+    const textoMudanca = m => m.k === 'papel_decisao' ? `papel: ${this.PAPEIS_DECISAO[m.de] || '—'} → ${this.PAPEIS_DECISAO[m.para]}` : `${rot[m.k] || m.k}: ${m.de || '—'} → ${m.para}`;
+    raiz.innerHTML = `<div class="crm-kpis"><div class="crm-kpi"><b>${r.novos.length}</b><span>contactos a criar</span></div>${atualizar ? `<div class="crm-kpi"><b>${r.atualizar.length}</b><span>a atualizar</span></div><div class="crm-kpi"><b>${r.iguais}</b><span>já iguais (sem alterações)</span></div>` : ''}<div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.duplicados.length}</b><span>duplicados (ignorados)</span></div><div class="crm-kpi"><b>${r.semConta.length}</b><span>sem conta (ignorados)</span></div></div>
       ${r.novos.length ? `<div class="table-scroll" style="max-height:200px;"><table class="tabela-crud"><thead><tr><th>Contacto</th><th>Conta</th><th>Cargo</th><th>Email</th></tr></thead><tbody>${r.novos.slice(0, 8).map(c => `<tr><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.conta_id ? (this.idx.conta.get(c.conta_id) || {}).nome : c.conta_ref.nome + ' (nova)')}</td><td>${escapeHtml(c.cargo || '—')}</td><td>${escapeHtml(c.email || '—')}</td></tr>`).join('')}</tbody></table></div>${r.novos.length > 8 ? `<p class="hint">Amostra dos primeiros 8 de ${r.novos.length}.</p>` : ''}` : ''}
+      ${this.htmlAtualizacoes('Contactos que já existem e vão ser atualizados', r.atualizar, textoMudanca)}
       ${this.htmlProblemas('Sem conta correspondente', r.semConta, d => `Linha ${d.linha}: ${d.nome}${d.conta ? ` (conta "${d.conta}" não existe)` : ' (sem empresa indicada)'}`)}
       ${this.htmlProblemas('Duplicados', r.duplicados, d => `Linha ${d.linha}: ${d.nome}`)}
       ${this.htmlProblemas('Avisos', r.avisos, d => `Linha ${d.linha}: ${d.motivo}`)}
       ${this.htmlProblemas('Inválidos', r.invalidos, d => `Linha ${d.linha}: ${d.motivo}`)}
-      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novos.length ? '' : ' disabled'}>Importar ${r.novos.length} contactos</button></div>`;
+      <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novos.length || r.atualizar.length ? '' : ' disabled'}>Importar ${r.novos.length} contactos${r.atualizar.length ? ` e atualizar ${r.atualizar.length}` : ''}</button></div>`;
     const b = raiz.querySelector('#impConfirmar');
     b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'A importar…';
@@ -1687,13 +1708,14 @@ const Crm = {
         const novasContas = r.contasACriar.map(c => Object.assign({ id: crypto.randomUUID(), setor: '', dimensao: '', morada: '', website: '', estado: 'prospeto', notas: '', responsavel_id: null }, c));
         const idDe = new Map(r.contasACriar.map((c, i) => [c, novasContas[i].id]));
         if (novasContas.length) await this.gravarLote('contas', novasContas);
+        const aAtualizar = this.escolhidasAtualizar(raiz, r.atualizar);
         await this.gravarLote('contactos', r.novos.map(c => ({
           conta_id: c.conta_id || idDe.get(c.conta_ref), nome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
           papel_decisao: c.papel_decisao, notas: c.notas, consentimento_rgpd: false, consentimento_data: null
-        })));
+        })).concat(aAtualizar.map(u => Object.assign({}, u.existente, u.patch))));
         await this.carregar(true);
         App.fecharModal(); this.renderAtual();
-        App.toast(`${r.novos.length} contactos importados${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
+        App.toast(`${r.novos.length} contactos importados${aAtualizar.length ? `, ${aAtualizar.length} atualizados` : ''}${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
       } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novos.length} contactos`; }
     });
   },

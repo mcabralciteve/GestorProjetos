@@ -326,13 +326,15 @@ const CrmLogica = {
   comporMorada(rua, cp, localidade) {
     return [rua, [cp, localidade].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   },
-  normalizarEstadoConta(v, padrao) {
+  // null quando o texto não é um estado conhecido (ao atualizar, nunca se assume um estado por omissão).
+  reconhecerEstadoConta(v) {
     const n = this._normCab(v);
     if (/^(ativo|ativa|active|cliente|customer)$/.test(n)) return 'ativo';
     if (/^(inativo|inativa|inactive|perdido|antigo)$/.test(n)) return 'inativo';
     if (/^(prospeto|prospecto|prospect|lead|potencial)$/.test(n)) return 'prospeto';
-    return padrao || 'prospeto';
+    return null;
   },
+  normalizarEstadoConta(v, padrao) { return this.reconhecerEstadoConta(v) || padrao || 'prospeto'; },
   normalizarDimensao(v) {
     const n = this._normCab(v);
     if (/^pme|^sme/.test(n)) return 'PME';
@@ -354,8 +356,9 @@ const CrmLogica = {
   // ficheiro — e linhas inválidas); a linha é a do ficheiro (1 = cabeçalho).
   prepararContas(matriz, mapa, existentes, opts) {
     opts = opts || {};
-    const r = { novas: [], duplicadas: [], invalidas: [] };
+    const r = { novas: [], atualizar: [], iguais: 0, avisos: [], duplicadas: [], invalidas: [] };
     const aceites = existentes.slice();
+    const tratadas = new Set();   // contas já existentes que este ficheiro já atualizou (a 2.ª linha igual é repetida)
     matriz.slice(1).forEach((linha, idx) => {
       if (!linha.some(x => String(x).trim() !== '') || this._eApagado(this._cel(linha, mapa.apagado))) return;
       const nl = idx + 2;
@@ -363,7 +366,25 @@ const CrmLogica = {
       if (!nome) { r.invalidas.push({ linha: nl, motivo: 'Sem nome' }); return; }
       const nif = this._cel(linha, mapa.nif);
       const dup = this.duplicadoConta(aceites, { nome, nif });
-      if (dup) { r.duplicadas.push({ linha: nl, nome, com: dup.nome, noFicheiro: !existentes.includes(dup) }); return; }
+      if (dup) {
+        const existente = existentes.includes(dup) ? dup : null;
+        if (existente && opts.atualizarExistentes && !tratadas.has(existente.id)) {
+          tratadas.add(existente.id);
+          // Atualiza só o que o ficheiro TRAZ e é diferente; vazio nunca apaga.
+          const cmp = this.compararConta(existente, {
+            nif, setor: this._cel(linha, mapa.setor), dimensao: this.normalizarDimensao(this._cel(linha, mapa.dimensao)),
+            morada: this.comporMorada(this._cel(linha, mapa.morada), this._cel(linha, mapa.cp), this._cel(linha, mapa.localidade)),
+            website: this.normalizarWebsite(this._cel(linha, mapa.website)),
+            estado: mapa.estado >= 0 ? this.reconhecerEstadoConta(this._cel(linha, mapa.estado)) : null, notas: this._cel(linha, mapa.notas),
+            responsavelId: this.resolverResponsavel(this._cel(linha, mapa.responsavel), opts.recursos || [])
+          });
+          cmp.avisos.forEach(a => r.avisos.push({ linha: nl, motivo: a }));
+          if (cmp.mudancas.length) r.atualizar.push({ linha: nl, nome: existente.nome, existente, patch: cmp.patch, mudancas: cmp.mudancas }); else r.iguais++;
+          return;
+        }
+        r.duplicadas.push({ linha: nl, nome, com: dup.nome, noFicheiro: !existente || tratadas.has(existente.id) });
+        return;
+      }
       const conta = {
         nome, nif, setor: this._cel(linha, mapa.setor), dimensao: this.normalizarDimensao(this._cel(linha, mapa.dimensao)),
         morada: this.comporMorada(this._cel(linha, mapa.morada), this._cel(linha, mapa.cp), this._cel(linha, mapa.localidade)),
@@ -376,16 +397,46 @@ const CrmLogica = {
     });
     return r;
   },
+  // O que mudaria numa conta que já existe. NIF: só se preenche quando a conta ainda não tem; se tiver outro, avisa e
+  // não mexe. Notas: só se a conta ainda não tiver (nunca se sobrepõem notas escritas na app).
+  compararConta(ex, n) {
+    const patch = {}, mudancas = [], avisos = [];
+    const alt = (k, para) => { mudancas.push({ k, de: ex[k], para }); patch[k] = para; };
+    if (n.nif) {
+      if (!this.soDigitos(ex.nif)) alt('nif', n.nif);
+      else if (this.soDigitos(ex.nif) !== this.soDigitos(n.nif)) avisos.push(`"${ex.nome}" já tem o NIF ${ex.nif}; o ficheiro traz ${n.nif} — NIF não alterado`);
+    }
+    ['setor', 'dimensao', 'morada', 'website'].forEach(k => { if (n[k] && n[k] !== (ex[k] || '')) alt(k, n[k]); });
+    if (n.estado && n.estado !== ex.estado) alt('estado', n.estado);
+    if (n.responsavelId && n.responsavelId !== ex.responsavel_id) alt('responsavel_id', n.responsavelId);
+    if (n.notas && !String(ex.notas || '').trim()) alt('notas', n.notas);
+    return { patch, mudancas, avisos };
+  },
+  // Idem para um contacto que já existe. Nome só muda quando o contacto foi encontrado pelo email (mesmo email, nome
+  // escrito de outra forma). Notas: só se ainda não tiver.
+  compararContacto(ex, n) {
+    const patch = {}, mudancas = [];
+    const alt = (k, para) => { mudancas.push({ k, de: ex[k], para }); patch[k] = para; };
+    if (n.atualizarNome && n.nome && this.normalizarNome(n.nome) !== this.normalizarNome(ex.nome)) alt('nome', n.nome);
+    ['cargo', 'telefone'].forEach(k => { if (n[k] && n[k] !== (ex[k] || '')) alt(k, n[k]); });
+    if (n.email && n.email.toLowerCase() !== String(ex.email || '').toLowerCase()) alt('email', n.email);
+    if (n.papel_decisao && n.papel_decisao !== (ex.papel_decisao || '')) alt('papel_decisao', n.papel_decisao);
+    if (n.notas && !String(ex.notas || '').trim()) alt('notas', n.notas);
+    return { patch, mudancas };
+  },
   // Idem para CONTACTOS: cada um liga-se a uma conta pelo NIF, ou senão pelo nome (normalizado). Sem
   // conta correspondente, ou se cria a conta (opts.criarContas) ou o contacto fica de fora.
   prepararContactos(matriz, mapa, contas, contactosExistentes, opts) {
     opts = opts || {};
-    const r = { novos: [], contasACriar: [], duplicados: [], semConta: [], invalidos: [], avisos: [] };
+    const r = { novos: [], atualizar: [], iguais: 0, contasACriar: [], duplicados: [], semConta: [], invalidos: [], avisos: [] };
     const contaPorNif = new Map(), contaPorNome = new Map();
     contas.forEach(c => {
       if (this.soDigitos(c.nif)) contaPorNif.set(this.soDigitos(c.nif), c);
       contaPorNome.set(this.normalizarNome(c.nome), c);
     });
+    const porNome = new Map(contactosExistentes.map(c => [`${c.conta_id}|${this.normalizarNome(c.nome)}`, c]));
+    const porEmail = new Map(contactosExistentes.filter(c => c.email).map(c => [`${c.conta_id}|${String(c.email).toLowerCase()}`, c]));
+    const tratados = new Set();   // contactos já existentes que este ficheiro já atualizou
     const novasPorChave = new Map();
     const vistos = new Set(contactosExistentes.map(c => `${c.conta_id}|${this.normalizarNome(c.nome)}`));
     const emails = new Set(contactosExistentes.filter(c => c.email).map(c => `${c.conta_id}|${String(c.email).toLowerCase()}`));
@@ -408,6 +459,18 @@ const CrmLogica = {
       let email = this._cel(linha, mapa.email);
       if (email && !/^\S+@\S+\.\S+$/.test(email)) { r.avisos.push({ linha: nl, motivo: `Email inválido ignorado (${email})` }); email = ''; }
       const chaveNome = `${contaChave}|${this.normalizarNome(nome)}`;
+      const porNomeEx = conta ? porNome.get(chaveNome) : null;
+      const existente = porNomeEx || (conta && email ? porEmail.get(`${contaChave}|${email.toLowerCase()}`) : null) || null;
+      if (existente && opts.atualizarExistentes && !tratados.has(existente.id)) {
+        tratados.add(existente.id);
+        const cmp = this.compararContacto(existente, {
+          nome, atualizarNome: !porNomeEx, cargo: this._cel(linha, mapa.cargo), email,
+          telefone: this._cel(linha, mapa.telefone) || this._cel(linha, mapa.telefone2),
+          papel_decisao: this.normalizarPapelDecisao(this._cel(linha, mapa.papel_decisao)), notas: this._cel(linha, mapa.notas)
+        });
+        if (cmp.mudancas.length) r.atualizar.push({ linha: nl, nome: existente.nome, existente, patch: cmp.patch, mudancas: cmp.mudancas }); else r.iguais++;
+        return;
+      }
       if (vistos.has(chaveNome) || (email && emails.has(`${contaChave}|${email.toLowerCase()}`))) { r.duplicados.push({ linha: nl, nome }); return; }
       vistos.add(chaveNome); if (email) emails.add(`${contaChave}|${email.toLowerCase()}`);
       r.novos.push({
