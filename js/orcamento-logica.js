@@ -189,6 +189,56 @@ const OrcLogica = {
     };
   },
 
+  // ---------- Faturação sobre o orçamento validado (Fase 2) ----------
+  // Horas totais do orçamento (consultoria + formação com preparação + horas de deslocação): as "horas vendidas" do projeto.
+  horasOrcamento(orc) {
+    let h = 0;
+    (orc.areas || []).forEach(a => (a.linhas || []).forEach(l => {
+      const d = l.dados || {};
+      if (l.seccao === 'consultoria') h += this.n(d.horas);
+      else if (l.seccao === 'formacao') h += this.n(d.horas_sessao) + this.n(d.horas_prep);
+      else if (l.seccao === 'deslocacao') h += this.n(d.horas);
+    }));
+    return h;
+  },
+  // Cópia do orçamento que fica no projeto: total e valor de cada rubrica (os da vista do cliente, que somam o total).
+  baseDoOrcamento(orc) {
+    const pc = this.propostaCliente(orc);
+    return {
+      orcamentoId: orc.id, versao: orc.versao, total: pc.total, horas: this.arred(this.horasOrcamento(orc)),
+      rubricas: this.RUBRICAS.map(r => ({ k: r.k, rotulo: r.rotulo, valor: pc.investimento[r.k] }))
+    };
+  },
+  // Uma linha de fatura por rubrica: { k, tipo: 'percentagem'|'valor', percentagem, valor } -> €.
+  valorLinhaRubrica(linha, rubricas) {
+    if (linha.tipo === 'valor') return this.arred(this.n(linha.valor));
+    const r = (rubricas || []).find(x => x.k === linha.k);
+    return r ? this.arred(this.n(r.valor) * this.n(linha.percentagem) / 100) : 0;
+  },
+  valorRubricas(linhas, rubricas) {
+    return this.arred((linhas || []).reduce((s, l) => s + this.valorLinhaRubrica(l, rubricas), 0));
+  },
+  // Quanto já está previsto por rubrica nas OUTRAS faturas "por rubricas" (as faturas só por % do valor vendido não
+  // se repartem por rubricas, por isso não contam aqui).
+  planeadoPorRubrica(faturas, rubricas, ignorarId) {
+    const m = {};
+    (rubricas || []).forEach(r => { m[r.k] = 0; });
+    (faturas || []).filter(f => f.tipo === 'rubricas' && f.id !== ignorarId).forEach(f => (f.rubricas || []).forEach(l => {
+      if (l.k in m) m[l.k] = this.arred(m[l.k] + this.valorLinhaRubrica(l, rubricas));
+    }));
+    return m;
+  },
+  // Rubricas em que esta fatura, somada às outras, ultrapassa o orçamento: [{ k, rotulo, excesso }].
+  excessosRubricas(linhas, rubricas, faturas, idAtual) {
+    const outros = this.planeadoPorRubrica(faturas, rubricas, idAtual), excessos = [];
+    (rubricas || []).forEach(r => {
+      const nesta = this.arred((linhas || []).filter(l => l.k === r.k).reduce((s, l) => s + this.valorLinhaRubrica(l, rubricas), 0));
+      const exc = this.arred(outros[r.k] + nesta - this.n(r.valor));
+      if (exc > 0.005) excessos.push({ k: r.k, rotulo: r.rotulo, excesso: exc });
+    });
+    return excessos;
+  },
+
   // ---------- Formatação ----------
   euro(v) { return (Number(v) || 0).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }); },
   pct(v) { return `${(Math.round((Number(v) || 0) * 1000) / 10).toLocaleString('pt-PT')}%`; }

@@ -92,6 +92,16 @@ const Orc = {
     Crm.ligarAcoes(raiz, { abrir: b => this.abrir(b.dataset.id, proposta), novo: () => this.novo(proposta) });
   },
 
+  // ============================ Orçamento validado -> projeto (Fase 2) ============================
+  validadoDaOportunidade(opId) {
+    const props = new Set(Crm.d.propostas.filter(p => p.oportunidade_id === opId).map(p => p.id));
+    return this.d.resumos.find(o => props.has(o.proposta_id) && o.estado === 'validado') || null;
+  },
+  // Cópia que fica no projeto: total, horas e valor de cada rubrica do orçamento validado.
+  async carregarBase(orcamentoId) {
+    return OrcLogica.baseDoOrcamento(await this.carregarCompleto(orcamentoId));
+  },
+
   // ============================ Criar / abrir ============================
   async novo(proposta) {
     try {

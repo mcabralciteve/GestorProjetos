@@ -424,11 +424,12 @@ begin
   select (x->>'tarefa_id')::uuid, (x->>'recurso_id')::uuid, nullif(x->>'horas', '')::numeric
   from jsonb_array_elements(coalesce(p_tarefa_recursos, '[]'::jsonb)) as x;
 
-  insert into faturas (id, projeto_id, data_prevista, tipo, percentagem, valor, emitida, data_emissao, emitido_por, numero_registo)
+  insert into faturas (id, projeto_id, data_prevista, tipo, percentagem, valor, emitida, data_emissao, emitido_por, numero_registo, rubricas)
   select
     (x->>'id')::uuid, p_projeto_id, nullif(x->>'data_prevista', '')::date, x->>'tipo',
     coalesce((x->>'percentagem')::numeric, 0), coalesce((x->>'valor')::numeric, 0), coalesce((x->>'emitida')::boolean, false),
-    nullif(x->>'data_emissao', '')::date, coalesce(x->>'emitido_por', ''), coalesce(x->>'numero_registo', '')
+    nullif(x->>'data_emissao', '')::date, coalesce(x->>'emitido_por', ''), coalesce(x->>'numero_registo', ''),
+    case when jsonb_typeof(x->'rubricas') = 'array' then x->'rubricas' else null end
   from jsonb_array_elements(coalesce(p_faturas, '[]'::jsonb)) as x;
 
   insert into pontos_situacao (id, projeto_id, data, feedback, criado_por, criado_em)
@@ -1078,3 +1079,10 @@ set referencia_giaf = (regexp_match(descricao, 'Ref\. GIAF \(CRM anterior\): (\d
 where referencia_giaf = '' and descricao ~ 'Ref\. GIAF \(CRM anterior\): \d{4}/\d+';
 
 notify pgrst, 'reload schema';
+
+-- ============================================================================
+-- (Fase 2 da Orçamentação: ver supabase/orcamentos_fase2.sql — colunas orcamento_id/orcamento_base em projetos e rubricas em faturas)
+-- ============================================================================
+alter table public.projetos add column if not exists orcamento_id uuid references public.crm_orcamentos(id) on delete set null;
+alter table public.projetos add column if not exists orcamento_base jsonb;
+alter table public.faturas add column if not exists rubricas jsonb;

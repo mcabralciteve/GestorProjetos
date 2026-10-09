@@ -165,6 +165,11 @@ const Sync = {
     // carregarDeSupabase); sem isto, publicar esta versão antes de correr o SQL impedia gravar
     // QUALQUER projeto ("could not find the column").
     if (this.temTipoReferencia !== false) linhaProjeto.tipo_referencia = projeto.tipoReferencia === 'interno' ? 'interno' : 'giaf';
+    // Cópia do orçamento validado (Orçamentação, Fase 2) — só se as colunas já existirem (supabase/orcamentos_fase2.sql).
+    if (this.temOrcamentoBase !== false) {
+      linhaProjeto.orcamento_id = projeto.orcamentoBase ? projeto.orcamentoBase.orcamentoId : null;
+      linhaProjeto.orcamento_base = projeto.orcamentoBase || null;
+    }
     let r = await supabaseClient.from('projetos').upsert(linhaProjeto);
     if (r.error) throw r.error;
 
@@ -192,7 +197,8 @@ const Sync = {
     const linhasFaturas = (projeto.faturas || []).map(f => ({
       id: f.id, data_prevista: f.dataPrevista || null, tipo: f.tipo,
       percentagem: f.percentagem, valor: f.valor, emitida: !!f.emitida,
-      data_emissao: f.dataEmissao || null, emitido_por: f.emitidoPor, numero_registo: f.numeroRegisto
+      data_emissao: f.dataEmissao || null, emitido_por: f.emitidoPor, numero_registo: f.numeroRegisto,
+      rubricas: f.tipo === 'rubricas' ? (f.rubricas || []) : null
     }));
     const linhasPontosSituacao = (projeto.pontosSituacao || []).map(ps => ({
       id: ps.id, data: ps.data, feedback: ps.feedback, criado_por: ps.criadoPor || null, criado_em: ps.criadoEm
@@ -283,6 +289,7 @@ const Sync = {
     }));
 
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
+    this.temOrcamentoBase = proj.data.length === 0 || 'orcamento_base' in proj.data[0];
     const projetos = {};
     proj.data.forEach(p => {
       projetos[p.id] = {
@@ -290,6 +297,7 @@ const Sync = {
         id: p.id, idInterno: p.id_interno, nome: p.nome, cliente: p.cliente, descricao: p.descricao,
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,
+        orcamentoBase: p.orcamento_base || null,
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],
         pontosSituacao: [], proximosPassos: []
       };
@@ -315,7 +323,7 @@ const Sync = {
       projetos[f.projeto_id].faturas.push({
         id: f.id, dataPrevista: f.data_prevista, tipo: f.tipo, percentagem: Number(f.percentagem) || 0,
         valor: Number(f.valor) || 0, emitida: !!f.emitida, dataEmissao: f.data_emissao || '',
-        emitidoPor: f.emitido_por, numeroRegisto: f.numero_registo
+        emitidoPor: f.emitido_por, numeroRegisto: f.numero_registo, rubricas: Array.isArray(f.rubricas) ? f.rubricas : null
       });
     });
     ps.data.forEach(p => {

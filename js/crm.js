@@ -487,21 +487,26 @@ const Crm = {
   // ---------- Criar projeto a partir de uma oportunidade ganha ----------
   // Usa o mesmo ecrã "Novo Projeto" da app (só o Administrador cria projetos), já preenchido. A
   // ligação oportunidade → projeto grava-se só depois de o projeto existir na base de dados.
-  criarProjetoDaOportunidade(opId) {
+  async criarProjetoDaOportunidade(opId) {
     const op = this.idx.op.get(opId);
     if (!op || !this.souAdmin()) return;
     const conta = this.idx.conta.get(op.conta_id);
     const vigente = CrmLogica.propostaVigente(this.d.propostas, op.id);
+    // Com um orçamento validado, o projeto nasce com o seu valor e horas e guarda uma cópia (rubricas) para a faturação.
+    let base = null;
+    const validado = typeof Orc !== 'undefined' ? Orc.validadoDaOportunidade(op.id) : null;
+    if (validado) { try { base = await Orc.carregarBase(validado.id); } catch (err) { this.avisoErro(err); } }
     App.criarProjeto({
       nome: op.titulo,
       cliente: conta ? conta.nome : '',
       descricao: op.descricao || '',
-      valorVendido: (vigente && vigente.valor) || op.valor_estimado || 0,
-      horasVendidas: (vigente && vigente.horas_estimadas) || 0,
-      refGiaf: vigente ? vigente.referencia_giaf : '',
+      valorVendido: base ? base.total : ((vigente && this.valorProposta(vigente)) || op.valor_estimado || 0),
+      horasVendidas: base ? base.horas : ((vigente && vigente.horas_estimadas) || 0),
+      refGiaf: this.refGiafDaOp(op) || (vigente ? vigente.referencia_giaf : ''),
       gestorRecursoId: op.responsavel_id || null,
       onCriado: async (projeto) => {
         try {
+          if (base) { projeto.orcamentoBase = base; App.persist(); }
           // O projeto grava-se em segundo plano; a chave estrangeira só aceita a ligação depois.
           if (App._filaSincronizacao) await App._filaSincronizacao;
           await this.gravar('oportunidades', Object.assign({}, this.idx.op.get(opId), { projeto_id: projeto.id }));
@@ -1449,11 +1454,30 @@ const Crm = {
     const p = op.projeto_id && App.state.projetos[op.projeto_id];
     if (p) {
       const r = this.resumoProjeto(p);
+      const validado = typeof Orc !== 'undefined' ? Orc.validadoDaOportunidade(op.id) : null;
+      const jaUsa = !!(validado && p.orcamentoBase && p.orcamentoBase.orcamentoId === validado.id);
+      const linhaOrc = validado ? `<p class="hint" style="margin:6px 0;">Orçamento validado: <b>v${validado.versao}</b> (${this.euro(validado.total)}). ${jaUsa ? '✔ O projeto usa-o como base da faturação.' : ''}</p>` : '';
+      const botaoOrc = validado && !jaUsa && App.possoEditarProjeto(p.id) ? '<button type="button" class="btn btn-sm" data-sec-acao="usar-orc" title="Copia o valor, as horas e as rubricas do orçamento validado para o projeto">Usar este orçamento no projeto</button>' : '';
       raiz.innerHTML = `<div class="crm-item"><div class="crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.rotuloProjeto(p))}</b></span><span class="crm-badge">${escapeHtml(p.estado || '')}</span></div>
         <p class="hint" style="margin:2px 0 6px;">${this.data(p.dataInicio)} a ${this.data(p.dataFim)}${p.gestorId ? ` · Gestor: ${escapeHtml(App.nomeUtilizador(p.gestorId))}` : ''}</p>${this.htmlNumerosProjeto(r)}</div>
+        ${linhaOrc}${botaoOrc}
         ${App.possoVerProjeto(p.id) ? '<button type="button" class="btn btn-sm" data-sec-acao="abrir">Abrir no Gantt</button>' : ''}
         <button type="button" class="btn btn-sm btn-danger" data-sec-acao="desligar" title="Só desfaz a ligação — o projeto não é apagado">Desligar</button>`;
       this.ligarAcoes(raiz, {
+        'usar-orc': async () => {
+          try {
+            const base = await Orc.carregarBase(validado.id);
+            const f = v => (Number(v) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 1 });
+            if (!confirm(`Usar o orçamento v${base.versao} no projeto?
+Valor vendido: ${f(p.valorVendido)} € → ${f(base.total)} €
+Horas vendidas: ${f(p.horasVendidas)} h → ${f(base.horas)} h
+A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
+            p.valorVendido = base.total; p.horasVendidas = base.horas; p.orcamentoBase = base;
+            App.persist(); App.renderTudo();
+            App.toast('Projeto atualizado com o orçamento validado.');
+            this.secProjetoDaOp(raiz, opId);
+          } catch (err) { this.avisoErro(err); }
+        },
         abrir: () => this.abrirProjetoNoGantt(p.id),
         desligar: async () => {
           if (!confirm('Desligar este projeto da oportunidade? O projeto não é apagado.')) return;

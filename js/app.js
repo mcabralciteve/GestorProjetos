@@ -212,6 +212,8 @@ const App = {
       projValorHoraMedio: document.getElementById('projValorHoraMedio'),
       projVersao: document.getElementById('projVersao'),
       projFaturacaoResumo: document.getElementById('projFaturacaoResumo'),
+      projOrcBaseLinha: document.getElementById('projOrcBaseLinha'),
+      projOrcBase: document.getElementById('projOrcBase'),
       projGestorId: document.getElementById('projGestorId'),
       projEquipaId: document.getElementById('projEquipaId'),
       listaConsultoresProjeto: document.getElementById('listaConsultoresProjeto'),
@@ -1296,6 +1298,8 @@ const App = {
   },
   // Percentagem converte-se sempre a partir do valor vendido do projeto; "valor" é um montante fixo.
   valorFatura(f, projeto) {
+    // Fatura "por rubricas" do orçamento validado: soma das linhas (% de cada rubrica, ou valor fixo).
+    if (f.tipo === 'rubricas') return OrcLogica.valorRubricas(f.rubricas, projeto && projeto.orcamentoBase ? projeto.orcamentoBase.rubricas : []);
     if (f.tipo === 'percentagem') return (parseFloat(f.percentagem) || 0) / 100 * (projeto.valorVendido || 0);
     return parseFloat(f.valor) || 0;
   },
@@ -1396,7 +1400,9 @@ const App = {
     // criaria duas linhas com a mesma chave primária assim que isto for gravado numa base de
     // dados partilhada (a cópia "roubaria" as linhas do projeto original).
     this.remaparIdsTarefas(copia.tarefas);
-    copia.faturas.forEach(f => { f.id = crypto.randomUUID(); });
+    // Uma cópia não herda o orçamento do original: as faturas "por rubricas" ficam como valor fixo.
+    copia.faturas.forEach(f => { if (f.tipo === 'rubricas') { f.valor = this.valorFatura(f, atual); f.tipo = 'valor'; f.rubricas = null; } f.id = crypto.randomUUID(); });
+    copia.orcamentoBase = null;
     // Pontos de situação e next steps são histórico de reuniões do projeto original — a cópia
     // começa sem nenhum, não faz sentido herdar conversas de coaching de outro projeto.
     copia.pontosSituacao = [];
@@ -3003,8 +3009,21 @@ const App = {
     const f = p.faturas.find(x => x.id === faturaId);
     if (!f) return;
     if (campo === 'emitida') {
+      // Emitir = associar o nº da fatura do GIAF e dar a fatura por emitida: sem esse nº não se emite.
+      if (valor && !String(f.numeroRegisto || '').trim()) {
+        this.toast('Indica primeiro o nº da fatura do GIAF e depois marca-a como emitida.');
+        this.renderTabelaFaturas();
+        return;
+      }
       f.emitida = !!valor;
       if (f.emitida && !f.dataEmissao) f.dataEmissao = DateUtil.todayISO();
+      if (f.emitida && !String(f.emitidoPor || '').trim()) { const perfil = this.perfilAtual(); f.emitidoPor = perfil ? (perfil.nome || perfil.email || '') : ''; }
+    } else if (campo === 'tipo' && valor === 'rubricas') {
+      if (!p.orcamentoBase) { this.toast('Este projeto ainda não tem um orçamento validado associado.'); this.renderTabelaFaturas(); return; }
+      f.tipo = 'rubricas'; f.rubricas = f.rubricas || [];
+      this.persist(); this.renderTabelaFaturas();
+      this.abrirModalRubricasFatura(projetoId, faturaId);
+      return;
     } else if (campo === 'percentagem' || campo === 'valor') {
       f[campo] = parseFloat(valor) || 0;
     } else if (campo === 'dataPrevista' || campo === 'dataEmissao') {
@@ -4116,6 +4135,7 @@ const App = {
       e.projValorHoraMedio.textContent = '—';
       e.projVersao.textContent = '—';
       e.projFaturacaoResumo.textContent = '—';
+      if (e.projOrcBaseLinha) e.projOrcBaseLinha.style.display = 'none';
       e.projHorasReais.textContent = '—';
       e.projHorasEAC.textContent = '—';
       e.projHorasSaldo.textContent = '—';
@@ -4149,6 +4169,11 @@ const App = {
     const pctFaturado = p.valorVendido > 0 ? Math.round(totalFaturado / p.valorVendido * 100) : null;
     e.projFaturacaoResumo.textContent = `${totalFaturado.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €` + (p.valorVendido > 0 ? ` de ${p.valorVendido.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} € (${pctFaturado}%)` : '');
     e.projFaturacaoResumo.style.color = sobreFaturado ? 'var(--vermelho)' : '';
+    if (e.projOrcBaseLinha) {
+      const b = p.orcamentoBase;
+      e.projOrcBaseLinha.style.display = b ? '' : 'none';
+      if (b) e.projOrcBase.textContent = `v${b.versao} — ${OrcLogica.euro(b.total)} · ${(b.horas || 0).toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h`;
+    }
 
     const orc = this.avaliarOrcamentoProjeto(p);
     const corNivel = { verde: 'var(--verde)', amarelo: 'var(--amarelo)', vermelho: 'var(--vermelho)', neutro: '' };
@@ -6817,16 +6842,19 @@ const App = {
           <select data-campo="tipo">
             <option value="percentagem" ${fat.tipo === 'percentagem' ? 'selected' : ''}>%</option>
             <option value="valor" ${fat.tipo === 'valor' ? 'selected' : ''}>Valor (€)</option>
+            ${p.orcamentoBase || fat.tipo === 'rubricas' ? `<option value="rubricas" ${fat.tipo === 'rubricas' ? 'selected' : ''}>Rubricas do orçamento</option>` : ''}
           </select>
         </td>
         <td><input type="number" min="0" max="100" step="1" value="${fat.percentagem}" data-campo="percentagem" ${fat.tipo !== 'percentagem' ? 'disabled' : ''} style="width:56px"></td>
         <td>${sobreFaturado ? `<span title="Este projeto tem faturas acima do valor vendido.">⚠</span> ` : ''}${fat.tipo === 'percentagem'
           ? `<span>${valor.toLocaleString('pt-PT', { maximumFractionDigits: 2 })} €</span>`
-          : `<input type="number" min="0" step="0.01" value="${fat.valor}" data-campo="valor" style="width:90px">`}</td>
+          : (fat.tipo === 'rubricas'
+            ? `<span>${valor.toLocaleString('pt-PT', { maximumFractionDigits: 2 })} €</span> <button type="button" class="btn btn-sm" data-acao-rubricas title="${(fat.rubricas || []).length} rubrica(s) do orçamento">${fat.emitida ? 'Ver' : 'Rubricas…'}</button>`
+            : `<input type="number" min="0" step="0.01" value="${fat.valor}" data-campo="valor" style="width:90px">`)}</td>
         <td style="text-align:center"><input type="checkbox" data-campo="emitida" ${fat.emitida ? 'checked' : ''}></td>
         <td><input type="date" value="${fat.dataEmissao || ''}" data-campo="dataEmissao" ${!fat.emitida ? 'disabled' : ''}></td>
         <td><input type="text" value="${escapeAttr(fat.emitidoPor)}" data-campo="emitidoPor" ${!fat.emitida ? 'disabled' : ''} style="width:110px"></td>
-        <td><input type="text" value="${escapeAttr(fat.numeroRegisto)}" data-campo="numeroRegisto" placeholder="ex.: FT 2026/123" title="Nº atribuído pelo GIAF quando a fatura é emitida" ${!fat.emitida ? 'disabled' : ''} style="width:110px"></td>
+        <td><input type="text" value="${escapeAttr(fat.numeroRegisto)}" data-campo="numeroRegisto" placeholder="ex.: FT 2026/123" title="Nº atribuído pelo GIAF — indica-o antes de marcar a fatura como emitida" style="width:110px"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelectorAll('[data-campo]').forEach(inp => {
         inp.addEventListener('change', () => {
@@ -6834,16 +6862,72 @@ const App = {
           this.atualizarFatura(p.id, fat.id, inp.dataset.campo, valorCampo);
         });
       });
-      tr.querySelector('button').addEventListener('click', () => this.eliminarFatura(p.id, fat.id));
+      tr.querySelector('.col-acoes button').addEventListener('click', () => this.eliminarFatura(p.id, fat.id));
+      const bRub = tr.querySelector('[data-acao-rubricas]');
+      if (bRub) bRub.addEventListener('click', () => this.abrirModalRubricasFatura(p.id, fat.id));
       e.corpoTabelaFaturas.appendChild(tr);
     });
   },
+  // Fatura "por rubricas": que rubricas do orçamento validado se faturam, e quanto (% da rubrica ou valor fixo).
+  abrirModalRubricasFatura(projetoId, faturaId) {
+    const p = this.state.projetos[projetoId];
+    const f = p && p.faturas.find(x => x.id === faturaId);
+    const base = p && p.orcamentoBase;
+    if (!f || !base) { this.toast('Este projeto ainda não tem um orçamento validado associado.'); return; }
+    const bloqueada = !!f.emitida || !this.possoEditarProjeto(p.id);
+    const E = OrcLogica;
+    const jaPrevisto = E.planeadoPorRubrica(p.faturas, base.rubricas, f.id);
+    const estado = base.rubricas.map(r => { const l = (f.rubricas || []).find(x => x.k === r.k) || {}; return { k: r.k, tipo: l.tipo === 'valor' ? 'valor' : 'percentagem', percentagem: this.n0(l.percentagem), valor: this.n0(l.valor) }; });
+    const linhasHtml = base.rubricas.map((r, i) => {
+      const resto = E.arred(r.valor - jaPrevisto[r.k]);
+      return `<tr data-i="${i}">
+        <td><b>${escapeHtml(r.rotulo)}</b></td><td>${E.euro(r.valor)}</td><td>${E.euro(jaPrevisto[r.k])}</td><td style="${resto < 0 ? 'color:var(--vermelho)' : ''}">${E.euro(resto)}</td>
+        <td><select data-rub="tipo"${bloqueada ? ' disabled' : ''}><option value="percentagem">%</option><option value="valor">€</option></select>
+          <input type="number" step="any" min="0" data-rub="n" style="width:90px"${bloqueada ? ' disabled' : ''}>
+          ${bloqueada ? '' : `<button type="button" class="btn btn-sm" data-rub="resto" title="Faturar o que resta desta rubrica">Restante</button>`}</td>
+        <td data-rub="valor">—</td></tr>`;
+    }).join('');
+    this.abrirModal(`Fatura por rubricas — ${p.idInterno || p.nome}`, `
+      <p class="hint" style="margin:0 0 8px;">Orçamento base: v${base.versao}, ${E.euro(base.total)}. Escolhe, para esta fatura, quanto se fatura de cada rubrica (% da rubrica ou valor fixo).${bloqueada ? ' <b>Fatura já emitida — só leitura.</b>' : ''}</p>
+      <div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Rubrica</th><th>Orçamento</th><th>Já previsto</th><th>Restante</th><th>Esta fatura</th><th>Valor</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
+      <p id="rubTotal" style="margin:8px 0;font-weight:700;"></p><ul id="rubAvisos" class="orc-avisos"></ul>
+      ${bloqueada ? '' : '<button type="button" class="btn btn-primary" id="rubGuardar">Guardar</button>'}`, { largo: true });
+    const m = this.els.modalCorpo;
+    const linhasDe = () => estado.filter(l => (l.tipo === 'percentagem' ? l.percentagem : l.valor) > 0).map(l => ({ k: l.k, tipo: l.tipo, percentagem: l.tipo === 'percentagem' ? l.percentagem : 0, valor: l.tipo === 'valor' ? l.valor : 0 }));
+    const atualizar = () => {
+      const linhas = linhasDe();
+      base.rubricas.forEach((r, i) => { m.querySelector(`tr[data-i="${i}"] [data-rub="valor"]`).textContent = E.euro(E.valorLinhaRubrica(estado[i], base.rubricas)); });
+      m.querySelector('#rubTotal').textContent = `Total desta fatura: ${E.euro(E.valorRubricas(linhas, base.rubricas))}`;
+      m.querySelector('#rubAvisos').innerHTML = E.excessosRubricas(linhas, base.rubricas, p.faturas, f.id).map(x => `<li style="color:var(--vermelho)">${escapeHtml(x.rotulo)}: ultrapassa o orçamento em ${E.euro(x.excesso)}.</li>`).join('');
+    };
+    base.rubricas.forEach((r, i) => {
+      const tr = m.querySelector(`tr[data-i="${i}"]`), sel = tr.querySelector('[data-rub="tipo"]'), inp = tr.querySelector('[data-rub="n"]');
+      const mostrar = () => { sel.value = estado[i].tipo; const v = estado[i].tipo === 'percentagem' ? estado[i].percentagem : estado[i].valor; inp.value = v ? v : ''; };
+      mostrar();
+      sel.addEventListener('change', () => { estado[i].tipo = sel.value; mostrar(); atualizar(); });
+      inp.addEventListener('input', () => { const v = Number(inp.value) || 0; if (estado[i].tipo === 'percentagem') estado[i].percentagem = v; else estado[i].valor = v; atualizar(); });
+      const bResto = tr.querySelector('[data-rub="resto"]');
+      if (bResto) bResto.addEventListener('click', () => { estado[i].tipo = 'valor'; estado[i].valor = Math.max(0, E.arred(r.valor - jaPrevisto[r.k])); mostrar(); atualizar(); });
+    });
+    atualizar();
+    const bG = m.querySelector('#rubGuardar');
+    if (bG) bG.addEventListener('click', () => {
+      const linhas = linhasDe();
+      if (!linhas.length) { this.toast('Escolhe pelo menos uma rubrica a faturar.'); return; }
+      const exc = E.excessosRubricas(linhas, base.rubricas, p.faturas, f.id);
+      if (exc.length && !confirm(`${exc.map(x => `${x.rotulo} (+${E.euro(x.excesso)})`).join(', ')} — ultrapassa o orçamento. Guardar mesmo assim?`)) return;
+      f.tipo = 'rubricas'; f.rubricas = linhas; f.valor = E.valorRubricas(linhas, base.rubricas);
+      this.persist(); this.fecharModal(); this.renderFaturacao(); this.renderGanttAtual(); this.renderInfoProjeto();
+      this.toast('Fatura por rubricas guardada.');
+    });
+  },
+  n0(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; },
   exportarFaturasCsv() {
     const filtradas = this.faturasFiltradasOrdenadas(this.linhasFaturas());
     if (!filtradas.length) { this.toast('Sem faturas para exportar — revê os filtros.'); return; }
     const linhas = [['Projeto', 'Cliente', 'Data Prevista', 'Tipo', '%', 'Valor (€)', 'Emitida', 'Data Emissão', 'Emitido Por', 'Nº Fatura (GIAF)']];
     filtradas.forEach(({ projeto: p, fatura: fat }) => linhas.push([
-      p.idInterno || p.nome, p.cliente || '', fat.dataPrevista, fat.tipo === 'percentagem' ? '%' : 'Valor',
+      p.idInterno || p.nome, p.cliente || '', fat.dataPrevista, fat.tipo === 'percentagem' ? '%' : (fat.tipo === 'rubricas' ? 'Rubricas' : 'Valor'),
       fat.tipo === 'percentagem' ? fat.percentagem : '', this.valorFatura(fat, p).toFixed(2),
       fat.emitida ? 'Sim' : 'Não', fat.dataEmissao || '', fat.emitidoPor || '', fat.numeroRegisto || ''
     ]));
