@@ -602,6 +602,23 @@ const CrmLogica = {
     const m = String(s || '').trim().match(/^(\d{4})\s*[\/\-]\s*0*(\d+)$/);
     return m && Number(m[2]) > 0 ? `${m[1]}/${Number(m[2])}` : '';
   },
+  // "2026/829-01" (referência da proposta) ou "2026/0829" -> "2026/829": a referência-base, sem o nº sequencial.
+  baseRefProposta(s) {
+    const m = String(s || '').trim().match(/^(\d{4})\s*\/\s*0*(\d+)(?:\s*-\s*\d+)?$/);
+    return m && Number(m[2]) > 0 ? `${m[1]}/${Number(m[2])}` : '';
+  },
+  // A proposta herda a referência GIAF da oportunidade e acrescenta o nº sequencial (a versão da proposta):
+  // 2026/829 + versão 1 -> "2026/829-01". Sem referência GIAF na oportunidade, devolve '' (preenche-se à mão).
+  referenciaProposta(refGiaf, n) {
+    const base = this.baseRefProposta(refGiaf);
+    return base ? `${base}-${String(Math.max(1, Math.round(Number(n)) || 1)).padStart(2, '0')}` : '';
+  },
+  // Referência GIAF de uma oportunidade: a sua; senão a do projeto ligado (se for do tipo GIAF).
+  refGiafDaOportunidade(op, projeto) {
+    const r = this.baseRefProposta(op && op.referencia_giaf);
+    if (r) return r;
+    return projeto && projeto.tipoReferencia !== 'interno' ? this.baseRefProposta(projeto.idInterno) : '';
+  },
   _eApagado(v) { return /^(1|true|sim|yes|s|y)$/i.test(String(v || '').trim()); },
 
   // Combinações distintas do ficheiro que o utilizador pode ajustar: tipos ("Serviços", "I&D") e pares
@@ -633,6 +650,7 @@ const CrmLogica = {
     if (n.origem && n.origem !== (ex.origem || '')) alt('origem', n.origem);
     if (n.descricao && norm(n.descricao) !== norm(ex.descricao)) alt('descricao', n.descricao);
     if (n.projetoId && !ex.projeto_id) alt('projeto_id', n.projetoId);
+    if (n.referenciaGiaf && n.referenciaGiaf !== (ex.referencia_giaf || '')) alt('referencia_giaf', n.referenciaGiaf);
     let reabre = false;
     if (patch.etapa_id) {
       // A etapa manda no estado de fecho: aberta -> sem data de fecho nem motivo; ganha/perdida -> data de fecho.
@@ -696,8 +714,7 @@ const CrmLogica = {
       if (fechoBruto && !fecho) r.avisos.push({ linha: nl, motivo: `Data "${fechoBruto}" não percebida — ficou sem data` });
       const ref = this.normalizarRefGiaf(this._cel(linha, mapa.ref_giaf));
       const projeto = ref ? projetoPorRef.get(ref) : null;
-      let descricao = this._cel(linha, mapa.descricao);
-      if (ref && !projeto) descricao = (descricao ? descricao + '\n\n' : '') + `Ref. GIAF (CRM anterior): ${ref}`;
+      const descricao = this._cel(linha, mapa.descricao);
       const fechada = etapa.categoria !== 'aberta';
       const proximo = this._cel(linha, mapa.proximo_passo);
       const followup = opts.criarFollowups && proximo && !fechada ? proximo : '';
@@ -706,7 +723,7 @@ const CrmLogica = {
         const cmp = this.compararOportunidadeExistente(existente, {
           tipoId, etapa, valor: valorLido, fecho, responsavelId: this.resolverResponsavel(this._cel(linha, mapa.responsavel), ctx.recursos || []),
           origem: this.traduzirOrigem(this._cel(linha, mapa.origem)), descricao: this._cel(linha, mapa.descricao),
-          projetoId: projeto ? projeto.id : null, motivoPadraoId: (opts.motivoPadrao && opts.motivoPadrao[tipoId]) || null
+          projetoId: projeto ? projeto.id : null, referenciaGiaf: ref, motivoPadraoId: (opts.motivoPadrao && opts.motivoPadrao[tipoId]) || null
         }, etapaPorId);
         const novoFollowup = followup && !tarefasAbertas.has(`${existente.id}|${this.normalizarNome(followup)}`) ? followup : '';
         if (novoFollowup) { r.followups++; r.followupsExistentes.push({ op: existente, descricao: novoFollowup }); }
@@ -717,7 +734,7 @@ const CrmLogica = {
       if (projeto) r.comProjeto++;
       if (followup) r.followups++;
       r.novas.push({
-        conta_id: conta ? conta.id : null, conta_ref: contaRef, tipo_id: tipoId, etapa_id: etapaId, titulo, descricao,
+        conta_id: conta ? conta.id : null, conta_ref: contaRef, tipo_id: tipoId, etapa_id: etapaId, titulo, descricao, referencia_giaf: ref,
         valor_estimado: valor, data_prevista_fecho: fecho, responsavel_id: this.resolverResponsavel(this._cel(linha, mapa.responsavel), ctx.recursos || []),
         origem: this.traduzirOrigem(this._cel(linha, mapa.origem)),
         motivo_perda_id: etapa.categoria === 'perdida' ? ((opts.motivoPadrao && opts.motivoPadrao[tipoId]) || null) : null,
@@ -791,11 +808,11 @@ const CrmLogica = {
   // Vêm primeiro os que "batem" (referência GIAF da proposta = ID do projeto, ou mesmo cliente da conta).
   sugerirProjetos(op, conta, propostas, ops, projetos) {
     const ocupados = new Set(ops.filter(o => o.id !== op.id && o.projeto_id).map(o => o.projeto_id));
-    const refs = new Set(propostas.filter(p => p.oportunidade_id === op.id).map(p => this.normalizarRefGiaf(p.referencia_giaf)).filter(Boolean));
+    const refs = new Set(propostas.filter(p => p.oportunidade_id === op.id).map(p => this.baseRefProposta(p.referencia_giaf)).concat([this.baseRefProposta(op.referencia_giaf)]).filter(Boolean));
     const nomeConta = conta ? this.normalizarNome(conta.nome) : '';
     const sugeridos = [], outros = [];
     projetos.filter(p => !ocupados.has(p.id)).forEach(p => {
-      const porRef = refs.size && refs.has(this.normalizarRefGiaf(p.idInterno));
+      const porRef = refs.size && refs.has(this.baseRefProposta(p.idInterno));
       const porCliente = nomeConta && this.normalizarNome(p.cliente) === nomeConta;
       if (porRef) sugeridos.push({ projeto: p, motivo: 'mesma referência GIAF' });
       else if (porCliente) sugeridos.push({ projeto: p, motivo: 'mesmo cliente' });

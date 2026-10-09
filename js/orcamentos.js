@@ -307,6 +307,7 @@ const Orc = {
     try {
       await this.gravarConteudo(o);
       o._novo = false; this.sujo = false;
+      Crm.sincronizarValorProposta(o.proposta_id);
       if (!silencioso) { App.toast('Orçamento guardado.'); this.render(); }
       return true;
     } catch (err) { App.toast(this.msgErro(err)); return false; }
@@ -336,6 +337,7 @@ const Orc = {
       Object.assign(o, patch);
       const r = this.d.resumos.find(x => x.id === o.id); if (r) { r.estado = para; r.total = total; }
       this.sujo = false; this.render();
+      Crm.sincronizarValorProposta(o.proposta_id);
       App.toast(`Orçamento ${E.ESTADOS[para].toLowerCase()}.`);
       if (para === 'validado') await this.aposValidar(o, total);
     } catch (err) { App.toast(this.msgErro(err)); }
@@ -367,6 +369,7 @@ const Orc = {
       if (error) throw error;
       this.d.resumos = this.d.resumos.filter(x => x.id !== o.id);
       this.sujo = false; this.voltar(true);
+      Crm.sincronizarValorProposta(o.proposta_id);
     } catch (err) { App.toast(this.msgErro(err)); }
   },
   voltar(semPerguntar) {

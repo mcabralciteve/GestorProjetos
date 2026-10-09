@@ -74,6 +74,7 @@ const Crm = {
       const chaves = Object.keys(this.TABELAS);
       const resultados = await Promise.all(chaves.map(k => this._lerTudo(this.TABELAS[k])));
       chaves.forEach((k, i) => { this.d[k] = resultados[i]; });
+      if (typeof Orc !== 'undefined') await Orc.carregarResumos(true);   // o valor das propostas vem dos orçamentos
       this.carregado = true;
       this.reindexar();
       this.recalcularFollowups();
@@ -338,7 +339,7 @@ const Crm = {
         if (f.estado === 'perdidas' && cat !== 'perdida') return false;
       }
       const conta = this.idx.conta.get(op.conta_id);
-      return this.contem(f.texto, op.titulo, conta && conta.nome);
+      return this.contem(f.texto, op.titulo, conta && conta.nome, op.referencia_giaf);
     });
   },
   renderOportunidades(el) {
@@ -459,10 +460,11 @@ const Crm = {
   },
   abrirModalGanha(op, etapa) {
     const vigente = CrmLogica.propostaVigente(this.d.propostas, op.id);
-    const valor = vigente && vigente.valor ? vigente.valor : op.valor_estimado;
+    const vProp = vigente ? this.valorProposta(vigente) : 0;
+    const valor = vProp || op.valor_estimado;
     const podeProjeto = this.souAdmin() && !op.projeto_id;
     this.abrir(`Ganha — ${op.titulo}`, `
-      <p class="hint" style="margin:0 0 10px;">A oportunidade passa para "${escapeHtml(etapa.nome)}".${vigente ? ` Proposta ${escapeHtml(vigente.referencia_giaf || 'v' + vigente.versao)} (${this.euro(vigente.valor)}).` : ''}</p>
+      <p class="hint" style="margin:0 0 10px;">A oportunidade passa para "${escapeHtml(etapa.nome)}".${vigente ? ` Proposta ${escapeHtml(vigente.referencia_giaf || 'v' + vigente.versao)} (${vProp ? this.euro(vProp) : 'sem orçamento'}).` : ''}</p>
       <label>Valor final (€) <input type="number" id="crmGanhaValor" min="0" step="0.01" value="${Number(valor) || 0}"></label>
       ${podeProjeto
         ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="crmGanhaProjeto" checked> Criar já o projeto a partir desta oportunidade</label>`
@@ -525,7 +527,7 @@ const Crm = {
     const o = op || {
       id: null, conta_id: contaPre || '', contacto_id: null, tipo_id: this.idx.tipo.get(filtroTipo) ? filtroTipo : tipos[0].id,
       etapa_id: '', titulo: '', descricao: '', valor_estimado: 0, data_prevista_fecho: null,
-      responsavel_id: this.meuRecursoId(), origem: '', motivo_perda_id: null, motivo_perda_notas: '', projeto_id: null
+      responsavel_id: this.meuRecursoId(), origem: '', referencia_giaf: '', motivo_perda_id: null, motivo_perda_notas: '', projeto_id: null
     };
     if (!o.etapa_id) { const e1 = CrmLogica.etapasDoTipo(this.d.etapas, o.tipo_id)[0]; o.etapa_id = e1 ? e1.id : ''; }
     const projNome = op ? this.nomeProjetoDaOp(op) : null;
@@ -553,8 +555,12 @@ const Crm = {
         <label>Data prevista de fecho <input type="date" id="opFecho" value="${escapeAttr(o.data_prevista_fecho || '')}"></label>
         <label>Responsável <select id="opResp">${this.optResponsaveis(o.responsavel_id, 'Sem responsável')}</select></label>
       </div>
-      <label>Origem <input type="text" id="opOrigem" list="opOrigens" value="${escapeAttr(o.origem || '')}" placeholder="Como surgiu?">
-        <datalist id="opOrigens">${this.ORIGENS.map(x => `<option value="${escapeAttr(x)}">`).join('')}</datalist></label>
+      <div class="row-2">
+        <label>Origem <input type="text" id="opOrigem" list="opOrigens" value="${escapeAttr(o.origem || '')}" placeholder="Como surgiu?">
+          <datalist id="opOrigens">${this.ORIGENS.map(x => `<option value="${escapeAttr(x)}">`).join('')}</datalist></label>
+        <label>Referência GIAF (Ano/Obra) <input type="text" id="opRefGiaf" value="${escapeAttr(o.referencia_giaf || '')}" placeholder="Ex.: 2026/829"
+          title="As propostas desta oportunidade herdam esta referência e acrescentam um número sequencial (2026/829-01, 2026/829-02…)"></label>
+      </div>
       <label>Descrição <textarea id="opDescricao" rows="3">${escapeHtml(o.descricao || '')}</textarea></label>
       ${projNome ? `<p class="hint" style="margin:6px 0;">🔗 Projeto associado: <b>${escapeHtml(projNome)}</b></p>` : ''}
       <span id="opMsg" class="calc-line" style="border:none;display:block;margin-top:4px;color:var(--vermelho);"></span>
@@ -613,12 +619,15 @@ const Crm = {
     const etapa = this.idx.etapa.get(etapaId);
     if (!etapa) { msg.textContent = 'Escolhe a etapa.'; return; }
     const motivoId = m.querySelector('#opMotivo').value || null;
+    const refTexto = m.querySelector('#opRefGiaf').value.trim();
+    const refGiaf = refTexto ? CrmLogica.baseRefProposta(refTexto) : '';
+    if (refTexto && !refGiaf) { msg.textContent = 'A referência GIAF tem o formato AAAA/NNN (ex.: 2026/829).'; return; }
     const base = op || { id: null };
     const novo = Object.assign({}, base, {
       conta_id: contaId, contacto_id: m.querySelector('#opContacto').value || null, tipo_id: tipoId, etapa_id: etapaId, titulo,
       descricao: m.querySelector('#opDescricao').value.trim(), valor_estimado: Number(m.querySelector('#opValor').value) || 0,
       data_prevista_fecho: m.querySelector('#opFecho').value || null, responsavel_id: m.querySelector('#opResp').value || null,
-      origem: m.querySelector('#opOrigem').value.trim(),
+      origem: m.querySelector('#opOrigem').value.trim(), referencia_giaf: refGiaf,
       motivo_perda_id: etapa.categoria === 'perdida' ? motivoId : null,
       motivo_perda_notas: etapa.categoria === 'perdida' ? m.querySelector('#opMotivoNotas').value.trim() : ''
     });
@@ -630,6 +639,13 @@ const Crm = {
     else if (!eraFechada || op.etapa_id !== etapaId || !op.data_fecho) novo.data_fecho = this.hoje();
     try {
       const gravada = await this.gravar('oportunidades', novo);
+      // Propostas desta oportunidade que ainda não têm referência: herdam a nova (com o seu nº sequencial).
+      if (refGiaf && refGiaf !== (op && op.referencia_giaf)) {
+        const semRef = this.d.propostas.filter(p => p.oportunidade_id === gravada.id && !String(p.referencia_giaf || '').trim());
+        if (semRef.length && confirm(`Preencher a referência GIAF de ${semRef.length} proposta(s) desta oportunidade (${refGiaf}-01, …)?`)) {
+          for (const p of semRef) await this.gravar('propostas', Object.assign({}, p, { referencia_giaf: CrmLogica.referenciaProposta(refGiaf, p.versao) }));
+        }
+      }
       this.renderAtual();
       if (op) { App.toast('Oportunidade guardada.'); this.abrirOportunidade(gravada.id); }
       else { App.fecharModal(); this.abrirOportunidade(gravada.id); App.toast('Oportunidade criada.'); }
@@ -690,11 +706,11 @@ const Crm = {
     const rotuloOp = o => { const c = this.idx.conta.get(o.conta_id); return `${o.titulo} — ${c ? c.nome : '?'}`; };
     return `<div class="row-2">
         <label>Oportunidade <span style="color:var(--vermelho);">*</span><select data-f="oportunidade_id"${fixarOp ? ' disabled' : ''}>${this.opcoes(ops, p.oportunidade_id, rotuloOp, 'Seleciona…')}</select></label>
-        <label>Referência GIAF <input type="text" data-f="referencia_giaf" value="${escapeAttr(p.referencia_giaf || '')}" placeholder="Nº da proposta no GIAF"></label>
+        <label>Referência GIAF <span class="hint">(da oportunidade + nº sequencial)</span> <input type="text" data-f="referencia_giaf" value="${escapeAttr(p.referencia_giaf || '')}" placeholder="Ex.: 2026/829-01"></label>
       </div>
       <div class="row-2">
         <label>Versão <input type="number" data-f="versao" min="1" step="1" value="${Number(p.versao) || 1}"></label>
-        <label>Valor (€) <input type="number" data-f="valor" min="0" step="0.01" value="${Number(p.valor) || 0}"></label>
+        <label>Valor (€) <span class="hint">(dos orçamentos)</span> <input type="text" readonly tabindex="-1" value="${escapeAttr(p.id ? this.euro(this.valorProposta(p)) + ' — ' + this.origemValorProposta(p) : 'sem orçamento')}"></label>
       </div>
       <div class="row-2">
         <label>Horas estimadas <input type="number" data-f="horas_estimadas" min="0" step="0.5" value="${p.horas_estimadas == null ? '' : p.horas_estimadas}" placeholder="opcional"></label>
@@ -707,15 +723,48 @@ const Crm = {
       <label>Documento (OneDrive / SharePoint) <input type="text" data-f="caminho_documento" value="${escapeAttr(p.caminho_documento || '')}" placeholder="Ligação https://… ou caminho da pasta/ficheiro"></label>
       <label>Notas <textarea data-f="notas" rows="2">${escapeHtml(p.notas || '')}</textarea></label>`;
   },
+  // O valor de uma proposta é o reflexo dos seus orçamentos (ver OrcLogica.valorDaProposta): sem orçamento, não tem valor.
+  // Se a Orçamentação ainda não estiver instalada na base de dados, mostra o valor que lá estava guardado.
+  valorProposta(p) {
+    if (typeof Orc === 'undefined' || Orc.indisponivel) return Number(p.valor) || 0;
+    return OrcLogica.valorDaProposta(Orc.resumosDaProposta(p.id)).valor;
+  },
+  origemValorProposta(p) {
+    if (typeof Orc === 'undefined' || Orc.indisponivel) return '';
+    const o = OrcLogica.valorDaProposta(Orc.resumosDaProposta(p.id));
+    return o.versao ? `orçamento v${o.versao} (${OrcLogica.ESTADOS[o.estado].toLowerCase()})` : 'sem orçamento';
+  },
+  // Mantém o valor guardado na proposta igual ao dos orçamentos (para quem lê a base de dados diretamente).
+  async sincronizarValorProposta(propostaId) {
+    const p = this.idx.proposta.get(propostaId);
+    if (!p) return;
+    const v = this.valorProposta(p);
+    if (Number(p.valor) === v) return;
+    try { await this.gravar('propostas', Object.assign({}, p, { valor: v })); this.renderAtual(); } catch (err) { console.error(err); }
+  },
+  // Referência GIAF da oportunidade (a sua, ou a do projeto ligado).
+  refGiafDaOp(op) { return op ? CrmLogica.refGiafDaOportunidade(op, App.state.projetos[op.projeto_id]) : ''; },
   novaProposta(opId) {
-    return { id: null, oportunidade_id: opId || '', referencia_giaf: '', versao: CrmLogica.proximaVersao(this.d.propostas, opId), valor: (this.idx.op.get(opId) || {}).valor_estimado || 0, horas_estimadas: null, data_envio: null, data_validade: null, estado: 'rascunho', caminho_documento: '', notas: '' };
+    const versao = CrmLogica.proximaVersao(this.d.propostas, opId);
+    return { id: null, oportunidade_id: opId || '', referencia_giaf: CrmLogica.referenciaProposta(this.refGiafDaOp(this.idx.op.get(opId)), versao), versao, valor: 0, horas_estimadas: null, data_envio: null, data_validade: null, estado: 'rascunho', caminho_documento: '', notas: '' };
   },
   ligarFormProposta(raiz, p, aoFim, aoCancelar) {
+    // A referência acompanha a oportunidade escolhida e a versão enquanto ninguém a escrever à mão.
+    const selOp = raiz.querySelector('[data-f="oportunidade_id"]'), inpV = raiz.querySelector('[data-f="versao"]'), inpRef = raiz.querySelector('[data-f="referencia_giaf"]');
+    if (selOp && inpV && inpRef) {
+      const sugestao = () => CrmLogica.referenciaProposta(this.refGiafDaOp(this.idx.op.get(selOp.value)), inpV.value);
+      let anterior = sugestao();
+      if (!inpRef.value.trim() && anterior) inpRef.value = anterior;
+      const ajustar = () => { const nova = sugestao(); if (!inpRef.value.trim() || inpRef.value === anterior) inpRef.value = nova; anterior = nova; };
+      selOp.addEventListener('change', () => { if (!p.id) inpV.value = CrmLogica.proximaVersao(this.d.propostas, selOp.value); ajustar(); });
+      inpV.addEventListener('input', ajustar);
+    }
     this.ligarForm(raiz, {
       chave: 'propostas', existente: p, aoFim: g => { if (g) this.aposGuardarProposta(g); else this.renderAtual(); aoFim(g); }, aoCancelar,
       confirmarEliminar: 'Eliminar esta proposta? (O documento no OneDrive/SharePoint não é afetado.)',
       montar: v => {
         const nova = Object.assign({}, p, v, { oportunidade_id: v.oportunidade_id || p.oportunidade_id });
+        nova.valor = p.id ? this.valorProposta(p) : 0;          // o valor não se escreve: vem dos orçamentos
         if (!nova.oportunidade_id) return 'Escolhe a oportunidade.';
         const erros = CrmLogica.validarProposta(nova);
         return erros.length ? erros.join(' ') : nova;
@@ -749,7 +798,7 @@ const Crm = {
         const op = this.idx.op.get(p.oportunidade_id), c = op && this.idx.conta.get(op.conta_id);
         const expirada = p.estado === 'enviada' && p.data_validade && p.data_validade < this.hoje();
         return `<tr>${comOp ? `<td>${escapeHtml(op ? op.titulo : '—')}</td><td>${escapeHtml(c ? c.nome : '—')}</td>` : ''}
-          <td>${escapeHtml(p.referencia_giaf || '—')}</td><td>${p.versao}</td><td>${this.euro(p.valor)}</td>
+          <td>${escapeHtml(p.referencia_giaf || '—')}</td><td>${p.versao}</td><td>${this.origemValorProposta(p) === 'sem orçamento' ? '<span class="hint">sem orçamento</span>' : this.euro(this.valorProposta(p))}</td>
           <td><span class="crm-estado crm-estado-${p.estado}">${this.ESTADOS_PROPOSTA[p.estado] || p.estado}</span>${expirada ? ' <span class="crm-atrasada" title="Validade ultrapassada">⚠ validade</span>' : ''}</td>
           <td>${this.data(p.data_envio)}</td><td>${this.data(p.data_validade)}</td><td>${this.caminhoHtml(p.caminho_documento)}</td>
           <td><button type="button" class="btn btn-sm" ${comOp ? 'data-crm-acao' : 'data-sec-acao'}="${comOp ? 'abrir-proposta' : 'editar-proposta'}" data-id="${escapeAttr(p.id)}">Editar</button></td></tr>`;
@@ -765,11 +814,11 @@ const Crm = {
     lista = this.ordenar('propostas', lista, {
       oportunidade: p => (this.idx.op.get(p.oportunidade_id) || {}).titulo || '',
       conta: p => { const op = this.idx.op.get(p.oportunidade_id); return (op && (this.idx.conta.get(op.conta_id) || {}).nome) || ''; },
-      ref: p => p.referencia_giaf || '', versao: p => Number(p.versao) || 0, valor: p => Number(p.valor) || 0,
+      ref: p => p.referencia_giaf || '', versao: p => Number(p.versao) || 0, valor: p => this.valorProposta(p),
       estado: p => this.ESTADOS_PROPOSTA[p.estado] || p.estado, envio: p => p.data_envio || p.criado_em || '', validade: p => p.data_validade || '',
       documento: p => p.caminho_documento || ''
     });
-    const soma = est => this.d.propostas.filter(p => p.estado === est).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    const soma = est => this.d.propostas.filter(p => p.estado === est).reduce((s, p) => s + this.valorProposta(p), 0);
     el.innerHTML = `<div class="crm-kpis">
         <div class="crm-kpi"><b>${this.d.propostas.length}</b><span>propostas</span></div>
         <div class="crm-kpi"><b>${this.euro(soma('enviada'))}</b><span>enviadas (a aguardar)</span></div>
@@ -1609,7 +1658,7 @@ const Crm = {
       const rotulos = {
         tipo_id: ['tipo', v => (this.idx.tipo.get(v) || {}).nome || '—'], etapa_id: ['etapa', nomeEtapa], valor_estimado: ['valor', v => this.euro(v)],
         data_prevista_fecho: ['fecho previsto', v => v ? this.data(v) : '—'], responsavel_id: ['responsável', nomeResp], origem: ['origem', v => v || '—'],
-        descricao: ['descrição', () => 'atualizada'], projeto_id: ['projeto', v => { const p = App.state.projetos[v]; return p ? this.rotuloProjeto(p) : '—'; }]
+        descricao: ['descrição', () => 'atualizada'], referencia_giaf: ['ref. GIAF', v => v || '—'], projeto_id: ['projeto', v => { const p = App.state.projetos[v]; return p ? this.rotuloProjeto(p) : '—'; }]
       };
       const textoMudanca = m => { const [nome, f] = rotulos[m.k] || [m.k, v => v]; return m.k === 'descricao' ? 'descrição atualizada' : `${nome}: ${f(m.de)} → ${f(m.para)}`; };
       alvo.innerHTML = `<h4 class="crm-h">Pré-visualização</h4>

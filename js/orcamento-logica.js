@@ -152,6 +152,14 @@ const OrcLogica = {
     const mapa = { rascunho: ['enviado', 'validado'], enviado: ['validado', 'rejeitado'], rejeitado: ['enviado'], validado: ctx.souAdmin ? ['enviado'] : [] };
     return (mapa[de] || []).includes(para);
   },
+  // O valor de uma proposta é o reflexo dos seus orçamentos — sem orçamento, não tem valor. Conta o validado (adjudicado);
+  // enquanto nenhum for validado, o da versão mais recente que não esteja rejeitada. resumos: [{ versao, estado, total }].
+  valorDaProposta(resumos) {
+    const v = (resumos || []).find(o => o.estado === 'validado');
+    if (v) return { valor: this.n(v.total), versao: v.versao, estado: 'validado' };
+    const vivos = (resumos || []).filter(o => o.estado !== 'rejeitado').sort((a, b) => b.versao - a.versao);
+    return vivos.length ? { valor: this.n(vivos[0].total), versao: vivos[0].versao, estado: vivos[0].estado } : { valor: 0, versao: null, estado: null };
+  },
   // Só o rascunho se edita; os restantes são registos fechados (para alterar, nova versão).
   editavel(orc) { return orc.estado === 'rascunho'; },
   proximaVersao(orcamentos, propostaId) {
