@@ -88,9 +88,8 @@ const Orc = {
         <span class="hint">${OrcLogica.euro(o.total)}</span><button type="button" class="btn btn-sm" data-sec-acao="abrir" data-id="${escapeAttr(o.id)}">Abrir</button></div>`).join('')}</div>`
       : Crm.vazioHtml('Ainda não há orçamentos nesta proposta.')}
       ${validado ? `<p class="hint">✔ O orçamento v${validado.versao} (${OrcLogica.euro(validado.total)}) é o adjudicado — serve de base à faturação.</p>` : ''}
-      <button type="button" class="btn btn-sm" data-sec-acao="novo">+ Novo orçamento</button>
-      <button type="button" class="btn btn-sm" data-sec-acao="importar" title="Cria um orçamento a partir de uma folha de orçamentação DTD já preenchida em Excel">⬆ Importar de Excel</button>`;
-    Crm.ligarAcoes(raiz, { abrir: b => this.abrir(b.dataset.id, proposta), novo: () => this.novo(proposta), importar: () => this.abrirImportar(proposta) });
+      <button type="button" class="btn btn-sm" data-sec-acao="novo">+ Novo orçamento</button>`;
+    Crm.ligarAcoes(raiz, { abrir: b => this.abrir(b.dataset.id, proposta), novo: () => this.novo(proposta) });
   },
 
   // ============================ Orçamento validado -> projeto (Fase 2) ============================
@@ -151,10 +150,10 @@ const Orc = {
     const daEquipa = todos.filter(r => area.equipa_id && r.equipaId === area.equipa_id), outros = todos.filter(r => !daEquipa.includes(r));
     return { daEquipa, outros };
   },
-  optConsultores(area, atualId, perfil) {
+  optConsultores(area, atualId) {
     const { daEquipa, outros } = this.consultoresDe(area);
     const opt = r => `<option value="${escapeAttr(r.id)}"${r.id === atualId ? ' selected' : ''}>${escapeHtml(r.nome)} (${OrcLogica.n(r.precoVenda)} €/h)</option>`;
-    return `<option value="">${perfil ? `— (perfil: ${escapeHtml(perfil)})` : '—'}</option>${daEquipa.length ? `<optgroup label="${escapeAttr(area.nome || 'Equipa')}">${daEquipa.map(opt).join('')}</optgroup>` : ''}${outros.length ? `<optgroup label="Outras equipas">${outros.map(opt).join('')}</optgroup>` : ''}`;
+    return `<option value="">—</option>${daEquipa.length ? `<optgroup label="${escapeAttr(area.nome || 'Equipa')}">${daEquipa.map(opt).join('')}</optgroup>` : ''}${outros.length ? `<optgroup label="Outras equipas">${outros.map(opt).join('')}</optgroup>` : ''}`;
   },
   // Campo numérico de uma linha: data-orc="linha|<areaId>|<linhaId>|<campo>"
   inp(area, linha, campo, valor, larg, extra) {
@@ -165,7 +164,7 @@ const Orc = {
     const E = OrcLogica, d = l => l.dados, linhas = area.linhas.filter(l => l.seccao === secao.k);
     const dis = editavel ? '' : ' disabled';
     const txt = (l, ph) => `<input type="text" class="orc-txt" data-orc="linha|${area.id}|${l.id}|descricao" value="${escapeAttr(l.descricao || '')}" placeholder="${ph}"${dis}>`;
-    const cons = l => `<select data-orc="consultor|${area.id}|${l.id}"${dis}>${this.optConsultores(area, l.recurso_id, l.dados && l.dados.perfil)}</select>`;
+    const cons = l => `<select data-orc="consultor|${area.id}|${l.id}"${dis}>${this.optConsultores(area, l.recurso_id)}</select>`;
     const rm = l => editavel ? `<td><button type="button" class="btn-icon" title="Remover linha" data-orc-acao="rm-linha|${area.id}|${l.id}">🗑</button></td>` : '<td></td>';
     const par = { aluguer_saida: orc.aluguer_saida, custo_km: orc.custo_km };
     const f = (k, cabecalhos, corpo) => `<div class="table-scroll"><table class="tabela-crud orc-tab"><thead><tr>${cabecalhos.map(c => `<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${linhas.map(l => { const c = E.calcLinha(l, par); return `<tr>${corpo(l, c)}${rm(l)}</tr>`; }).join('') || `<tr><td colspan="${cabecalhos.length + 1}" class="hint">Sem linhas.</td></tr>`}</tbody></table></div>`;
@@ -410,67 +409,6 @@ const Orc = {
     App.els.modal.classList.add('modal-orc');
     this.render();
   },
-
-  // ============================ Importar de Excel (folha de orçamentação DTD) ============================
-  abrirImportar(proposta) {
-    this.proposta = proposta;
-    Crm.abrir('Importar orçamento de Excel', `
-      <p class="hint" style="margin:0 0 8px;">Escolhe a <b>folha de orçamentação DTD</b> (Excel) já preenchida. Cria-se um <b>rascunho</b> novo nesta proposta, que podes rever antes de guardar. Os valores/hora vêm do ficheiro; podes trocá-los pelos de um consultor das Pessoas.</p>
-      <label>Ficheiro <input type="file" id="orcImpFicheiro" accept=".xlsx,.xlsm,.xls"></label>
-      <div id="orcImpPasso"></div>
-      <div class="crm-acoes-form"><button type="button" class="btn" id="orcImpVoltar">← Voltar à proposta</button></div>`, true);
-    const m = Crm.corpo();
-    m.querySelector('#orcImpVoltar').addEventListener('click', () => { App.fecharModal(); Crm.abrirProposta(proposta.id); });
-    m.querySelector('#orcImpFicheiro').addEventListener('change', async ev => {
-      const f = ev.target.files[0], passo = m.querySelector('#orcImpPasso');
-      if (!f) return;
-      passo.innerHTML = Crm.vazioHtml('A ler o ficheiro…');
-      try {
-        if (typeof XLSX === 'undefined') await App.carregarScript('lib/xlsx.full.min.js');
-        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-        const folhas = {};
-        wb.SheetNames.forEach(n => { folhas[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }); });
-        this.passoImportar(passo, OrcImportar.interpretar(folhas), proposta, f.name);
-      } catch (err) { console.error(err); passo.innerHTML = `<p class="hint" style="color:var(--vermelho);">${escapeHtml(err.message || err)}</p>`; }
-    });
-  },
-  async passoImportar(raiz, interp, proposta, nomeFicheiro) {
-    const par = await this.carregarParametros();
-    const perfis = [...new Set(interp.areas.flatMap(a => a.linhas.map(l => l.perfil)).filter(Boolean))];
-    const consultores = App.state.recursos.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
-    const valorFich = nome => (interp.perfis.find(p => OrcImportar._norm(p.nome) === OrcImportar._norm(nome)) || {}).valor_hora;
-    const mapa = () => { const m = {}; raiz.querySelectorAll('[data-imp-perfil]').forEach(s => { if (s.value) m[s.dataset.impPerfil] = consultores.find(r => r.id === s.value); }); return m; };
-    const construir = () => OrcImportar.construir(interp, {
-      propostaId: proposta.id, versao: OrcLogica.proximaVersao(this.d.resumos, proposta.id), titulo: raiz.querySelector('#orcImpTitulo').value.trim(),
-      validadeDias: par.validade_dias, aluguerPadrao: par.aluguer_saida, custoKmPadrao: par.custo_km, equipas: App.state.equipas, mapaPerfis: mapa(),
-      nomeFicheiro, criadoPor: Crm.meuRecursoId()
-    });
-    raiz.innerHTML = `
-      ${interp.meta && (interp.meta.cliente || interp.meta.projeto) ? `<p class="hint" style="margin:8px 0;">Folha de <b>${escapeHtml(interp.meta.cliente || '—')}</b> — ${escapeHtml(interp.meta.projeto || '—')}</p>` : ''}
-      <label>Título desta versão <input type="text" id="orcImpTitulo" value="${escapeAttr(interp.meta && interp.meta.projeto || '')}"></label>
-      <h4 class="crm-h">Áreas encontradas</h4><div id="orcImpAreas"></div>
-      ${perfis.length ? `<h4 class="crm-h">Perfis do ficheiro → consultores</h4>
-        <p class="hint" style="margin:0 0 4px;">Por omissão mantém-se o valor/hora do ficheiro. Escolhe um consultor para usar o preço de venda e de custo que tem nas Pessoas.</p>
-        <div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Perfil</th><th>Consultor</th></tr></thead><tbody>${perfis.map(p => `<tr><td>${escapeHtml(p)}</td><td><select data-imp-perfil="${escapeAttr(p)}"><option value="">Manter o valor do ficheiro${valorFich(p) !== undefined ? ` (${valorFich(p)} €/h)` : ''}</option>${consultores.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)} (${OrcLogica.n(r.precoVenda)} €/h)</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>` : ''}
-      ${interp.avisos.length ? `<ul class="orc-avisos">${interp.avisos.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>` : ''}
-      <div class="crm-acoes-form"><button type="button" class="btn btn-primary" id="orcImpCriar">Criar orçamento (rascunho)</button></div>`;
-    const resumo = () => {
-      const o = construir(), c = OrcLogica.calcOrcamento(o), alterado = Object.keys(mapa()).length > 0;
-      raiz.querySelector('#orcImpAreas').innerHTML = `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Área</th><th>Linhas</th><th>Preço final</th><th>No Excel</th></tr></thead><tbody>${c.areas.map((a, i) => {
-        const fich = interp.areas[i].totalFicheiro, dif = fich === null ? null : OrcLogica.arred(a.precoFinal - fich);
-        const nota = fich === null ? '<span class="hint">sem valor guardado</span>' : (alterado ? this.euroSimples(fich) : (Math.abs(dif) < 0.5 ? `✔ ${this.euroSimples(fich)}` : `<span class="crm-atrasada">⚠ ${this.euroSimples(fich)} (difere ${this.euroSimples(dif)})</span>`));
-        return `<tr><td>${escapeHtml(a.area.nome)}</td><td>${a.area.linhas.length}</td><td><b>${this.euroSimples(a.precoFinal)}</b></td><td>${nota}</td></tr>`;
-      }).join('')}<tr><td><b>Total</b></td><td></td><td><b>${this.euroSimples(c.total)}</b></td><td></td></tr></tbody></table></div>`;
-    };
-    resumo();
-    raiz.querySelectorAll('[data-imp-perfil]').forEach(s => s.addEventListener('change', resumo));
-    raiz.querySelector('#orcImpCriar').addEventListener('click', () => {
-      const o = construir();
-      this.mostrar(o, proposta, true);
-      App.toast('Rascunho criado a partir do Excel — revê e guarda.');
-    });
-  },
-  euroSimples(v) { return OrcLogica.euro(v); },
 
   // ============================ Proposta em Word (modelo DG015) ============================
   abrirWord() {
