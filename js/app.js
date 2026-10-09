@@ -140,6 +140,7 @@ const App = {
 
   init() {
     this.cacheEls();
+    this.instalarGuardaPreenchimentoAutomatico();
     this.mostrarVersaoApp();
     this.aplicarTema(this.lerPrefsUI().tema || 'claro');
     this.modoRegistoDia = this.lerPrefsUI().modoRegistoDia || 'pessoal';
@@ -9770,13 +9771,6 @@ const App = {
       aoSoltar(Math.round(alvo.getBoundingClientRect().width));
     });
   },
-  // Bloqueia gestores de password/preenchimento automático (RoboForm, LastPass, etc.) num campo
-  // de texto. Estas extensões escrevem o valor diretamente via JavaScript — autocomplete="off",
-  // "new-password" e até readonly não as trava, porque só bloqueiam o próprio browser, não uma
-  // extensão a mexer no DOM. A diferença fica no evento: uma tecla realmente premida por uma
-  // pessoa gera um evento "input" com isTrusted=true; uma extensão a escrever o valor por fora
-  // gera um (ou nenhum) evento com isTrusted=false. Guarda o valor a cada foco e repõe-no sempre
-  // que aparecer uma alteração não fidedigna.
   // Formata uma lista de datas ISO (já ordenada cronologicamente) como "13/07, 22/07 +3 dia(s)",
   // limitando a `limite` datas visíveis para o texto não crescer sem controlo num período longo.
   formatarDatasConflito(datasISO, limite) {
@@ -9798,12 +9792,82 @@ const App = {
     const resto = intervalos.length - visiveis.length;
     return escapeHtml(visiveis.join(', ') + (resto > 0 ? ` +${resto}` : ''));
   },
+  // Bloqueia gestores de password/preenchimento automático (RoboForm, LastPass, etc.) num campo
+  // de texto. Estas extensões escrevem o valor diretamente via JavaScript — autocomplete="off",
+  // "new-password" e até readonly não as trava, porque só bloqueiam o próprio browser, não uma
+  // extensão a mexer no DOM. A diferença fica no evento: uma tecla realmente premida por uma
+  // pessoa gera um evento "input" com isTrusted=true; uma extensão a escrever o valor por fora
+  // gera um (ou nenhum) evento com isTrusted=false. Guarda o valor a cada foco e repõe-no sempre
+  // que aparecer uma alteração não fidedigna.
+  // (Proteção por campo — ver instalarGuardaPreenchimentoAutomatico para a proteção global, que
+  // cobre TODOS os campos da app, incluindo os criados mais tarde.)
   bloquearPreenchimentoAutomatico(input) {
     let valorAntesDoFoco = input.value;
     input.addEventListener('focus', () => { valorAntesDoFoco = input.value; });
     input.addEventListener('input', (ev) => {
       if (!ev.isTrusted && input.value !== valorAntesDoFoco) input.value = valorAntesDoFoco;
     });
+  },
+  // ---------- Guarda global contra preenchimento automático ----------
+  // Extensões como o RoboForm escrevem nos campos da app por JavaScript e disparam eventos "input"/
+  // "change" com isTrusted=false — e os handlers da app gravavam o valor (nome trocado pelo email, horas
+  // e notas alteradas…). Aqui, em fase de CAPTURA no document (corre antes de qualquer handler da app),
+  // qualquer "input"/"change" não fidedigno num campo da app é cortado (nunca chega a quem grava) e o
+  // campo volta ao último valor escrito por uma pessoa. O formulário de login fica de fora de propósito
+  // (aí quer-se mesmo o gestor de passwords). Além disso, cada campo recebe os atributos que os gestores
+  // de passwords documentam para "ignorar este campo" — ajuda, mas não é a garantia: a garantia é o corte.
+  // As ações da própria app nunca disparam eventos nos campos (só alteram .value), por isso nada legítimo
+  // é cortado; testes automáticos que usem dispatchEvent têm de contar com isto.
+  instalarGuardaPreenchimentoAutomatico() {
+    if (this._guardaPreenchimento) return;
+    this._guardaPreenchimento = true;
+    const SEL = 'input, textarea, select';
+    const IGNORADOS = 'input[type=file], input[type=button], input[type=submit], input[type=reset], input[type=hidden], input[type=image]';
+    const valores = new WeakMap();
+    const eCampoDaApp = (el) => el instanceof Element && el.matches(SEL) && !el.matches(IGNORADOS) && !el.closest('#authGate, [data-permitir-preenchimento]');
+    const ler = (el) => (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+    const escrever = (el, v) => { if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!v; else el.value = v; };
+    const guardar = (el) => { if (eCampoDaApp(el)) valores.set(el, ler(el)); };
+    const marcar = (el) => {
+      if (!eCampoDaApp(el)) return;
+      if (!el.hasAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
+      el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', 'true');
+      el.setAttribute('data-bwignore', 'true'); el.setAttribute('data-form-type', 'other');
+      if (!valores.has(el)) guardar(el);
+    };
+    let avisoEm = 0;
+    const cortar = (ev) => {
+      const el = ev.target;
+      if (ev.isTrusted || !eCampoDaApp(el)) return;
+      ev.stopImmediatePropagation();
+      const antes = valores.has(el) ? valores.get(el) : ((el.type === 'checkbox' || el.type === 'radio') ? el.defaultChecked : (el.tagName === 'SELECT' ? undefined : el.defaultValue));
+      if (antes !== undefined) escrever(el, antes);
+      console.warn('Preenchimento automático bloqueado (um gestor de passwords/extensão tentou escrever num campo):', el);
+      if (Date.now() - avisoEm > 5000) { avisoEm = Date.now(); this.toast('Um gestor de passwords tentou preencher um campo — foi bloqueado e nada foi alterado.'); }
+    };
+    // Registar o valor "bom" (escrito por uma pessoa) para poder repô-lo.
+    const aprender = (ev) => { if (ev.isTrusted) guardar(ev.target); };
+    document.addEventListener('input', cortar, true);
+    document.addEventListener('change', cortar, true);
+    document.addEventListener('input', aprender, true);
+    document.addEventListener('change', aprender, true);
+    document.addEventListener('focusin', (ev) => guardar(ev.target), true);
+    document.addEventListener('pointerover', (ev) => { if (ev.target instanceof Element && !valores.has(ev.target)) guardar(ev.target); }, true);
+    // Campos novos (a app redesenha tabelas e modais a toda a hora): marcá-los e fotografar o valor inicial
+    // já com o .value definido pelo código da app (por isso logo a seguir).
+    const novos = new Set();
+    let agendado = false;
+    new MutationObserver((muts) => {
+      muts.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) novos.add(n); }));
+      if (agendado || !novos.size) return;
+      agendado = true;
+      setTimeout(() => {
+        agendado = false;
+        novos.forEach(n => { if (n.isConnected) { if (n.matches && n.matches(SEL)) marcar(n); n.querySelectorAll && n.querySelectorAll(SEL).forEach(marcar); } });
+        novos.clear();
+      }, 30);
+    }).observe(document.body, { childList: true, subtree: true });
+    document.querySelectorAll(SEL).forEach(marcar);
   },
   lerPrefsUI() {
     try { return JSON.parse(localStorage.getItem('gp_ui_prefs')) || {}; } catch (e) { return {}; }
