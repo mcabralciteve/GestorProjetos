@@ -887,9 +887,11 @@ const Crm = {
     const op = this.idx.op.get(opId);
     const raiz = this.corpo().querySelector('#opSecoes');
     if (!raiz || !op) return;
-    raiz.innerHTML = `<h4 class="crm-h">Propostas</h4><div id="opSecProp"></div>
+    const mostraProjeto = op.projeto_id || CrmLogica.categoriaDe(op, this.idx.etapa) === 'ganha';
+    raiz.innerHTML = `${mostraProjeto ? '<h4 class="crm-h">Projeto</h4><div id="opSecProj"></div>' : ''}<h4 class="crm-h">Propostas</h4><div id="opSecProp"></div>
       <h4 class="crm-h">Interações</h4><div id="opSecInt"></div>
       <h4 class="crm-h">Follow-ups</h4><div id="opSecTar"></div>`;
+    if (mostraProjeto) this.secProjetoDaOp(raiz.querySelector('#opSecProj'), opId);
     this.secPropostas(raiz.querySelector('#opSecProp'), opId);
     this.secInteracoes(raiz.querySelector('#opSecInt'), { opId, contaId: op.conta_id });
     this.secTarefas(raiz.querySelector('#opSecTar'), { opId, contaId: op.conta_id });
@@ -981,10 +983,12 @@ const Crm = {
     if (!raiz) return;
     raiz.innerHTML = `<h4 class="crm-h">Contactos</h4><div id="ctSecCont"></div>
       <h4 class="crm-h">Oportunidades</h4><div id="ctSecOp"></div>
+      <h4 class="crm-h">Projetos</h4><div id="ctSecProj"></div>
       <h4 class="crm-h">Interações</h4><div id="ctSecInt"></div>
       <h4 class="crm-h">Follow-ups</h4><div id="ctSecTar"></div>`;
     this.secContactos(raiz.querySelector('#ctSecCont'), contaId);
     this.secOportunidadesDaConta(raiz.querySelector('#ctSecOp'), contaId);
+    this.secProjetosDaConta(raiz.querySelector('#ctSecProj'), contaId);
     this.secInteracoes(raiz.querySelector('#ctSecInt'), { contaId });
     this.secTarefas(raiz.querySelector('#ctSecTar'), { contaId });
   },
@@ -1217,7 +1221,7 @@ const Crm = {
       ${kpi(abertas.n, 'em curso')}${kpi(this.euro(abertas.valor), 'valor em curso')}${kpi(this.euro(abertas.ponderado), 'valor ponderado')}
       ${kpi(`${fech.ganhas.n} · ${this.euro(fech.ganhas.valor)}`, 'ganhas, ' + rotuloPer)}${kpi(`${fech.perdidas.n} · ${this.euro(fech.perdidas.valor)}`, 'perdidas, ' + rotuloPer)}
       ${kpi(fech.conversao === null ? '—' : Math.round(fech.conversao * 100) + '%', 'conversão, ' + rotuloPer)}
-      ${kpi(risco.length, 'a precisar de atenção')}</div>`;
+      ${kpi(risco.length, 'a precisar de atenção')}${kpi(L.ganhasSemProjeto(ops, this.idx.etapa).length, 'ganhas sem projeto')}</div>`;
     const barra = `<div class="filters crm-barra">
       <label class="zoom-label">Tipo <select data-crm-filtro="dash.tipoId"><option value="">Todos</option>${this.opcoes(tipos, f.tipoId, t => t.nome)}</select></label>
       <label class="zoom-label">Período (ganhas/perdidas) <select data-crm-filtro="dash.periodo">${[['ano', 'Este ano'], ['12m', 'Últimos 12 meses'], ['trimestre', 'Este trimestre'], ['todo', 'Desde sempre']].map(([k, v]) => `<option value="${k}"${f.periodo === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -1258,6 +1262,8 @@ const Crm = {
         <section class="crm-painel"><h3>Previsão de fecho <span class="hint">(em curso, por mês previsto)</span></h3>${this.htmlBarras(linhasPrev, 'Nada em curso.')}</section>
         <section class="crm-painel"><h3>Ganhas e perdidas por mês <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(linhasFech, 'Ainda sem oportunidades fechadas neste período.')}</section>
         <section class="crm-painel"><h3>Motivos de perda <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(motivos, 'Sem perdas neste período.')}</section>
+        <section class="crm-painel"><h3>Ganhas sem projeto <span class="hint">(falta passar à execução)</span></h3>${this.htmlGanhasSemProjeto(ops)}</section>
+        <section class="crm-painel"><h3>Do ganho à entrega <span class="hint">(faturado vs vendido, ganhas ${rotuloPer})</span></h3>${(() => { const e = this.linhasEntrega(ops, per.de, per.ate); return this.htmlBarras(e.linhas, 'Sem projetos ligados a oportunidades ganhas neste período.') + (e.semPermissao ? `<p class="hint">${e.semPermissao} projeto(s) sem permissão para ver os números.</p>` : ''); })()}</section>
         <section class="crm-painel crm-painel-largo"><h3>A precisar de atenção</h3>${listaRisco}</section>
       </div>`;
   },
@@ -1289,6 +1295,115 @@ const Crm = {
     App.irParaAba(tipo === 'tarefa' ? 'crmFollowups' : 'crmOportunidades');
     try { await this.carregar(); } catch (e) { return; }
     if (tipo === 'tarefa') this.abrirTarefa(id); else this.abrirOportunidade(id);
+  },
+
+  // ============================ Fase 3: cruzamento com projetos ============================
+  // Resumo de um projeto para o CRM. As horas e a faturação só se mostram a quem já as vê na app
+  // (Administrador, gestor, consultor ou diretor do departamento do projeto — App.estouEnvolvidoEm): ter acesso
+  // ao Comercial não dá acesso aos números internos dos projetos. Sem margem/custos, de propósito.
+  resumoProjeto(p) {
+    if (!App.estouEnvolvidoEm(p.id)) return { projeto: p, visivel: false };
+    const orc = App.avaliarOrcamentoProjeto(p), prazo = App.avaliarPrazoProjeto(p);
+    return {
+      projeto: p, visivel: true, valorVendido: p.valorVendido || 0, horasVendidas: p.horasVendidas || 0, horasReais: orc.totalReal,
+      eac: orc.eac, saldo: orc.saldoDisponivel, nivelHoras: orc.nivel, motivoHoras: orc.motivo,
+      faturado: App.totalFaturadoProjeto(p), sobreFaturado: App.projetoSobreFaturado(p), prazo
+    };
+  },
+  rotuloProjeto(p) { return `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`; },
+  horasFmt(h) { return `${(Math.round((Number(h) || 0) * 10) / 10).toLocaleString('pt-PT')}h`; },
+  htmlNumerosProjeto(r) {
+    if (!r.visivel) return '<p class="hint">Sem permissão para ver as horas e a faturação deste projeto.</p>';
+    const kpi = (n, t, cor) => `<div class="crm-kpi"><b${cor ? ` style="color:${cor}"` : ''}>${n}</b><span>${t}</span></div>`;
+    const cor = { verde: 'var(--verde)', amarelo: 'var(--amarelo)', vermelho: 'var(--vermelho)' };
+    const horas = r.horasVendidas ? `${this.horasFmt(r.horasReais)} de ${this.horasFmt(r.horasVendidas)} (${Math.round(r.horasReais / r.horasVendidas * 100)}%)` : this.horasFmt(r.horasReais);
+    const fat = r.valorVendido ? `${this.euro(r.faturado)} de ${this.euro(r.valorVendido)} (${Math.round(r.faturado / r.valorVendido * 100)}%)` : this.euro(r.faturado);
+    return `<div class="crm-kpis">
+      ${kpi(horas, 'horas reais' + (r.horasVendidas ? ' / vendidas' : ''), cor[r.nivelHoras])}
+      ${r.horasVendidas ? kpi(this.horasFmt(r.eac), 'reprevisão (EAC)') : ''}
+      ${kpi(fat, 'faturado' + (r.valorVendido ? ' / vendido' : ''), r.sobreFaturado ? 'var(--vermelho)' : '')}
+      ${kpi(Math.round(r.prazo.progresso || 0) + '%', 'concluído', cor[r.prazo.nivel])}
+    </div>${r.motivoHoras && r.nivelHoras !== 'verde' && r.nivelHoras !== 'neutro' ? `<p class="hint">Horas: ${escapeHtml(r.motivoHoras)}</p>` : ''}${r.prazo.motivo && r.prazo.nivel !== 'verde' && r.prazo.nivel !== 'neutro' ? `<p class="hint">Prazo: ${escapeHtml(r.prazo.motivo)}</p>` : ''}`;
+  },
+  abrirProjetoNoGantt(id) { App.fecharModal(); App.abrirProjetoNoGantt(id); },
+
+  // Ficha da oportunidade: o projeto ligado (ou a forma de o ligar, se já foi ganha).
+  secProjetoDaOp(raiz, opId) {
+    const op = this.idx.op.get(opId);
+    if (!op) return;
+    const p = op.projeto_id && App.state.projetos[op.projeto_id];
+    if (p) {
+      const r = this.resumoProjeto(p);
+      raiz.innerHTML = `<div class="crm-item"><div class="crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.rotuloProjeto(p))}</b></span><span class="crm-badge">${escapeHtml(p.estado || '')}</span></div>
+        <p class="hint" style="margin:2px 0 6px;">${this.data(p.dataInicio)} a ${this.data(p.dataFim)}${p.gestorId ? ` · Gestor: ${escapeHtml(App.nomeUtilizador(p.gestorId))}` : ''}</p>${this.htmlNumerosProjeto(r)}</div>
+        ${App.possoVerProjeto(p.id) ? '<button type="button" class="btn btn-sm" data-sec-acao="abrir">Abrir no Gantt</button>' : ''}
+        <button type="button" class="btn btn-sm btn-danger" data-sec-acao="desligar" title="Só desfaz a ligação — o projeto não é apagado">Desligar</button>`;
+      this.ligarAcoes(raiz, {
+        abrir: () => this.abrirProjetoNoGantt(p.id),
+        desligar: async () => {
+          if (!confirm('Desligar este projeto da oportunidade? O projeto não é apagado.')) return;
+          try { await this.gravar('oportunidades', Object.assign({}, op, { projeto_id: null })); this.renderAtual(); this.secProjetoDaOp(raiz, opId); } catch (err) { this.avisoErro(err); }
+        }
+      });
+      return;
+    }
+    const conta = this.idx.conta.get(op.conta_id);
+    const s = CrmLogica.sugerirProjetos(op, conta, this.d.propostas, this.d.oportunidades, Object.values(App.state.projetos));
+    const ordenar = (l) => l.sort((a, b) => this.rotuloProjeto(a.projeto).localeCompare(this.rotuloProjeto(b.projeto), 'pt'));
+    const opt = (x) => `<option value="${escapeAttr(x.projeto.id)}">${escapeHtml(this.rotuloProjeto(x.projeto))}${x.motivo ? ` — ${x.motivo}` : ''}</option>`;
+    raiz.innerHTML = `<p class="hint">Esta oportunidade ganha ainda não tem projeto.${this.souAdmin() ? ' Cria-o no botão "Criar projeto" acima, ou liga um que já exista.' : ' O Administrador cria o projeto; se já existe, liga-o aqui.'}</p>
+      ${s.sugeridos.length + s.outros.length ? `<div class="crm-inline-form"><select id="opLigarProj"><option value="">Escolhe um projeto existente…</option>${ordenar(s.sugeridos).map(opt).join('')}${s.sugeridos.length && s.outros.length ? '<option disabled>──────────</option>' : ''}${ordenar(s.outros).map(opt).join('')}</select>
+        <button type="button" class="btn btn-sm" data-sec-acao="ligar">Ligar</button></div>` : '<p class="hint">Não há projetos livres para ligar.</p>'}`;
+    this.ligarAcoes(raiz, {
+      ligar: async () => {
+        const id = raiz.querySelector('#opLigarProj').value;
+        if (!id) { App.toast('Escolhe primeiro o projeto.'); return; }
+        try { await this.gravar('oportunidades', Object.assign({}, op, { projeto_id: id })); this.renderAtual(); this.secProjetoDaOp(raiz, opId); } catch (err) { this.avisoErro(err); }
+      }
+    });
+  },
+
+  // Ficha da conta: todos os projetos desta conta, com totais.
+  secProjetosDaConta(raiz, contaId) {
+    const conta = this.idx.conta.get(contaId);
+    if (!conta) return;
+    const lista = CrmLogica.projetosDaConta(conta, this.d.oportunidades, Object.values(App.state.projetos));
+    if (!lista.length) { raiz.innerHTML = this.vazioHtml('Sem projetos associados (por oportunidade ganha, ou pelo nome do cliente nos projetos).'); return; }
+    const resumos = lista.map(x => Object.assign(this.resumoProjeto(x.projeto), { origem: x.origem, op: x.op }));
+    const t = CrmLogica.totaisProjetos(resumos);
+    const semPerm = t.n - t.nVisiveis;
+    const totais = `<p class="hint" style="margin:0 0 6px;"><b>${t.n} projeto(s)</b>${t.nVisiveis ? ` · vendido ${this.euro(t.valorVendido)} · faturado ${this.euro(t.faturado)} · horas ${this.horasFmt(t.horasReais)}${t.horasVendidas ? ` de ${this.horasFmt(t.horasVendidas)}` : ''}` : ''}${semPerm ? ` · ${semPerm} sem permissão para ver os números` : ''}</p>`;
+    raiz.innerHTML = `${totais}<div class="crm-lista">${resumos.map(r => {
+      const nums = r.visivel ? `${this.euro(r.faturado)} / ${this.euro(r.valorVendido)} · ${this.horasFmt(r.horasReais)}${r.horasVendidas ? ' / ' + this.horasFmt(r.horasVendidas) : ''}` : 'números reservados';
+      return `<div class="crm-item crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.rotuloProjeto(r.projeto))}</b> · ${escapeHtml(r.projeto.estado || '')}
+        ${r.origem === 'oportunidade' ? `<span class="crm-badge" title="Ligado à oportunidade">via ${escapeHtml(r.op.titulo)}</span>` : '<span class="crm-badge" title="Mesmo cliente, sem oportunidade ligada">pelo cliente</span>'}</span>
+        <span class="hint">${nums}</span>${App.possoVerProjeto(r.projeto.id) ? `<button type="button" class="btn btn-sm" data-sec-acao="abrir" data-id="${escapeAttr(r.projeto.id)}">Abrir</button>` : ''}</div>`;
+    }).join('')}</div>`;
+    this.ligarAcoes(raiz, { abrir: b => this.abrirProjetoNoGantt(b.dataset.id) });
+  },
+
+  // Dashboard: ganhas ainda sem projeto, e a entrega (faturado vs vendido) das ganhas já com projeto.
+  htmlGanhasSemProjeto(ops) {
+    const lista = CrmLogica.ganhasSemProjeto(ops, this.idx.etapa);
+    if (!lista.length) return this.vazioHtml('Todas as oportunidades ganhas têm projeto. 👌');
+    return `<div class="crm-lista">${lista.slice(0, 10).map(o => {
+      const c = this.idx.conta.get(o.conta_id);
+      return `<div class="crm-item crm-item-linha crm-linha" data-crm-acao="abrir-op" data-id="${escapeAttr(o.id)}">
+        <span class="crm-item-texto"><b>${escapeHtml(o.titulo)}</b> · ${escapeHtml(c ? c.nome : '—')}</span>
+        <span class="hint">${this.euro(o.valor_estimado)}${o.data_fecho ? ' · ganha em ' + this.data(o.data_fecho) : ''}</span></div>`;
+    }).join('')}${lista.length > 10 ? `<p class="hint">+ ${lista.length - 10} outras.</p>` : ''}</div>`;
+  },
+  linhasEntrega(ops, de, ate) {
+    const ganhas = ops.filter(o => CrmLogica.categoriaDe(o, this.idx.etapa) === 'ganha' && o.projeto_id && App.state.projetos[o.projeto_id] && CrmLogica._dentro(o.data_fecho, de, ate));
+    const resumos = ganhas.map(o => this.resumoProjeto(App.state.projetos[o.projeto_id]));
+    const visiveis = resumos.filter(r => r.visivel).sort((a, b) => b.valorVendido - a.valorVendido).slice(0, 10);
+    return {
+      linhas: visiveis.map(r => ({
+        rotulo: `${r.projeto.idInterno || ''} ${r.projeto.nome}`.trim(), valor: r.faturado, valor2: r.valorVendido,
+        texto: `${this.euro(r.faturado)} de ${this.euro(r.valorVendido)} faturado · ${this.horasFmt(r.horasReais)}${r.horasVendidas ? ' de ' + this.horasFmt(r.horasVendidas) : ''}`
+      })),
+      semPermissao: resumos.length - resumos.filter(r => r.visivel).length
+    };
   },
 
   // ============================ Fase 2: gravar em lote ============================

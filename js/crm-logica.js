@@ -653,6 +653,62 @@ const CrmLogica = {
       .sort((a, b) => a[0].nome.localeCompare(b[0].nome, 'pt'));
   },
 
+  // ============================ Fase 3: cruzamento com projetos ============================
+  // Oportunidades ganhas que ainda não têm projeto — o que falta passar à execução. Mais recentes primeiro.
+  ganhasSemProjeto(ops, etapaPorId) {
+    return ops.filter(o => this.categoriaDe(o, etapaPorId) === 'ganha' && !o.projeto_id)
+      .sort((a, b) => String(b.data_fecho || '').localeCompare(String(a.data_fecho || '')));
+  },
+  // Projetos de uma conta: os ligados por oportunidade (projeto_id) e, a seguir, os que têm o mesmo cliente
+  // (texto livre do projeto, comparado sem maiúsculas/pontuação/"Lda"). Sem repetidos; mais recentes primeiro.
+  projetosDaConta(conta, ops, projetos) {
+    const porId = new Map(projetos.map(p => [p.id, p]));
+    const vistos = new Set();
+    const lista = [];
+    ops.filter(o => o.conta_id === conta.id && o.projeto_id && porId.has(o.projeto_id)).forEach(o => {
+      if (vistos.has(o.projeto_id)) return;
+      vistos.add(o.projeto_id);
+      lista.push({ projeto: porId.get(o.projeto_id), origem: 'oportunidade', op: o });
+    });
+    const nome = this.normalizarNome(conta.nome);
+    if (nome) {
+      projetos.forEach(p => {
+        if (vistos.has(p.id) || this.normalizarNome(p.cliente) !== nome) return;
+        vistos.add(p.id);
+        lista.push({ projeto: p, origem: 'cliente', op: null });
+      });
+    }
+    return lista.sort((a, b) => String(b.projeto.dataInicio || '').localeCompare(String(a.projeto.dataInicio || '')));
+  },
+  // Projetos que se podem ligar a uma oportunidade ganha: nunca os que já estão ligados a OUTRA oportunidade.
+  // Vêm primeiro os que "batem" (referência GIAF da proposta = ID do projeto, ou mesmo cliente da conta).
+  sugerirProjetos(op, conta, propostas, ops, projetos) {
+    const ocupados = new Set(ops.filter(o => o.id !== op.id && o.projeto_id).map(o => o.projeto_id));
+    const refs = new Set(propostas.filter(p => p.oportunidade_id === op.id).map(p => this.normalizarRefGiaf(p.referencia_giaf)).filter(Boolean));
+    const nomeConta = conta ? this.normalizarNome(conta.nome) : '';
+    const sugeridos = [], outros = [];
+    projetos.filter(p => !ocupados.has(p.id)).forEach(p => {
+      const porRef = refs.size && refs.has(this.normalizarRefGiaf(p.idInterno));
+      const porCliente = nomeConta && this.normalizarNome(p.cliente) === nomeConta;
+      if (porRef) sugeridos.push({ projeto: p, motivo: 'mesma referência GIAF' });
+      else if (porCliente) sugeridos.push({ projeto: p, motivo: 'mesmo cliente' });
+      else outros.push({ projeto: p, motivo: '' });
+    });
+    return { sugeridos, outros };
+  },
+  // Soma de projetos já resumidos ({ visivel, valorVendido, horasVendidas, horasReais, faturado }). Os que a
+  // pessoa não tem permissão para ver em detalhe contam só como projetos (n), nunca nos totais.
+  totaisProjetos(resumos) {
+    const t = { n: resumos.length, nVisiveis: 0, valorVendido: 0, horasVendidas: 0, horasReais: 0, faturado: 0 };
+    resumos.forEach(r => {
+      if (!r.visivel) return;
+      t.nVisiveis++;
+      t.valorVendido += Number(r.valorVendido) || 0; t.horasVendidas += Number(r.horasVendidas) || 0;
+      t.horasReais += Number(r.horasReais) || 0; t.faturado += Number(r.faturado) || 0;
+    });
+    return t;
+  },
+
   // ---------- Formatação ----------
   euro(v) { return (Number(v) || 0).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }); },
   data(iso) { return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'; }
