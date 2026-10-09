@@ -8550,6 +8550,7 @@ const App = {
     this.els.modalTitulo.textContent = titulo;
     this.els.modalCorpo.innerHTML = corpoHtml;
     this.els.modal.classList.toggle('modal-largo', !!(opts && opts.largo));
+    this.els.modal.classList.remove('modal-orc');
     this.els.modal.style.transform = ''; // recomeça centrado, mesmo que o anterior tenha sido arrastado
     this.els.modalBackdrop.classList.add('aberto');
   },

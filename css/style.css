@@ -883,3 +883,26 @@ td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(
 .crm-problemas summary{cursor:pointer;color:var(--cinza-700);font-weight:600;}
 .crm-problemas ul{margin:4px 0 0 18px;padding:0;color:var(--cinza-500);}
 @media (max-width:760px){.crm-grelha-dash{grid-template-columns:1fr;}.crm-barra-linha{grid-template-columns:90px 1fr;}.crm-barra-texto{grid-column:1 / -1;text-align:left;}}
+
+/* ---------- Orçamentação ---------- */
+.modal.modal-orc{max-width:min(1560px, 98vw);width:min(1560px, 98vw);}
+.orc-corpo{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:14px;align-items:start;}
+.orc-lateral{position:sticky;top:0;display:flex;flex-direction:column;gap:10px;}
+.orc-res{background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:var(--radius);padding:10px 12px;}
+.orc-res-geral{background:var(--branco,#fff);border-color:var(--azul);}
+.orc-res-linha{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:2px 0;}
+.orc-res-total{font-size:14px;border-top:1px solid var(--cinza-300,#cbd5e1);margin-top:4px;padding-top:6px;}
+.orc-res-sub{color:var(--cinza-700);font-size:11.5px;}
+.orc-abas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0;}
+.orc-tab input.orc-num,.orc-tab input.orc-txt,.orc-tab select{padding:3px 5px;font-size:12px;}
+.orc-tab input.orc-txt{min-width:170px;width:100%;}
+.orc-tab select{max-width:140px;}
+.orc-tab td,.orc-tab th{white-space:nowrap;}
+.orc-tab td:first-child{white-space:normal;}
+.orc-avisos{margin:0;padding-left:18px;font-size:12px;color:var(--cinza-700);}
+.orc-botoes{flex-wrap:wrap;margin-top:12px;}
+.orc-estado-rascunho{background:var(--cinza-200);color:var(--cinza-700);}
+.orc-estado-enviado{background:#dbeafe;color:#1e40af;}
+.orc-estado-validado{background:#dcfce7;color:#166534;}
+.orc-estado-rejeitado{background:#fee2e2;color:#991b1b;}
+@media (max-width: 1000px){.orc-corpo{grid-template-columns:1fr;}.orc-lateral{position:static;}}

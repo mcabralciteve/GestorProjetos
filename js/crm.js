@@ -53,6 +53,7 @@ const Crm = {
     this.carregado = false;
     this.erroCarga = null;
     this.followupsAtrasados = 0;
+    if (typeof Orc !== 'undefined') Orc.limpar();
   },
   // Os pedidos do Supabase devolvem no máximo 1000 linhas — lê-se por páginas até acabar.
   async _lerTudo(tabela) {
@@ -734,8 +735,9 @@ const Crm = {
     const p = id ? this.idx.proposta.get(id) : this.novaProposta(opId);
     if (id && !p) return;
     if (!id && !this.d.oportunidades.length) { App.toast('Cria primeiro uma oportunidade.'); return; }
-    this.abrir(id ? 'Proposta' : 'Nova proposta', this.htmlFormProposta(p, !!opId) + this.botoesForm(!!id), false);
+    this.abrir(id ? 'Proposta' : 'Nova proposta', this.htmlFormProposta(p, !!opId) + this.botoesForm(!!id) + (id ? '<h4 class="crm-h">Orçamentos</h4><div id="propOrc"></div>' : ''), false);
     this.ligarFormProposta(this.corpo(), p, () => App.fecharModal());
+    if (id && typeof Orc !== 'undefined') Orc.secOrcamentos(this.corpo().querySelector('#propOrc'), p);
   },
   htmlTabelaPropostas(lista, comOp) {
     if (!lista.length) return '';
@@ -1199,7 +1201,8 @@ const Crm = {
           <button type="button" class="btn btn-sm" data-crm-acao="funil-novo" data-chave="motivos" data-tipo="${escapeAttr(t.id)}">+ Motivo de perda</button>
         </section>`;
       }).join('')}
-      <button type="button" class="btn" data-crm-acao="funil-novo-tipo" style="margin-top:12px;">+ Novo tipo de oportunidade</button>`;
+      <button type="button" class="btn" data-crm-acao="funil-novo-tipo" style="margin-top:12px;">+ Novo tipo de oportunidade</button><div id="orcParametros"></div>`;
+    if (typeof Orc !== 'undefined') Orc.renderParametros(el.querySelector('#orcParametros'));
     if (!el._funilLigado) {
       el._funilLigado = true;
       el.addEventListener('change', ev => { const c = ev.target.closest('[data-funil]'); if (c) this.alterarFunil(c); });
