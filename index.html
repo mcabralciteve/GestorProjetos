@@ -460,12 +460,12 @@
             <th data-col="sessao" data-sort="sessao" style="width:130px">Sessão<span class="col-resizer"></span></th>
             <th data-col="tarefa" data-sort="tarefa">Tarefa<span class="col-resizer"></span></th>
             <th data-col="responsavel" data-sort="responsavel" style="width:140px">Responsável<span class="col-resizer"></span></th>
-            <th data-col="horas" style="width:110px">Horas (Prev./Real)<span class="col-resizer"></span></th>
+            <th data-col="horas" data-sort="horas" style="width:110px">Horas (Prev./Real)<span class="col-resizer"></span></th>
             <th data-col="dataPrevista" data-sort="dataPrevista" style="width:120px">Data Prevista<span class="col-resizer"></span></th>
             <th data-col="dataReal" data-sort="dataReal" style="width:120px">Data Real<span class="col-resizer"></span></th>
             <th data-col="estado" data-sort="estado" style="width:110px">Estado<span class="col-resizer"></span></th>
             <th data-col="notas" data-sort="notas">Notas<span class="col-resizer"></span></th>
-            <th data-col="criadoPor" style="width:120px">Criado por<span class="col-resizer"></span></th>
+            <th data-col="criadoPor" data-sort="criadoPor" style="width:120px">Criado por<span class="col-resizer"></span></th>
             <th></th>
           </tr>
         </thead>
@@ -495,7 +495,7 @@
             <th data-col="precoVenda" data-sort="precoVenda">Preço venda (€/h)<span class="col-resizer"></span></th>
             <th data-col="margem" data-sort="margem">Margem bruta<span class="col-resizer"></span></th>
             <th data-col="acesso" data-sort="acesso">Acesso<span class="col-resizer"></span></th>
-            <th data-col="piloto" title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições">Piloto<span class="col-resizer"></span></th>
+            <th data-col="piloto" data-sort="piloto" title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições">Piloto<span class="col-resizer"></span></th>
             <th></th>
           </tr>
         </thead>
@@ -1157,12 +1157,12 @@
       <table class="tabela-crud" id="tabelaReservasViatura">
         <thead>
           <tr>
-            <th>Data do pedido</th>
-            <th>Requisitante</th>
-            <th>Projeto / Atividade</th>
-            <th>Início</th>
-            <th>Fim</th>
-            <th>Justificação</th>
+            <th data-sort="dataPedido">Data do pedido</th>
+            <th data-sort="requisitante">Requisitante</th>
+            <th data-sort="projeto">Projeto / Atividade</th>
+            <th data-sort="inicio">Início</th>
+            <th data-sort="fim">Fim</th>
+            <th data-sort="justificacao">Justificação</th>
             <th></th>
           </tr>
         </thead>
@@ -1205,7 +1205,7 @@
 <script src="js/analise-horas.js?v=20260928c"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009b"></script>
-<script src="js/crm.js?v=20261009b"></script>
-<script src="js/app.js?v=20261009a"></script>
+<script src="js/crm.js?v=20261009c"></script>
+<script src="js/app.js?v=20261009b"></script>
 </body>
 </html>

@@ -4382,6 +4382,7 @@ const App = {
         case 'precoVenda': return r.precoVenda || 0;
         case 'margem': return r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda) : 0;
         case 'acesso': return (this.state.utilizadores.find(u => u.recursoId === r.id) || {}).papel || '';
+        case 'piloto': return r.pilotoLembretes ? 1 : 0;
         default: return r.nome.toLowerCase();
       }
     });
@@ -7127,9 +7128,17 @@ const App = {
     const e = this.els;
     if (!e.corpoTabelaReservasViatura) return;
     const admin = this.souAdmin();
-    const lista = this.state.reservasViatura
-      .filter(r => this.possoVerReservaViatura(r))
-      .sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+    const lista = this.aplicarOrdenacaoTabela('tabelaReservasViatura', this.state.reservasViatura.filter(r => this.possoVerReservaViatura(r)), (r, campo) => {
+      switch (campo) {
+        case 'dataPedido': return r.dataPedido || '';
+        case 'requisitante': return (r.requisitanteNome || '').toLowerCase();
+        case 'projeto': return (r.projetoNome || '').toLowerCase();
+        case 'inicio': return `${r.dataInicio || ''} ${r.horaInicio || ''}`;
+        case 'fim': return `${r.dataFim || ''} ${r.horaFim || ''}`;
+        case 'justificacao': return (r.justificacao || '').toLowerCase();
+        default: return r.criadoEm || '';
+      }
+    });
     e.corpoTabelaReservasViatura.innerHTML = '';
     if (!lista.length) {
       e.corpoTabelaReservasViatura.innerHTML = `<tr class="empty-row"><td colspan="7" style="text-align:center;color:var(--cinza-500);padding:20px">Ainda não há pedidos de reserva de viatura.</td></tr>`;
@@ -7655,6 +7664,7 @@ const App = {
         case 'estado': return pp.estado || '';
         case 'notas': return (pp.notas || '').toLowerCase();
         case 'criadoPor': return ((this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '').toLowerCase();
+        case 'horas': { const t = p.tarefas.find(x => x.id === pp.tarefaId); return t && pp.responsavelId ? this.horasAlocadas(t, pp.responsavelId) : -1; }
         default: return pp.fechado ? 1 : 0;
       }
     });
@@ -9611,6 +9621,7 @@ const App = {
     this.tornarColunasRedimensionaveis('tabelaEquipas', 'colunasEquipas');
     this.ligarOrdenacaoTabela('tabelaEquipas', { campo: 'nome', dir: 'asc' }, () => this.renderTabelaEquipas());
     this.tornarColunasRedimensionaveis('tabelaFeriados', 'colunasFeriados');
+    this.ligarOrdenacaoTabela('tabelaReservasViatura', { campo: 'criado', dir: 'desc' }, () => this.renderTabelaReservasViatura());
     this.ligarOrdenacaoTabela('tabelaFeriados', { campo: 'data', dir: 'asc' }, () => this.renderTabelaFeriados());
     this.tornarColunasRedimensionaveis('tabelaAusencias', 'colunasAusencias');
     // Por omissão ordena por Estado (pendentes primeiro — são as que precisam de ação); clicar

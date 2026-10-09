@@ -17,12 +17,14 @@ const Crm = {
   idx: {},
   carregado: false,
   followupsAtrasados: 0,
+  // Ordenação das listas (clique no cabeçalho da coluna): { k: coluna, dir: 'asc'|'desc' } por lista.
+  ord: { ops: { k: 'fecho', dir: 'asc' }, contas: { k: 'nome', dir: 'asc' }, contactos: { k: 'nome', dir: 'asc' }, propostas: { k: 'envio', dir: 'desc' } },
   filtros: {
     op: { tipoId: '', vista: 'quadro', resp: 'todos', estado: 'abertas', texto: '' },
     contas: { texto: '', estado: '', resp: '' },
     contactos: { texto: '' },
     propostas: { texto: '', estado: '' },
-    tarefas: { quem: 'minhas', estado: 'pendentes' },
+    tarefas: { quem: 'minhas', estado: 'pendentes', ordem: 'prazo', dir: 'asc' },
     dash: { tipoId: '', periodo: 'ano', resp: 'todos' }
   },
   ABAS: {
@@ -269,10 +271,34 @@ const Crm = {
       if (opId) this.moverEtapa(opId, col.dataset.etapaId);
     });
   },
+  // ---------- Ordenação por coluna ----------
+  // Cabeçalho clicável: 1.º clique ordena ascendente, 2.º descendente. Vazios ficam sempre no fim.
+  th(chave, k, rotulo) {
+    const o = this.ord[chave];
+    return `<th data-sort="${k}" data-crm-acao="ordenar" data-chave="${chave}"${o.k === k ? ` class="ord-${o.dir}"` : ''}>${rotulo}</th>`;
+  },
+  ordenar(chave, lista, valores) {
+    const o = this.ord[chave], f = valores[o.k];
+    if (!f) return lista;
+    const mult = o.dir === 'desc' ? -1 : 1;
+    const vazio = v => v === null || v === undefined || v === '';
+    return lista.slice().sort((a, b) => {
+      const va = f(a), vb = f(b);
+      if (vazio(va) || vazio(vb)) return vazio(va) && vazio(vb) ? 0 : (vazio(va) ? 1 : -1);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
+      return String(va).localeCompare(String(vb), 'pt', { numeric: true, sensitivity: 'base' }) * mult;
+    });
+  },
   // Despacho de todos os botões [data-crm-acao] dos painéis.
   acao(nome, el) {
     const id = el.dataset.id;
     const mapa = {
+      'ordenar': () => {
+        const o = this.ord[el.dataset.chave], k = el.dataset.sort;
+        if (!o) return;
+        if (o.k === k) o.dir = o.dir === 'asc' ? 'desc' : 'asc'; else { o.k = k; o.dir = 'asc'; }
+        this.renderAtual();
+      },
       'nova-op': () => this.abrirOportunidade(null, el.dataset.conta || null),
       'abrir-op': () => this.abrirOportunidade(id),
       'nova-conta': () => this.abrirConta(null),
@@ -378,10 +404,16 @@ const Crm = {
     }).join('')}</div>`;
   },
   htmlListaOps() {
-    const ops = this.opsFiltradas().sort((a, b) => String(a.data_prevista_fecho || '9999').localeCompare(String(b.data_prevista_fecho || '9999')));
+    const nomeConta = o => (this.idx.conta.get(o.conta_id) || {}).nome || '';
+    const ops = this.ordenar('ops', this.opsFiltradas(), {
+      titulo: o => o.titulo, conta: nomeConta, tipo: o => (this.idx.tipo.get(o.tipo_id) || {}).nome || '',
+      etapa: o => { const e = this.idx.etapa.get(o.etapa_id), t = this.idx.tipo.get(o.tipo_id); return e ? ((t ? t.ordem || 0 : 0) * 1000 + (e.ordem || 0)) : null; },
+      valor: o => Number(o.valor_estimado) || 0, prob: o => CrmLogica.probabilidadeDe(o, this.idx.etapa), ponderado: o => CrmLogica.valorPonderado(o, this.idx.etapa),
+      fecho: o => o.data_prevista_fecho || '', resp: o => o.responsavel_id ? this.recursoNome(o.responsavel_id) : ''
+    });
     if (!ops.length) return this.vazioHtml('Nenhuma oportunidade com estes filtros.');
     return `<div class="table-scroll"><table class="tabela-crud"><thead><tr>
-      <th>Título</th><th>Conta</th><th>Tipo</th><th>Etapa</th><th>Valor</th><th>Prob.</th><th>Ponderado</th><th>Fecho previsto</th><th>Responsável</th></tr></thead><tbody>
+      ${this.th('ops', 'titulo', 'Título')}${this.th('ops', 'conta', 'Conta')}${this.th('ops', 'tipo', 'Tipo')}${this.th('ops', 'etapa', 'Etapa')}${this.th('ops', 'valor', 'Valor')}${this.th('ops', 'prob', 'Prob.')}${this.th('ops', 'ponderado', 'Ponderado')}${this.th('ops', 'fecho', 'Fecho previsto')}${this.th('ops', 'resp', 'Responsável')}</tr></thead><tbody>
       ${ops.map(op => {
         const conta = this.idx.conta.get(op.conta_id), etapa = this.idx.etapa.get(op.etapa_id), tipo = this.idx.tipo.get(op.tipo_id);
         return `<tr class="crm-linha" data-crm-acao="abrir-op" data-id="${escapeAttr(op.id)}">
@@ -707,8 +739,10 @@ const Crm = {
   },
   htmlTabelaPropostas(lista, comOp) {
     if (!lista.length) return '';
+    // Só a tabela do separador Propostas (comOp) se ordena por coluna; a da ficha da oportunidade é curta.
+    const th = (k, rotulo) => comOp ? this.th('propostas', k, rotulo) : `<th>${rotulo}</th>`;
     return `<div class="table-scroll" style="max-height:none;"><table class="tabela-crud"><thead><tr>
-      ${comOp ? '<th>Oportunidade</th><th>Conta</th>' : ''}<th>Ref. GIAF</th><th>v</th><th>Valor</th><th>Estado</th><th>Envio</th><th>Validade</th><th>Documento</th><th></th></tr></thead><tbody>
+      ${comOp ? th('oportunidade', 'Oportunidade') + th('conta', 'Conta') : ''}${th('ref', 'Ref. GIAF')}${th('versao', 'v')}${th('valor', 'Valor')}${th('estado', 'Estado')}${th('envio', 'Envio')}${th('validade', 'Validade')}${th('documento', 'Documento')}<th></th></tr></thead><tbody>
       ${lista.map(p => {
         const op = this.idx.op.get(p.oportunidade_id), c = op && this.idx.conta.get(op.conta_id);
         const expirada = p.estado === 'enviada' && p.data_validade && p.data_validade < this.hoje();
@@ -725,7 +759,14 @@ const Crm = {
       if (f.estado && p.estado !== f.estado) return false;
       const op = this.idx.op.get(p.oportunidade_id), c = op && this.idx.conta.get(op.conta_id);
       return this.contem(f.texto, p.referencia_giaf, op && op.titulo, c && c.nome);
-    }).sort((a, b) => String(b.data_envio || b.criado_em).localeCompare(String(a.data_envio || a.criado_em)));
+    });
+    lista = this.ordenar('propostas', lista, {
+      oportunidade: p => (this.idx.op.get(p.oportunidade_id) || {}).titulo || '',
+      conta: p => { const op = this.idx.op.get(p.oportunidade_id); return (op && (this.idx.conta.get(op.conta_id) || {}).nome) || ''; },
+      ref: p => p.referencia_giaf || '', versao: p => Number(p.versao) || 0, valor: p => Number(p.valor) || 0,
+      estado: p => this.ESTADOS_PROPOSTA[p.estado] || p.estado, envio: p => p.data_envio || p.criado_em || '', validade: p => p.data_validade || '',
+      documento: p => p.caminho_documento || ''
+    });
     const soma = est => this.d.propostas.filter(p => p.estado === est).reduce((s, p) => s + (Number(p.valor) || 0), 0);
     el.innerHTML = `<div class="crm-kpis">
         <div class="crm-kpi"><b>${this.d.propostas.length}</b><span>propostas</span></div>
@@ -862,6 +903,15 @@ const Crm = {
     const base = this.d.tarefas.filter(t => (f.quem === 'todas' || t.responsavel_id === meu) &&
       (f.estado === 'todas' || (f.estado === 'concluidas' ? t.concluida : !t.concluida)));
     const g = CrmLogica.agruparTarefas(base, this.hoje());
+    if (f.ordem !== 'prazo' || f.dir !== 'asc') {
+      const valor = {
+        prazo: t => t.data_limite || '', descricao: t => t.descricao || '', resp: t => t.responsavel_id ? this.recursoNome(t.responsavel_id) : '',
+        oportunidade: t => (this.idx.op.get(t.oportunidade_id) || {}).titulo || '',
+        conta: t => { const op = t.oportunidade_id && this.idx.op.get(t.oportunidade_id); return (this.idx.conta.get(t.conta_id || (op && op.conta_id)) || {}).nome || ''; }
+      }[f.ordem] || (t => t.data_limite || '');
+      const mult = f.dir === 'desc' ? -1 : 1;
+      Object.keys(g).forEach(k => g[k].sort((a, b) => { const va = valor(a), vb = valor(b); if (!va || !vb) return !va && !vb ? 0 : (!va ? 1 : -1); return String(va).localeCompare(String(vb), 'pt', { numeric: true, sensitivity: 'base' }) * mult; }));
+    }
     const rotulos = { atrasada: '⚠ Em atraso', hoje: 'Hoje', proxima: 'Próximos dias', 'sem-data': 'Sem data', concluida: 'Concluídas' };
     const blocos = Object.keys(rotulos).filter(k => g[k].length).map(k => `<h4 class="crm-h ${k === 'atrasada' ? 'crm-atrasada' : ''}">${rotulos[k]} (${g[k].length})</h4>
       <div class="crm-lista">${g[k].map(t => {
@@ -876,6 +926,8 @@ const Crm = {
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">De quem <select data-crm-filtro="tarefas.quem"><option value="minhas"${f.quem === 'minhas' ? ' selected' : ''}>Os meus</option><option value="todas"${f.quem === 'todas' ? ' selected' : ''}>Todos</option></select></label>
         <label class="zoom-label">Estado <select data-crm-filtro="tarefas.estado"><option value="pendentes"${f.estado === 'pendentes' ? ' selected' : ''}>Pendentes</option><option value="concluidas"${f.estado === 'concluidas' ? ' selected' : ''}>Concluídos</option><option value="todas"${f.estado === 'todas' ? ' selected' : ''}>Todos</option></select></label>
+        <label class="zoom-label">Ordenar por <select data-crm-filtro="tarefas.ordem">${[['prazo', 'Prazo'], ['descricao', 'Descrição'], ['oportunidade', 'Oportunidade'], ['conta', 'Conta'], ['resp', 'Responsável']].map(([k, v]) => `<option value="${k}"${f.ordem === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="zoom-label">Sentido <select data-crm-filtro="tarefas.dir"><option value="asc"${f.dir === 'asc' ? ' selected' : ''}>Crescente</option><option value="desc"${f.dir === 'desc' ? ' selected' : ''}>Decrescente</option></select></label>
         <span class="crm-barra-fim"><button type="button" class="btn btn-primary" data-crm-acao="nova-tarefa">+ Novo follow-up</button></span>
       </div>${blocos || this.vazioHtml('Nada por fazer. 🎉')}`;
     // Os "links" são âncoras: não saltar para o topo da página.
@@ -901,8 +953,17 @@ const Crm = {
   renderContas(el) {
     const f = this.filtros.contas;
     const nDup = CrmLogica.gruposDuplicados(this.d.contas).length;
-    const lista = this.d.contas.filter(c => (!f.estado || c.estado === f.estado) && (!f.resp || c.responsavel_id === f.resp) &&
-      this.contem(f.texto, c.nome, c.nif, c.setor)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    let lista = this.d.contas.filter(c => (!f.estado || c.estado === f.estado) && (!f.resp || c.responsavel_id === f.resp) &&
+      this.contem(f.texto, c.nome, c.nif, c.setor));
+    // Contagens por conta (uma passagem), para as colunas e para ordenar por elas.
+    const nContactos = new Map(), emCurso = new Map();
+    this.d.contactos.forEach(x => nContactos.set(x.conta_id, (nContactos.get(x.conta_id) || 0) + 1));
+    this.d.oportunidades.forEach(o => { if (CrmLogica.categoriaDe(o, this.idx.etapa) === 'aberta') { const e = emCurso.get(o.conta_id) || { n: 0, valor: 0 }; e.n++; e.valor += Number(o.valor_estimado) || 0; emCurso.set(o.conta_id, e); } });
+    lista = this.ordenar('contas', lista, {
+      nome: c => c.nome, nif: c => c.nif || '', estado: c => this.ESTADOS_CONTA[c.estado] || c.estado, setor: c => c.setor || '',
+      resp: c => c.responsavel_id ? this.recursoNome(c.responsavel_id) : '', contactos: c => nContactos.get(c.id) || 0,
+      opn: c => (emCurso.get(c.id) || { n: 0 }).n, valor: c => (emCurso.get(c.id) || { valor: 0 }).valor
+    });
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">Estado <select data-crm-filtro="contas.estado"><option value="">Todos</option>${Object.entries(this.ESTADOS_CONTA).map(([k, v]) => `<option value="${k}"${f.estado === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="zoom-label">Responsável <select data-crm-filtro="contas.resp">${this.optResponsaveis(f.resp, 'Todos')}</select></label>
@@ -913,7 +974,7 @@ const Crm = {
           <button type="button" class="btn" data-crm-acao="importar-contas">⬆ Importar</button>
           <button type="button" class="btn btn-primary" data-crm-acao="nova-conta">+ Nova conta</button></span>
       </div>
-      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Conta</th><th>NIF</th><th>Estado</th><th>Setor</th><th>Responsável</th><th>Contactos</th><th>Oport. em curso</th><th>Valor em curso</th></tr></thead><tbody>
+      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr>${this.th('contas', 'nome', 'Conta')}${this.th('contas', 'nif', 'NIF')}${this.th('contas', 'estado', 'Estado')}${this.th('contas', 'setor', 'Setor')}${this.th('contas', 'resp', 'Responsável')}${this.th('contas', 'contactos', 'Contactos')}${this.th('contas', 'opn', 'Oport. em curso')}${this.th('contas', 'valor', 'Valor em curso')}</tr></thead><tbody>
         ${lista.map(c => {
           const ops = this.d.oportunidades.filter(o => o.conta_id === c.id && CrmLogica.categoriaDe(o, this.idx.etapa) === 'aberta');
           return `<tr class="crm-linha" data-crm-acao="abrir-conta" data-id="${escapeAttr(c.id)}"><td><b>${escapeHtml(c.nome)}</b></td><td>${escapeHtml(c.nif || '—')}</td>
@@ -1080,15 +1141,17 @@ const Crm = {
   },
   renderContactos(el) {
     const f = this.filtros.contactos;
-    const lista = this.d.contactos.filter(c => { const conta = this.idx.conta.get(c.conta_id); return this.contem(f.texto, c.nome, c.email, c.cargo, c.telefone, conta && conta.nome); })
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const lista = this.ordenar('contactos', this.d.contactos.filter(c => { const conta = this.idx.conta.get(c.conta_id); return this.contem(f.texto, c.nome, c.email, c.cargo, c.telefone, conta && conta.nome); }), {
+      nome: c => c.nome, conta: c => (this.idx.conta.get(c.conta_id) || {}).nome || '', cargo: c => c.cargo || '', papel: c => this.PAPEIS_DECISAO[c.papel_decisao] || '',
+      email: c => c.email || '', telefone: c => c.telefone || '', rgpd: c => c.consentimento_rgpd ? 1 : 0
+    });
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contactos.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, conta, email, cargo…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contactos.length} contactos</span>
           <button type="button" class="btn" data-crm-acao="importar-contactos">⬆ Importar</button>
           <button type="button" class="btn btn-primary" data-crm-acao="novo-contacto">+ Novo contacto</button></span>
       </div>
-      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Nome</th><th>Conta</th><th>Cargo</th><th>Papel</th><th>Email</th><th>Telefone</th><th>RGPD</th></tr></thead><tbody>
+      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr>${this.th('contactos', 'nome', 'Nome')}${this.th('contactos', 'conta', 'Conta')}${this.th('contactos', 'cargo', 'Cargo')}${this.th('contactos', 'papel', 'Papel')}${this.th('contactos', 'email', 'Email')}${this.th('contactos', 'telefone', 'Telefone')}${this.th('contactos', 'rgpd', 'RGPD')}</tr></thead><tbody>
         ${lista.map(c => { const conta = this.idx.conta.get(c.conta_id); return `<tr class="crm-linha" data-crm-acao="abrir-contacto" data-id="${escapeAttr(c.id)}">
           <td><b>${escapeHtml(c.nome)}</b></td><td>${escapeHtml(conta ? conta.nome : '—')}</td><td>${escapeHtml(c.cargo || '—')}</td>
           <td>${this.PAPEIS_DECISAO[c.papel_decisao] || '—'}</td><td>${escapeHtml(c.email || '—')}</td><td>${escapeHtml(c.telefone || '—')}</td>
