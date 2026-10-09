@@ -1468,7 +1468,8 @@ const Crm = {
         ${ehConta
           ? `<label style="margin-top:8px;">Estado das contas sem essa informação <select id="impEstado"><option value="prospeto">Prospeto</option><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label>`
           : `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="impCriarContas" checked> Criar a conta quando ainda não existir</label>`}
-        ${ehOp ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impFollowups" checked> Criar um follow-up (sem data) com o "Próximo passo", nas oportunidades em curso</label>
+        ${ehOp ? `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impAtualizar" checked> Atualizar as oportunidades que já existem (mesma conta e título) — só os campos que o ficheiro traz e são diferentes</label>
+          <label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="impFollowups" checked> Criar um follow-up (sem data) com o "Próximo passo", nas oportunidades em curso</label>
           <label style="margin-top:4px;">Formato das datas <select id="impFormatoData"><option value="auto">Detetar automaticamente</option><option value="mdy">Mês/Dia/Ano (SuiteCRM em inglês)</option><option value="dmy">Dia/Mês/Ano</option><option value="ymd">Ano-Mês-Dia</option></select></label>` : ''}
         <div class="crm-acoes-form"><button class="btn btn-primary" id="impPrever">Pré-visualizar</button></div>
         <div id="impPrevia"></div>`;
@@ -1480,7 +1481,7 @@ const Crm = {
         const faltam = campos.filter(c => c.obrig && mp[c.k] < 0);
         if (faltam.length) { raiz.querySelector('#impPrevia').innerHTML = `<p class="hint" style="color:var(--vermelho);">Associa pelo menos: ${faltam.map(c => escapeHtml(c.rotulo)).join(', ')}.</p>`; return; }
         if (ehConta) this.previaContas(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impEstado').value);
-        else if (ehOp) this.previaOportunidades(raiz.querySelector('#impPrevia'), folha.matriz, mp, { criarContas: raiz.querySelector('#impCriarContas').checked, criarFollowups: raiz.querySelector('#impFollowups').checked, formatoData: raiz.querySelector('#impFormatoData').value });
+        else if (ehOp) this.previaOportunidades(raiz.querySelector('#impPrevia'), folha.matriz, mp, { criarContas: raiz.querySelector('#impCriarContas').checked, criarFollowups: raiz.querySelector('#impFollowups').checked, atualizarExistentes: raiz.querySelector('#impAtualizar').checked, formatoData: raiz.querySelector('#impFormatoData').value });
         else this.previaContactos(raiz.querySelector('#impPrevia'), folha.matriz, mp, raiz.querySelector('#impCriarContas').checked);
       });
     };
@@ -1533,32 +1534,52 @@ const Crm = {
       const alvo = raiz.querySelector('#impResultado');
       const r = CrmLogica.prepararOportunidades(matriz, mapa, {
         contas: D.contas, oportunidades: D.oportunidades, tipos: D.tipos, etapas: D.etapas,
-        recursos: App.state.recursos, projetos: Object.values(App.state.projetos)
-      }, { formatoData: formato, criarContas: opts.criarContas, criarFollowups: opts.criarFollowups, mapaTipos, mapaEtapas, motivoPadrao });
+        recursos: App.state.recursos, projetos: Object.values(App.state.projetos), tarefas: D.tarefas
+      }, { formatoData: formato, criarContas: opts.criarContas, criarFollowups: opts.criarFollowups, atualizarExistentes: opts.atualizarExistentes, mapaTipos, mapaEtapas, motivoPadrao });
       const nomeEtapa = id => (this.idx.etapa.get(id) || {}).nome || '—';
+      // Texto legível de uma alteração ("valor: 8 100 € → 12 600 €").
+      const nomeResp = id => id ? this.recursoNome(id) : '—';
+      const rotulos = {
+        tipo_id: ['tipo', v => (this.idx.tipo.get(v) || {}).nome || '—'], etapa_id: ['etapa', nomeEtapa], valor_estimado: ['valor', v => this.euro(v)],
+        data_prevista_fecho: ['fecho previsto', v => v ? this.data(v) : '—'], responsavel_id: ['responsável', nomeResp], origem: ['origem', v => v || '—'],
+        descricao: ['descrição', () => 'atualizada'], projeto_id: ['projeto', v => { const p = App.state.projetos[v]; return p ? this.rotuloProjeto(p) : '—'; }]
+      };
+      const textoMudanca = m => { const [nome, f] = rotulos[m.k] || [m.k, v => v]; return m.k === 'descricao' ? 'descrição atualizada' : `${nome}: ${f(m.de)} → ${f(m.para)}`; };
       alvo.innerHTML = `<h4 class="crm-h">Pré-visualização</h4>
-        <div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>oportunidades a criar</span></div><div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.followups}</b><span>follow-ups a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.semConta.length + r.invalidas.length}</b><span>ignoradas por problemas</span></div></div>
+        <div class="crm-kpis"><div class="crm-kpi"><b>${r.novas.length}</b><span>oportunidades a criar</span></div>${opts.atualizarExistentes ? `<div class="crm-kpi"><b>${r.atualizar.length}</b><span>a atualizar</span></div><div class="crm-kpi"><b>${r.iguais}</b><span>já iguais (sem alterações)</span></div>` : ''}<div class="crm-kpi"><b>${r.contasACriar.length}</b><span>contas novas a criar</span></div><div class="crm-kpi"><b>${r.followups}</b><span>follow-ups a criar</span></div><div class="crm-kpi"><b>${r.duplicadas.length}</b><span>duplicadas (ignoradas)</span></div><div class="crm-kpi"><b>${r.semConta.length + r.invalidas.length}</b><span>ignoradas por problemas</span></div></div>
         ${r.novas.length ? `<div class="table-scroll" style="max-height:220px;"><table class="tabela-crud"><thead><tr><th>Oportunidade</th><th>Conta</th><th>Etapa</th><th>Valor</th><th>Fecho</th></tr></thead><tbody>${r.novas.slice(0, 8).map(o => `<tr><td>${escapeHtml(o.titulo)}</td><td>${escapeHtml(o.conta_id ? (this.idx.conta.get(o.conta_id) || {}).nome : o.conta_ref.nome + ' (nova)')}</td><td>${escapeHtml(nomeEtapa(o.etapa_id))}</td><td>${escapeHtml(this.euro(o.valor_estimado))}</td><td>${escapeHtml(o.data_prevista_fecho || '—')}</td></tr>`).join('')}</tbody></table></div>${r.novas.length > 8 ? `<p class="hint">Amostra das primeiras 8 de ${r.novas.length}.</p>` : ''}` : ''}
+        ${r.atualizar.length ? `<h4 class="crm-h">Oportunidades que já existem e vão ser atualizadas</h4>
+          <p class="hint" style="margin:0 0 4px;">Desmarca as que não queres tocar. As que reabrem uma oportunidade já ganha/perdida vêm desmarcadas.</p>
+          <div class="table-scroll" style="max-height:240px;"><table class="tabela-crud"><thead><tr><th></th><th>Oportunidade</th><th>Alterações</th></tr></thead><tbody>${r.atualizar.map((u, i) => `<tr${u.reabre ? ' style="background:rgba(220,38,38,.08)"' : ''}><td><input type="checkbox" data-imp-upd="${i}"${u.reabre ? '' : ' checked'}></td>
+            <td>${escapeHtml(u.titulo)}<br><span class="hint">${escapeHtml((this.idx.conta.get(u.op.conta_id) || {}).nome || '')} · linha ${u.linha}</span></td>
+            <td>${u.mudancas.map(m => escapeHtml(textoMudanca(m))).join('<br>')}${u.reabre ? '<br><b style="color:var(--vermelho)">⚠ reabre uma oportunidade já fechada</b>' : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
         ${this.htmlProblemas('Sem conta correspondente', r.semConta, d => `Linha ${d.linha}: ${d.titulo} (conta "${d.conta}" não existe)`)}
         ${this.htmlProblemas('Duplicadas', r.duplicadas, d => `Linha ${d.linha}: ${d.titulo}`)}
         ${this.htmlProblemas('Avisos', r.avisos, d => `Linha ${d.linha}: ${d.motivo}`)}
         ${this.htmlProblemas('Inválidas', r.invalidas, d => `Linha ${d.linha}: ${d.motivo}`)}
-        <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length ? '' : ' disabled'}>Importar ${r.novas.length} oportunidades</button></div>`;
+        <div class="crm-acoes-form"><button class="btn btn-primary" id="impConfirmar"${r.novas.length || r.atualizar.length || r.followupsExistentes.length ? '' : ' disabled'}>Importar ${r.novas.length} novas${r.atualizar.length ? ` e atualizar ${r.atualizar.length}` : ''}</button></div>`;
       const b = alvo.querySelector('#impConfirmar');
       b.addEventListener('click', async () => {
         b.disabled = true; b.textContent = 'A importar…';
         try {
+          const escolhidas = new Set([...alvo.querySelectorAll('[data-imp-upd]')].filter(c => c.checked).map(c => Number(c.dataset.impUpd)));
+          const aAtualizar = r.atualizar.filter((u, i) => escolhidas.has(i));
           const novasContas = r.contasACriar.map(c => Object.assign({ id: crypto.randomUUID(), setor: '', dimensao: '', morada: '', website: '', estado: 'prospeto', notas: '', responsavel_id: null }, c));
           const idConta = new Map(r.contasACriar.map((c, i) => [c, novasContas[i].id]));
           if (novasContas.length) await this.gravarLote('contas', novasContas);
           const ops = r.novas.map(o => Object.assign({ id: crypto.randomUUID(), contacto_id: null, motivo_perda_notas: '' }, o, { conta_id: o.conta_id || idConta.get(o.conta_ref) }));
           const tarefas = ops.filter(o => o.followup).map(o => ({ conta_id: o.conta_id, oportunidade_id: o.id, descricao: o.followup, responsavel_id: o.responsavel_id, data_limite: null, concluida: false, concluida_em: null }));
           await this.gravarLote('oportunidades', ops.map(o => { const l = Object.assign({}, o); delete l.conta_ref; delete l.followup; return l; }));
-          if (tarefas.length) await this.gravarLote('tarefas', tarefas);
+          // Existentes: grava a linha inteira (como está na base de dados) com as alterações por cima.
+          if (aAtualizar.length) await this.gravarLote('oportunidades', aAtualizar.map(u => Object.assign({}, u.op, u.patch)));
+          // Follow-ups novos (do "Próximo passo"): das novas e das existentes atualizadas ou só com follow-up novo.
+          const fuExistentes = r.followupsExistentes.filter(f => aAtualizar.some(u => u.op.id === f.op.id) || !r.atualizar.some(u => u.op.id === f.op.id))
+            .map(f => ({ conta_id: f.op.conta_id, oportunidade_id: f.op.id, descricao: f.descricao, responsavel_id: (aAtualizar.find(u => u.op.id === f.op.id) || { patch: {} }).patch.responsavel_id || f.op.responsavel_id, data_limite: null, concluida: false, concluida_em: null }));
+          if (tarefas.length || fuExistentes.length) await this.gravarLote('tarefas', tarefas.concat(fuExistentes));
           await this.carregar(true);
           App.fecharModal(); this.renderAtual();
-          App.toast(`${ops.length} oportunidades importadas${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
-        } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novas.length} oportunidades`; }
+          App.toast(`${ops.length} oportunidades importadas${aAtualizar.length ? `, ${aAtualizar.length} atualizadas` : ''}${novasContas.length ? ` (e ${novasContas.length} contas criadas)` : ''}.`);
+        } catch (err) { this.avisoErro(err); b.disabled = false; b.textContent = `Importar ${r.novas.length} novas`; }
       });
     };
     desenharCorresp();

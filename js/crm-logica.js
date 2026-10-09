@@ -556,16 +556,44 @@ const CrmLogica = {
     });
     return { tipos: [...tiposTxt.values()], etapas: [...pares.values()] };
   },
+  // O que mudaria numa oportunidade que já existe. n = o que o ficheiro diz (valor/fecho/responsavelId/origem/
+  // descricao/projetoId vazios ou null = "não diz nada" -> não toca). Devolve { patch, mudancas:[{k,de,para}], reabre }.
+  compararOportunidadeExistente(ex, n, etapaPorId) {
+    const patch = {}, mudancas = [];
+    const alt = (k, para) => { mudancas.push({ k, de: ex[k], para }); patch[k] = para; };
+    const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+    if (n.tipoId && n.tipoId !== ex.tipo_id) alt('tipo_id', n.tipoId);
+    if (n.etapa && n.etapa.id !== ex.etapa_id) alt('etapa_id', n.etapa.id);
+    if (n.valor !== null && n.valor !== undefined && n.valor > 0 && Number(ex.valor_estimado) !== n.valor) alt('valor_estimado', n.valor);
+    if (n.fecho && n.fecho !== ex.data_prevista_fecho) alt('data_prevista_fecho', n.fecho);
+    if (n.responsavelId && n.responsavelId !== ex.responsavel_id) alt('responsavel_id', n.responsavelId);
+    if (n.origem && n.origem !== (ex.origem || '')) alt('origem', n.origem);
+    if (n.descricao && norm(n.descricao) !== norm(ex.descricao)) alt('descricao', n.descricao);
+    if (n.projetoId && !ex.projeto_id) alt('projeto_id', n.projetoId);
+    let reabre = false;
+    if (patch.etapa_id) {
+      // A etapa manda no estado de fecho: aberta -> sem data de fecho nem motivo; ganha/perdida -> data de fecho.
+      const cat = n.etapa.categoria, antes = (etapaPorId.get(ex.etapa_id) || {}).categoria;
+      patch.data_fecho = cat === 'aberta' ? null : (n.fecho || ex.data_fecho || null);
+      patch.motivo_perda_id = cat === 'perdida' ? (ex.motivo_perda_id || n.motivoPadraoId || null) : null;
+      if (cat !== 'perdida') patch.motivo_perda_notas = '';
+      reabre = !!antes && antes !== 'aberta' && cat === 'aberta';
+    }
+    return { patch, mudancas, reabre };
+  },
   // Pré-visualização da importação de OPORTUNIDADES. ctx: { contas, oportunidades, tipos, etapas,
   // recursos, projetos }; opts: { formatoData, criarContas, criarFollowups, mapaTipos {textoTipo→tipoId},
   // mapaEtapas {textoTipo|textoEtapa→etapaId}, motivoPadrao {tipoId→motivoId} }.
   prepararOportunidades(matriz, mapa, ctx, opts) {
     opts = opts || {};
-    const r = { novas: [], contasACriar: [], duplicadas: [], semConta: [], invalidas: [], avisos: [], followups: 0, comProjeto: 0 };
+    const r = { novas: [], atualizar: [], iguais: 0, followupsExistentes: [], contasACriar: [], duplicadas: [], semConta: [], invalidas: [], avisos: [], followups: 0, comProjeto: 0 };
     const contaPorNome = new Map(ctx.contas.map(c => [this.normalizarNome(c.nome), c]));
     const novasContas = new Map();
     const tipoPorId = new Map(ctx.tipos.map(t => [t.id, t])), etapaPorId = new Map(ctx.etapas.map(e => [e.id, e]));
-    const vistos = new Set(ctx.oportunidades.map(o => `${o.conta_id}|${this.normalizarNome(o.titulo)}`));
+    // Já existe? Mesma conta + mesmo título (sem maiúsculas/pontuação). "vistos" = chaves já tratadas neste ficheiro.
+    const existentes = new Map(ctx.oportunidades.map(o => [`${o.conta_id}|${this.normalizarNome(o.titulo)}`, o]));
+    const vistos = new Set();
+    const tarefasAbertas = new Set((ctx.tarefas || []).filter(t => !t.concluida && t.oportunidade_id).map(t => `${t.oportunidade_id}|${this.normalizarNome(t.descricao)}`));
     const projetoPorRef = new Map();
     (ctx.projetos || []).forEach(p => { const k = this.normalizarRefGiaf(p.idInterno); if (k) projetoPorRef.set(k, p); });
     const formato = opts.formatoData || 'mdy';
@@ -592,10 +620,13 @@ const CrmLogica = {
       }
       const contaChave = conta ? conta.id : '@' + chaveConta;
       const chaveOp = `${contaChave}|${this.normalizarNome(titulo)}`;
-      if (vistos.has(chaveOp)) { r.duplicadas.push({ linha: nl, titulo }); return; }
+      if (vistos.has(chaveOp)) { r.duplicadas.push({ linha: nl, titulo, noFicheiro: true }); return; }
       vistos.add(chaveOp);
+      const existente = existentes.get(chaveOp);
+      if (existente && !opts.atualizarExistentes) { r.duplicadas.push({ linha: nl, titulo }); return; }
       const valorBruto = this._cel(linha, mapa.valor);
       let valor = this.parseValor(valorBruto);
+      const valorLido = valor;
       if (valor === null) { if (valorBruto) r.avisos.push({ linha: nl, motivo: `Valor "${valorBruto}" não percebido — ficou a 0` }); valor = 0; }
       const fechoBruto = this._cel(linha, mapa.fecho);
       const fecho = this.parseData(fechoBruto, formato);
@@ -604,10 +635,23 @@ const CrmLogica = {
       const projeto = ref ? projetoPorRef.get(ref) : null;
       let descricao = this._cel(linha, mapa.descricao);
       if (ref && !projeto) descricao = (descricao ? descricao + '\n\n' : '') + `Ref. GIAF (CRM anterior): ${ref}`;
-      if (projeto) r.comProjeto++;
       const fechada = etapa.categoria !== 'aberta';
       const proximo = this._cel(linha, mapa.proximo_passo);
       const followup = opts.criarFollowups && proximo && !fechada ? proximo : '';
+      if (existente) {
+        // Atualiza só o que o ficheiro TRAZ e é diferente — um campo vazio no ficheiro nunca apaga o que já está na app.
+        const cmp = this.compararOportunidadeExistente(existente, {
+          tipoId, etapa, valor: valorLido, fecho, responsavelId: this.resolverResponsavel(this._cel(linha, mapa.responsavel), ctx.recursos || []),
+          origem: this.traduzirOrigem(this._cel(linha, mapa.origem)), descricao: this._cel(linha, mapa.descricao),
+          projetoId: projeto ? projeto.id : null, motivoPadraoId: (opts.motivoPadrao && opts.motivoPadrao[tipoId]) || null
+        }, etapaPorId);
+        const novoFollowup = followup && !tarefasAbertas.has(`${existente.id}|${this.normalizarNome(followup)}`) ? followup : '';
+        if (novoFollowup) { r.followups++; r.followupsExistentes.push({ op: existente, descricao: novoFollowup }); }
+        if (cmp.mudancas.length) r.atualizar.push({ linha: nl, titulo: existente.titulo, op: existente, patch: cmp.patch, mudancas: cmp.mudancas, reabre: cmp.reabre, followup: novoFollowup });
+        else r.iguais++;
+        return;
+      }
+      if (projeto) r.comProjeto++;
       if (followup) r.followups++;
       r.novas.push({
         conta_id: conta ? conta.id : null, conta_ref: contaRef, tipo_id: tipoId, etapa_id: etapaId, titulo, descricao,
