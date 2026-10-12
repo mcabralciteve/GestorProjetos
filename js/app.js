@@ -1021,12 +1021,14 @@ const App = {
   aplicarFiltrosPorDefeito() {
     const meuRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
     if (!meuRecurso) return;
-    // Alocações e as duas vistas do Registo do Dia (Individual e de equipa) abrem já na equipa da
-    // própria pessoa (Alocações também herda o departamento — o Registo do Dia não tem esse nível,
-    // ver filtrosCalendarioRegisto/filtroEquipaDia).
+    // Alocações abre na própria pessoa (com o departamento e a equipa dela, para alargar à equipa
+    // basta pôr "Pessoa: Todas"); se a pessoa não estiver entre as que pode ver, o render deixa
+    // "Todas" e fica a equipa. O Registo do Dia (Individual e de equipa) abre na equipa da pessoa
+    // (não tem nível de departamento, ver filtrosCalendarioRegisto/filtroEquipaDia).
     const org = this.orgDoRecurso(meuRecurso);
     this.filtrosAlocacoes.dept = org.deptId;
     this.filtrosAlocacoes.equipa = org.equipaId;
+    this.filtrosAlocacoes.pessoa = meuRecurso.id;
     this.filtrosCalendarioRegisto.equipa = org.equipaId;
     this.filtroEquipaDia = org.equipaId;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
