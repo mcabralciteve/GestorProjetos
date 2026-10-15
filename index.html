@@ -1106,12 +1106,20 @@
             <option value="outra">Outra</option>
           </select>
         </label>
-        <div class="row-2" id="reservaProjetoWrap">
-          <label>Projeto <span style="color:var(--vermelho);">*</span>
+        <div class="row-2">
+          <label id="reservaProjetoWrap">Projeto <span style="color:var(--vermelho);">*</span>
             <select id="reservaProjeto"><option value="">Seleciona…</option></select>
           </label>
-          <label>Gestor de Projeto <span class="hint">(automático)</span>
-            <input type="text" id="reservaGestor" readonly>
+          <label>Gestor de Projeto <span class="hint" id="reservaGestorHint">(preenchido automaticamente; podes editar)</span>
+            <input type="text" id="reservaGestor" autocomplete="off">
+          </label>
+        </div>
+        <div class="row-2">
+          <label><span id="reservaEmpresaRotulo">Empresa / Evento</span> <span style="color:var(--vermelho);">*</span> <span class="hint" id="reservaEmpresaHint"></span>
+            <input type="text" id="reservaEmpresa" required autocomplete="off">
+          </label>
+          <label>Localidade <span style="color:var(--vermelho);">*</span>
+            <input type="text" id="reservaLocalidade" required autocomplete="off">
           </label>
         </div>
         <div class="row-2">
@@ -1212,6 +1220,6 @@
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261012a"></script>
-<script src="js/app.js?v=20261012b"></script>
+<script src="js/app.js?v=20261015a"></script>
 </body>
 </html>
