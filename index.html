@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261009d">
+<link rel="stylesheet" href="css/style.css?v=20261015b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -1097,7 +1097,7 @@
     <div class="card" style="max-width:640px;">
       <form id="formReservaViatura">
         <div class="calc-line" style="border:none;padding:0 0 8px;">Requisitante: <b id="reservaRequisitanteInfo">—</b></div>
-        <label>Associar a <span style="color:var(--vermelho);">*</span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Associar a</span>
           <select id="reservaTipoAssociacao" required>
             <option value="">Seleciona…</option>
             <option value="projeto">Projeto</option>
@@ -1107,56 +1107,56 @@
           </select>
         </label>
         <div class="row-2">
-          <label id="reservaProjetoWrap">Projeto <span style="color:var(--vermelho);">*</span>
+          <label id="reservaProjetoWrap"><span class="rotulo-campo"><span class="obrig">*</span> Projeto</span>
             <select id="reservaProjeto"><option value="">Seleciona…</option></select>
           </label>
-          <label>Gestor de Projeto <span class="hint" id="reservaGestorHint">(preenchido automaticamente; podes editar)</span>
+          <label><span class="rotulo-campo">Gestor de Projeto <span class="nota" id="reservaGestorHint">(sugerido; podes editar)</span></span>
             <input type="text" id="reservaGestor" autocomplete="off">
           </label>
         </div>
         <div class="row-2">
-          <label><span id="reservaEmpresaRotulo">Empresa / Evento</span> <span style="color:var(--vermelho);">*</span> <span class="hint" id="reservaEmpresaHint"></span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> <span id="reservaEmpresaRotulo">Empresa / Evento</span> <span class="nota" id="reservaEmpresaHint"></span></span>
             <input type="text" id="reservaEmpresa" required autocomplete="off">
           </label>
-          <label>Localidade <span style="color:var(--vermelho);">*</span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Localidade</span>
             <input type="text" id="reservaLocalidade" required autocomplete="off">
           </label>
         </div>
         <div class="row-2">
-          <label>Área / Unidade <span class="hint">(automático)</span>
+          <label><span class="rotulo-campo">Área / Unidade <span class="nota">(automático)</span></span>
             <input type="text" id="reservaArea" readonly>
           </label>
-          <label>Chefia direta / Diretor <span class="hint">(automático)</span>
+          <label><span class="rotulo-campo">Chefia direta / Diretor <span class="nota">(automático)</span></span>
             <input type="text" id="reservaChefia" readonly>
           </label>
         </div>
-        <label>Justificação <span style="color:var(--vermelho);">*</span> <span class="hint" id="reservaJustificacaoHint"></span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Justificação <span class="nota" id="reservaJustificacaoHint"></span></span>
           <textarea id="reservaJustificacao" rows="2" required></textarea>
         </label>
-        <label>Distância prevista, ida e volta (km) <span style="color:var(--vermelho);">*</span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Distância prevista, ida e volta (km)</span>
           <input type="number" id="reservaDistanciaKm" min="0" step="1" required>
         </label>
-        <label>Data do pedido <span style="color:var(--vermelho);">*</span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Data do pedido</span>
           <input type="date" id="reservaDataPedido" required>
         </label>
         <div class="row-2">
-          <label>Data de início <span style="color:var(--vermelho);">*</span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Data de início</span>
             <input type="date" id="reservaDataInicio" required>
           </label>
-          <label>Hora de início ("Das") <span style="color:var(--vermelho);">*</span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Hora de início ("Das")</span>
             <input type="time" id="reservaHoraInicio" required>
           </label>
         </div>
         <div class="row-2">
-          <label>Data de fim <span style="color:var(--vermelho);">*</span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Data de fim</span>
             <input type="date" id="reservaDataFim" required>
           </label>
-          <label>Hora de fim ("às") <span style="color:var(--vermelho);">*</span>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Hora de fim ("às")</span>
             <input type="time" id="reservaHoraFim" required>
           </label>
         </div>
         <button type="submit" class="btn btn-primary" id="btnReservaViatura">Gerar Excel e Enviar por Email</button>
-        <p class="hint" style="margin-top:10px;"><span style="color:var(--vermelho);">*</span> campo obrigatório</p>
+        <p class="hint" style="margin-top:10px;"><span class="obrig">*</span> campo obrigatório</p>
         <span id="reservaMsg" class="calc-line" style="border:none;padding:0;display:block;margin-top:6px;"></span>
       </form>
     </div>
