@@ -18,6 +18,17 @@ export interface Recurso {
   acesso?: string | null; equipa_id?: string | null;
   // Secções do resumo diário que a pessoa desligou ({chave: false}) — ver lembrete-agenda.
   resumo_secoes?: Record<string, boolean> | null;
+  // Pessoas inativas (supabase/pessoas_inativas.sql): sem estas colunas, toda a gente conta como ativa.
+  ativo?: boolean | null; data_saida?: string | null;
+}
+
+// Data de hoje em Lisboa (aaaa-mm-dd).
+export function hojeLisboaISO(agora = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon', year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+}
+// Inativa: marcada como inativa, ou a data de saída já passou (trabalha até ao próprio dia).
+export function recursoInativo(r: Recurso, hojeISO = hojeLisboaISO()): boolean {
+  return r.ativo === false || (!!r.data_saida && r.data_saida < hojeISO);
 }
 
 export const resposta = (corpo: unknown, status = 200) =>
@@ -61,7 +72,9 @@ export async function lerTudo<T>(consulta: (de: number, ate: number) => PromiseL
 // lembretes_email, isto NUNCA é contornado por "apenas" — "apenas" só aponta um lote já elegível a
 // um endereço, nunca dispensa as próprias regras de elegibilidade.
 export function elegiveis(recursos: Recurso[], apenas: string, pilotoAtivo: boolean): Recurso[] {
+  const hoje = hojeLisboaISO();
   return recursos.filter(r =>
+    !recursoInativo(r, hoje) &&      // quem saiu da empresa não recebe lembretes
     r.auth_user_id && (r.email ?? '').trim() && r.lembretes_email !== false &&
     (!pilotoAtivo || r.piloto_lembretes === true) &&
     (!apenas || r.email.trim().toLowerCase() === apenas));

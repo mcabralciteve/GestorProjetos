@@ -62,7 +62,9 @@ Deno.serve(async (req) => {
   const [{ data: feriadosRaw }, ausencias, recursos] = await Promise.all([
     db.from('feriados').select('data'),
     lerTudo<Ausencia>((de, ate) => db.from('ausencias').select('recurso_id,data_inicio,data_fim,estado').range(de, ate)),
-    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes').range(de, ate)),
+    // ativo/data_saida só existem depois de supabase/pessoas_inativas.sql — sem elas lê-se como antes.
+    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,ativo,data_saida').range(de, ate))
+      .catch(() => lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes').range(de, ate))),
   ]);
   const feriados = new Set((feriadosRaw ?? []).map((f: { data: string }) => f.data));
   if (!ehDiaUtil(hoje, feriados) && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'hoje não é dia útil' });

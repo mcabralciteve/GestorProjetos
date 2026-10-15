@@ -486,6 +486,17 @@ const App = {
         const preferido = this.meusProjetosDiretamente()[0] || this.meusProjetosEnvolvidos()[0] || this.projetosQuePossoVer()[0];
         this.state.projetoAtivoId = preferido ? preferido.id : null;
       }
+      // Pessoa inativa (saída registada): a app não abre. O bloqueio a sério (conta desativada no
+      // Supabase Auth) é feito pela função "acesso-pessoa"; isto cobre o intervalo até ela correr.
+      const euRecurso = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
+      if (euRecurso && this.recursoInativo(euRecurso)) {
+        this.sessaoAtiva = false;
+        this.state = this.estadoVazio();
+        this.renderTudo();
+        await Auth.sair();
+        if (Auth.els && Auth.els.msg) { Auth.els.msg.style.color = 'var(--vermelho)'; Auth.els.msg.textContent = 'Esta conta está inativa (a pessoa saiu da empresa). Se é um engano, fala com o Administrador.'; }
+        return;
+      }
       this.aplicarFiltrosPorDefeito();
       this._ultimoEstadoPersistido = JSON.stringify(this.state);
       this.renderProjetoSelect();
@@ -680,7 +691,7 @@ const App = {
       if (eq.liderId === undefined) eq.liderId = null;
       if (eq.departamentoId === undefined) eq.departamentoId = null;
     });
-    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; });
+    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; if (r.ativo === undefined) r.ativo = true; if (r.dataSaida === undefined) r.dataSaida = null; });
     if (!this.state.registos) this.state.registos = [];
     this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
     if (!this.state.ausencias) this.state.ausencias = [];
@@ -1323,8 +1334,7 @@ const App = {
   criarProjeto(opts) {
     opts = opts || {};
     if (!this.souAdmin()) return;
-    const opcoesGestor = '<option value="">Sem gestor atribuído</option>' +
-      this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
+    const opcoesGestor = this.opcoesGestorProjeto('Sem gestor atribuído', null);
     const html = `
       <label>Nome do projeto
         <input type="text" id="novoProjNome" placeholder="Nome do projeto">
@@ -1689,7 +1699,7 @@ const App = {
       <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="ocorrencias"> Após <input type="number" id="recNumOcorrencias" min="1" step="1" value="10" style="width:64px;" disabled> ocorrências</label>
       <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="data"> Numa data <input type="date" id="recDataFim" disabled></label>
       <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Atribuir consultores a cada ocorrência <span class="hint">(opcional — dá para ajustar depois em cada uma)</span></p>
-      ${this.state.recursos.length ? this.state.recursos.map(r => `<label class="zoom-label" style="padding:3px 0;"><input type="checkbox" class="rec-recorrente-recurso" value="${escapeAttr(r.id)}"> ${escapeHtml(r.nome)}</label>`).join('') : '<p class="hint">Sem consultores definidos.</p>'}
+      ${this.state.recursos.length ? this.recursosAtivos().map(r => `<label class="zoom-label" style="padding:3px 0;"><input type="checkbox" class="rec-recorrente-recurso" value="${escapeAttr(r.id)}"> ${escapeHtml(r.nome)}</label>`).join('') : '<p class="hint">Sem consultores definidos.</p>'}
       <label style="margin-top:8px;"><span class="rotulo-campo">Horas previstas por ocorrência, para cada consultor escolhido <span class="nota">(obrigatório se escolheres algum consultor)</span></span>
         <input type="number" id="recHoras" min="0.25" step="0.25" placeholder="ex.: 2">
       </label>
@@ -2012,7 +2022,7 @@ const App = {
     const html = `
       <p class="pagina-sub" style="margin-top:0;">Vai associar um consultor a ${ids.length} tarefa(s) selecionada(s).</p>
       <label><span class="rotulo-campo"><span class="obrig">*</span> Consultor</span>
-        <select id="loteRecursoId"><option value="">Seleciona…</option>${this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</select>
+        <select id="loteRecursoId"><option value="">Seleciona…</option>${this.recursosAtivos().map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</select>
       </label>
       <label><span class="rotulo-campo"><span class="obrig">*</span> Horas totais previstas, por tarefa <span class="nota">(obrigatório — o mesmo número em cada uma das tarefas selecionadas)</span></span>
         <input type="number" id="loteHoras" min="0.25" step="0.25" placeholder="ex.: 8">
@@ -2228,7 +2238,46 @@ const App = {
     this.renderTabelaRecursosCentral();
     this.renderCapacidade();
   },
+  // ---------- Pessoas inativas (saídas) — regras em js/pessoas-logica.js ----------
+  // Nunca se apaga uma pessoa que saiu: marca-se inativa (ver abrirModalSaidaPessoa). Inativa só tira
+  // a pessoa do que é FUTURO (listas de escolha, capacidade, lembretes, acesso); o histórico fica.
+  recursoInativo(r) { return PessoasLogica.estaInativo(r, DateUtil.todayISO()); },
+  recursosAtivos(lista) { return (lista || this.state.recursos).filter(r => !this.recursoInativo(r)); },
+  // <option>s de pessoas para atribuir (líder, diretor…): só as ativas — mais a atualmente escolhida,
+  // mesmo inativa, para o <select> não a "perder" nem mostrar outra por engano.
+  opcoesRecursos(vazio, valorAtual) {
+    const lista = this.state.recursos.filter(r => !this.recursoInativo(r) || r.id === valorAtual);
+    return (vazio ? `<option value="">${escapeHtml(vazio)}</option>` : '') +
+      lista.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}${this.recursoInativo(r) ? ' (inativa)' : ''}</option>`).join('');
+  },
+  // Igual, para o Gestor de Projeto (só quem tem conta — "utilizadores").
+  opcoesGestorProjeto(vazio, valorAtual) {
+    const inativo = u => this.recursoInativo(this.state.recursos.find(r => r.id === u.recursoId));
+    const lista = this.state.utilizadores.filter(u => !inativo(u) || u.recursoId === valorAtual);
+    return `<option value="">${escapeHtml(vazio)}</option>` +
+      lista.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}${inativo(u) ? ' (inativa)' : ''}</option>`).join('');
+  },
   eliminarRecurso(id) {
+    const alvo = this.state.recursos.find(r => r.id === id);
+    // Apagar uma pessoa apaga em cascata as ausências, o histórico de equipas e as atribuições, e deixa
+    // as horas já registadas sem pessoa — por isso só é possível para quem nunca teve nada. Quem saiu
+    // da empresa marca-se como inativa (botão "Saída").
+    if (alvo) {
+      const { pode, historico: h } = PessoasLogica.podeEliminar(this.state, alvo);
+      if (!pode) {
+        const partes = [];
+        if (h.registos) partes.push(`${h.registos} registo(s) de horas`);
+        if (h.tarefas) partes.push(`${h.tarefas} tarefa(s)`);
+        if (h.ausencias) partes.push(`${h.ausencias} ausência(s)`);
+        if (h.geridos) partes.push(`${h.geridos} projeto(s) que gere`);
+        if (h.lidera) partes.push('liderança de equipa/departamento');
+        if (h.nextSteps) partes.push(`${h.nextSteps} next step(s)`);
+        if (h.conta) partes.push('conta de acesso');
+        if (h.mudancasEquipa) partes.push('histórico de equipas');
+        alert(`Não se elimina ${alvo.nome}: tem histórico (${partes.join(', ')}).\n\nSe a pessoa saiu da empresa, usa o botão "Saída" em Pessoas — fica inativa, deixa de aparecer nas listas e perde o acesso, mas o histórico mantém-se.`);
+        return;
+      }
+    }
     const temConta = this.state.utilizadores.some(u => u.recursoId === id);
     const aviso = temConta
       ? 'Esta pessoa tem conta de acesso à plataforma — eliminar apaga também o acesso dela (fica sem papel de Administrador/Utilizador). A conta de login em si mantém-se, mas passa a ficar "órfã" até recriares o registo. Eliminar mesmo assim?'
@@ -2243,6 +2292,118 @@ const App = {
     });
     this.persist();
     this.renderTudo();
+  },
+  // ---------- Saída de uma pessoa (só Administrador) ----------
+  // Ecrã único para: marcar uma data de saída (a pessoa trabalha até esse dia), inativar já, ou
+  // reativar. Mostra primeiro o que a pessoa tem em aberto (tarefas por concluir, projetos que gere,
+  // next steps, liderança) — nesta fase só lista; passar isso para outra pessoa vem a seguir. NUNCA
+  // apaga nada: só escreve "ativo"/"data_saida" (Sync.definirSaida).
+  abrirModalSaidaPessoa(id) {
+    if (!this.souAdmin()) return;
+    const r = this.state.recursos.find(x => x.id === id);
+    if (!r) return;
+    const hoje = DateUtil.todayISO();
+    const estado = PessoasLogica.estado(r, hoje);
+    const pend = PessoasLogica.pendencias(this.state, id, {
+      horasRegistadas: (p, t, rid) => this.horasJaRegistadasTarefa(p, t, rid),
+      pendente: pp => this.proximoPassoPendente(pp)
+    });
+    const rotuloProj = x => `${x.idInterno ? x.idInterno + ' — ' : ''}${x.projetoNome || x.nome}${x.cliente ? ` (${x.cliente})` : ''}`;
+    const lista = (itens, f, max) => {
+      max = max || 8;
+      return `<ul style="margin:4px 0 0;padding-left:18px;">${itens.slice(0, max).map(i => `<li>${f(i)}</li>`).join('')}${itens.length > max ? `<li>… e mais ${itens.length - max}</li>` : ''}</ul>`;
+    };
+    const bloco = (titulo, itens, f, nota) => itens.length
+      ? `<div style="margin:10px 0;"><b>${titulo}</b> (${itens.length})${nota ? ` <span class="hint">${nota}</span>` : ''}${lista(itens, f)}</div>` : '';
+    const pendHtml = pend.total === 0
+      ? '<p class="hint">Esta pessoa não tem tarefas por concluir, projetos, next steps nem liderança em aberto.</p>'
+      : `<p style="margin:10px 0 0;font-weight:600;">O que esta pessoa tem em aberto</p>` +
+        bloco('Tarefas por concluir', pend.tarefas, t => `${escapeHtml(rotuloProj(t))} — ${escapeHtml(t.tarefaNome)} · ${t.restantes} h por fazer`) +
+        bloco('Projetos que gere', pend.projetosGeridos, p => escapeHtml(rotuloProj(p)) + (p.suspenso ? ' (suspenso)' : ''), '— o Team Leader indica o novo gestor') +
+        bloco('Next steps abertos', pend.nextSteps, n => `${escapeHtml(rotuloProj(n))} — ${escapeHtml(n.descricao || '(sem descrição)')}`) +
+        bloco('Equipas que lidera', pend.equipasLideradas, e => escapeHtml(e.nome), '— altera o líder em Equipas') +
+        bloco('Departamentos que dirige', pend.departamentosDirigidos, d => escapeHtml(d.nome), '— altera o diretor em Departamentos') +
+        '<p class="hint" style="margin-top:10px;">Nada disto é alterado automaticamente. Passar tarefas e projetos para outra pessoa chega numa próxima versão; por agora ficam atribuídos a quem sai e deixam de contar na capacidade.</p>';
+    const estadoTxt = PessoasLogica.rotuloEstado(r, hoje);
+    const html = `
+      <p class="pagina-sub" style="margin-top:0;"><b>${escapeHtml(r.nome)}</b> — estado atual: ${escapeHtml(estadoTxt)}.</p>
+      <p class="hint" style="margin-top:0;">A pessoa fica inativa no dia a seguir à data de saída: deixa de aparecer nas listas de escolha, na capacidade e nos lembretes, e perde o acesso. Todo o histórico (horas, tarefas, ausências, equipa) mantém-se.</p>
+      <label><span class="rotulo-campo">Data de saída <span class="nota">(último dia de trabalho)</span></span>
+        <input type="date" id="saidaData" value="${escapeAttr(r.dataSaida || '')}">
+      </label>
+      ${pendHtml}
+      <p id="saidaMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-primary" id="btnSaidaGuardar">Guardar data de saída</button>
+        <button class="btn" id="btnSaidaInativar">Inativar já</button>
+        ${estado !== 'ativo' ? '<button class="btn" id="btnSaidaReativar">Reativar</button>' : ''}
+      </div>`;
+    this.abrirModal(`Saída — ${r.nome}`, html);
+    const corpo = this.els.modalCorpo;
+    const msg = corpo.querySelector('#saidaMsg');
+    const inpData = corpo.querySelector('#saidaData');
+    const erro = t => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
+    const botoes = [...corpo.querySelectorAll('button')];
+    const executar = async (acao) => {
+      const data = inpData.value;
+      if (acao === 'guardar') {
+        if (!data) return erro('Indica a data de saída.');
+        if (!this.anoDataPlausivel(data)) return erro('Data inválida.');
+      }
+      if (acao === 'inativar' && data && !this.anoDataPlausivel(data)) return erro('Data inválida.');
+      const alvo = acao === 'reativar' ? { ativo: true, dataSaida: null }
+        : acao === 'guardar' ? { ativo: true, dataSaida: data }
+        : { ativo: false, dataSaida: data || hoje };
+      if (acao !== 'reativar') {
+        const v = PessoasLogica.podeInativar(this.state, id, hoje);
+        if (!v.ok) return erro(v.motivo);
+      }
+      if (acao === 'inativar' && !confirm(`Inativar ${r.nome} já? Perde o acesso à plataforma e deixa de aparecer nas listas. O histórico mantém-se e podes reativar mais tarde.`)) return;
+      botoes.forEach(b => { b.disabled = true; });
+      msg.style.color = 'var(--cinza-500)';
+      msg.textContent = 'A gravar…';
+      try {
+        await Sync.definirSaida(id, alvo);
+      } catch (err) {
+        botoes.forEach(b => { b.disabled = false; });
+        return erro('Não foi possível gravar: ' + err.message);
+      }
+      r.ativo = alvo.ativo;
+      r.dataSaida = alvo.dataSaida;
+      this.fecharModal();
+      this.renderTudo();
+      // Acesso à plataforma: só quando a pessoa já está inativa (ou volta a estar ativa). Uma data
+      // futura é tratada pela rotina diária da função "acesso-pessoa".
+      const inativaAgora = PessoasLogica.estaInativo(r, hoje);
+      let extra = '';
+      if (inativaAgora || acao === 'reativar') {
+        const res = await this.pedirAcessoPessoa(id, inativaAgora ? 'revogar' : 'restaurar');
+        if (!res.ok) extra = ` Atenção: o acesso na conta não foi ${inativaAgora ? 'revogado' : 'restaurado'} automaticamente (${res.erro}).`;
+      }
+      this.toast(acao === 'reativar' ? `${r.nome} reativada.${extra}` : acao === 'guardar' ? `Saída de ${r.nome} marcada para ${PessoasLogica.dataPT(data)}.${extra}` : `${r.nome} inativada.${extra}`);
+    };
+    corpo.querySelector('#btnSaidaGuardar').addEventListener('click', () => executar('guardar'));
+    corpo.querySelector('#btnSaidaInativar').addEventListener('click', () => executar('inativar'));
+    const btnRe = corpo.querySelector('#btnSaidaReativar');
+    if (btnRe) btnRe.addEventListener('click', () => executar('reativar'));
+  },
+  // Pede à função de servidor "acesso-pessoa" para (des)ativar a conta de login desta pessoa no Supabase
+  // Auth. Nunca lança: devolve { ok, erro } — a saída já ficou gravada de qualquer forma e a app impede
+  // a entrada por si; isto só fecha o buraco de uma sessão/chamada direta à API.
+  async pedirAcessoPessoa(recursoId, acao) {
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('acesso-pessoa', { body: { recurso_id: recursoId, acao } });
+      if (error) {
+        let detalhe = error.message || 'erro desconhecido';
+        try { const corpo = await error.context.json(); if (corpo && corpo.erro) detalhe = corpo.erro; } catch (e) { /* mantém a mensagem */ }
+        if (/not found|404|Failed to send|FunctionsFetchError/i.test(detalhe)) detalhe = 'a função "acesso-pessoa" ainda não está instalada no Supabase';
+        return { ok: false, erro: detalhe };
+      }
+      if (data && data.ok === false) return { ok: false, erro: data.erro || 'erro desconhecido' };
+      return { ok: true, detalhe: data };
+    } catch (err) {
+      return { ok: false, erro: err.message || 'erro desconhecido' };
+    }
   },
   atualizarRecurso(id, campo, valor) {
     const r = this.state.recursos.find(x => x.id === id);
@@ -4208,8 +4369,7 @@ const App = {
   renderGestorConsultores(p) {
     const e = this.els;
     if (!e.projGestorId) return;
-    const opcoesGestor = '<option value="">Sem gestor atribuído</option>' +
-      this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
+    const opcoesGestor = this.opcoesGestorProjeto('Sem gestor atribuído', p ? p.gestorId : null);
     e.projGestorId.innerHTML = opcoesGestor;
     e.projGestorId.value = p ? (p.gestorId || '') : '';
     e.projGestorId.disabled = !p || !this.souAdmin();
@@ -4238,8 +4398,7 @@ const App = {
     const tbody = this.els.corpoTabelaProjetos;
     tbody.innerHTML = '';
     const admin = this.souAdmin();
-    const opcoesGestor = '<option value="">Sem gestor</option>' +
-      this.state.utilizadores.map(u => `<option value="${u.recursoId}">${escapeHtml(u.nome || u.email)}</option>`).join('');
+    // (as opções do Gestor de cada linha, com a pessoa atual mesmo se inativa, vêm de opcoesGestorProjeto)
     // Opções dos filtros (preservam o valor atual ao repopular).
     const e = this.els;
     const valorFiltroGestor = e.fProjGestor.value;
@@ -4291,7 +4450,7 @@ const App = {
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
         <td>${admin
-          ? `<select data-campo="gestorId" style="min-width:120px">${opcoesGestor}</select>`
+          ? `<select data-campo="gestorId" style="min-width:120px">${this.opcoesGestorProjeto('Sem gestor', p.gestorId)}</select>`
           : escapeHtml(this.nomeUtilizador(p.gestorId))}</td>
         <td><input type="date" value="${p.dataInicio}" data-campo="dataInicio" ${dis}></td>
         <td><input type="date" value="${p.dataFim}" data-campo="dataFim" ${dis}></td>
@@ -4419,6 +4578,7 @@ const App = {
         case 'margem': return r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda) : 0;
         case 'acesso': return (this.state.utilizadores.find(u => u.recursoId === r.id) || {}).papel || '';
         case 'piloto': return r.pilotoLembretes ? 1 : 0;
+        case 'estado': return PessoasLogica.estado(r, DateUtil.todayISO());
         default: return r.nome.toLowerCase();
       }
     });
@@ -4426,6 +4586,8 @@ const App = {
       const margem = r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda * 100) : 0;
       const perfil = this.state.utilizadores.find(u => u.recursoId === r.id);
       const tr = document.createElement('tr');
+      const estadoPessoa = PessoasLogica.estado(r, DateUtil.todayISO());
+      if (estadoPessoa === 'inativo') tr.classList.add('linha-inativa');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(r.nome)}" data-campo="nome" style="min-width:140px"></td>
         <td><input type="text" value="${escapeAttr(r.email || '')}" data-campo="email" placeholder="email@exemplo.com" style="min-width:160px"></td>
@@ -4436,9 +4598,11 @@ const App = {
         <td>${margem.toFixed(1)}%</td>
         <td>${perfil ? `<select data-acesso style="min-width:110px"><option value="user" ${perfil.papel === 'user' ? 'selected' : ''}>Utilizador</option><option value="admin" ${perfil.papel === 'admin' ? 'selected' : ''}>Administrador</option></select>` : '<span class="hint">Sem conta</span>'}</td>
         <td style="text-align:center;"><input type="checkbox" data-campo="pilotoLembretes" ${r.pilotoLembretes ? 'checked' : ''} title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições"></td>
+        <td><span class="badge-estado-pessoa ${estadoPessoa}">${escapeHtml(PessoasLogica.rotuloEstado(r, DateUtil.todayISO()))}</span></td>
         <td class="col-acoes">
           <button class="btn btn-sm" data-acao="alocacoes" title="Ver projetos, atividades e datas em que este consultor está alocado">📅 Alocações</button>
-          <button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>
+          <button class="btn btn-sm" data-acao="saida" title="Registar a saída desta pessoa da empresa (fica inativa; o histórico mantém-se)">${estadoPessoa === 'ativo' ? '🚪 Saída' : '🚪 Saída / reativar'}</button>
+          <button class="btn-icon" data-acao="eliminar" title="Eliminar (só pessoas sem histórico — para quem saiu, usa Saída)">🗑</button>
         </td>`;
       tr.querySelector('[data-campo="equipaId"]').value = r.equipaId || '';
       this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="nome"]'));
@@ -4468,6 +4632,7 @@ const App = {
         });
       }
       tr.querySelector('[data-acao="alocacoes"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
+      tr.querySelector('[data-acao="saida"]').addEventListener('click', () => this.abrirModalSaidaPessoa(r.id));
       tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarRecurso(r.id));
       tbody.appendChild(tr);
     });
@@ -4482,14 +4647,13 @@ const App = {
     // App.souLiderDe/recursosDaMinhaLideranca): um team leader vê os registos de horas e os pedidos
     // de viatura de toda a sua equipa, em qualquer projeto. Departamento é um <select> das
     // Departamentos (ver renderTabelaDepartamentos, tabela à parte) — uma unidade só pertence a um.
-    const opcoesLider = '<option value="">— nenhum —</option>' + this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
     const opcoesDepartamento = '<option value="">— nenhum —</option>' + this.state.departamentos.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.nome)}</option>`).join('');
     equipas.forEach(eq => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(eq.nome)}" data-campo="nome"></td>
         <td><select data-campo="departamentoId">${opcoesDepartamento}</select></td>
-        <td><select data-campo="liderId">${opcoesLider}</select></td>
+        <td><select data-campo="liderId">${this.opcoesRecursos('— nenhum —', eq.liderId)}</select></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="departamentoId"]').value = eq.departamentoId || '';
       tr.querySelector('[data-campo="liderId"]').value = eq.liderId || '';
@@ -4504,12 +4668,11 @@ const App = {
     const tbody = this.els.corpoTabelaDepartamentos;
     if (!tbody) return;
     tbody.innerHTML = '';
-    const opcoesDiretor = '<option value="">— nenhum —</option>' + this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('');
     [...this.state.departamentos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).forEach(d => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" value="${escapeAttr(d.nome)}" data-campo="nome"></td>
-        <td><select data-campo="diretorId">${opcoesDiretor}</select></td>
+        <td><select data-campo="diretorId">${this.opcoesRecursos('— nenhum —', d.diretorId)}</select></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="diretorId"]').value = d.diretorId || '';
       tr.querySelectorAll('[data-campo]').forEach(inp => {
@@ -5159,7 +5322,7 @@ const App = {
     this.limparCacheDiasUteisEntre();
     if (!this.alocMesAtual) { const hoje = new Date(); this.alocMesAtual = { ano: hoje.getFullYear(), mes: hoje.getMonth() }; }
 
-    const recursosPermitidos = this.recursosPermitidosRegisto();
+    const recursosPermitidos = this.recursosAtivos(this.recursosPermitidosRegisto());
     const projetosPermitidos = this.projetosAlocacaoPermitidos();
 
     // Departamento → Equipa → Pessoa (pessoas agrupadas por departamento no próprio select).
@@ -5313,7 +5476,7 @@ const App = {
     // Um Gestor (não-admin) só vê aqui a sua própria equipa de gestão — o mesmo âmbito já usado
     // pelos cartões de equipa do Dashboard (ver recursosDaMinhaEquipaGestao). O filtro de equipa
     // (selEquipaCap) aplica-se por cima disto, nunca alarga o que já está limitado aqui.
-    const recursosBase = this.recursosDaMinhaEquipaGestao();
+    const recursosBase = this.recursosAtivos(this.recursosDaMinhaEquipaGestao());
     const recursosFiltrados = this.filtroEquipaCap
       ? recursosBase.filter(r => String(r.equipaId || '') === this.filtroEquipaCap)
       : recursosBase;
@@ -5435,7 +5598,8 @@ const App = {
     const recursosPermitidos = this.recursosPermitidosRegisto();
     const somenteEuProprio = !this.souAdmin() && !this.souGestorDeAlgumProjeto();
     const valorAtualPessoa = e.regPessoa.value;
-    e.regPessoa.innerHTML = '<option value="">Seleciona…</option>' + recursosPermitidos.map(r => `<option value="${escapeAttr(r.nome)}">${escapeHtml(r.nome)}</option>`).join('');
+    e.regPessoa.innerHTML = '<option value="">Seleciona…</option>' + recursosPermitidos.filter(r => this.souAdmin() || !this.recursoInativo(r))
+      .map(r => `<option value="${escapeAttr(r.nome)}">${escapeHtml(r.nome)}${this.recursoInativo(r) ? ' (inativa)' : ''}</option>`).join('');
     let ultimaPessoa = '';
     try { ultimaPessoa = localStorage.getItem(this.ULTIMA_PESSOA_KEY) || ''; } catch (err) { /* ignora */ }
     e.regPessoa.value = valorAtualPessoa || (somenteEuProprio && recursosPermitidos[0] ? recursosPermitidos[0].nome : ultimaPessoa);
@@ -9122,7 +9286,8 @@ const App = {
     // o maior custo sentido ao usar este modal com uma equipa grande. Os filtros de Departamento/
     // Equipa/Nome (abaixo) só escondem/mostram linhas já calculadas — não recalculam nada.
     const ordemNivel = { critico: 0, aviso: 1, ok: 2, subutilizado: 2, vazio: 2 };
-    const linhas = this.state.recursos.map(r => ({ r, resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
+    // Pessoas inativas só aparecem se já estiverem atribuídas a esta tarefa (para poderem ser retiradas).
+    const linhas = this.state.recursos.filter(r => !this.recursoInativo(r) || (t.recursoIds || []).includes(r.id)).map(r => ({ r, resultado: Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, this.pctAlocacao(t, r.id)) }))
       .sort((a, b) => ordemNivel[a.resultado.nivel] - ordemNivel[b.resultado.nivel]);
     const horasCheias = this.horasTempoInteiro(t);
     const departamentos = [...this.state.departamentos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));

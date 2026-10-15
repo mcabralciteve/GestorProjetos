@@ -35,7 +35,8 @@ const Backup = {
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel || '', equipa_id: r.equipaId || null,
       preco_custo: r.precoCusto || 0, preco_venda: r.precoVenda || 0,
       auth_user_id: null, // ver nota grande no topo do ficheiro — religa-se sozinho por email
-      acesso: r.acesso || 'user', lembretes_email: r.lembretesEmail !== false
+      acesso: r.acesso || 'user', lembretes_email: r.lembretesEmail !== false,
+      ativo: r.ativo !== false, data_saida: r.dataSaida || null
     }));
 
     linhas.departamentos = (state.departamentos || []).map(d => ({

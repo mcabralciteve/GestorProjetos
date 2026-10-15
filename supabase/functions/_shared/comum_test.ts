@@ -67,3 +67,12 @@ Deno.test('enviar: chama o Graph com o token certo, e reaproveita o token em env
   assertEquals((msg.body as Record<string, unknown>).content, '<p>Corpo A</p>');
   assertEquals(msg.toRecipients, [{ emailAddress: { address: 'destino@x.pt' } }]);
 });
+
+Deno.test('quem saiu da empresa (inativo ou data de saída passada) não recebe lembretes; sem as colunas conta como ativo', () => {
+  const ativo = r('ativo', 'a@x.pt', 'u1', true);
+  const inativo = { ...r('inativo', 'b@x.pt', 'u2', true), ativo: false };
+  const saiu = { ...r('saiu', 'c@x.pt', 'u3', true), data_saida: '2000-01-01' };
+  const aSair = { ...r('a-sair', 'd@x.pt', 'u4', true), data_saida: '2999-01-01' };   // ainda trabalha
+  const semColuna = { ...r('antigo', 'e@x.pt', 'u5', true), ativo: undefined, data_saida: undefined };
+  assertEquals(elegiveis([ativo, inativo, saiu, aSair, semColuna], '', false).map(x => x.id), ['ativo', 'a-sair', 'antigo']);
+});
