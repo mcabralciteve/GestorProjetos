@@ -711,11 +711,11 @@ const Crm = {
     const rotuloOp = o => { const c = this.idx.conta.get(o.conta_id); return `${o.titulo} — ${c ? c.nome : '?'}`; };
     return `<div class="row-2">
         <label>Oportunidade <span style="color:var(--vermelho);">*</span><select data-f="oportunidade_id"${fixarOp ? ' disabled' : ''}>${this.opcoes(ops, p.oportunidade_id, rotuloOp, 'Seleciona…')}</select></label>
-        <label>Referência GIAF <span class="hint">(da oportunidade + nº sequencial)</span> <input type="text" data-f="referencia_giaf" value="${escapeAttr(p.referencia_giaf || '')}" placeholder="Ex.: 2026/829-01"></label>
+        <label><span class="rotulo-campo">Referência GIAF <span class="nota">(da oportunidade + nº sequencial)</span></span> <input type="text" data-f="referencia_giaf" value="${escapeAttr(p.referencia_giaf || '')}" placeholder="Ex.: 2026/829-01"></label>
       </div>
       <div class="row-2">
         <label>Versão <input type="number" data-f="versao" min="1" step="1" value="${Number(p.versao) || 1}"></label>
-        <label>Valor (€) <span class="hint">(dos orçamentos)</span> <input type="text" readonly tabindex="-1" value="${escapeAttr(p.id ? this.euro(this.valorProposta(p)) + ' — ' + this.origemValorProposta(p) : 'sem orçamento')}"></label>
+        <label><span class="rotulo-campo">Valor (€) <span class="nota">(dos orçamentos)</span></span> <input type="text" readonly tabindex="-1" value="${escapeAttr(p.id ? this.euro(this.valorProposta(p)) + ' — ' + this.origemValorProposta(p) : 'sem orçamento')}"></label>
       </div>
       <div class="row-2">
         <label>Horas estimadas <input type="number" data-f="horas_estimadas" min="0" step="0.5" value="${p.horas_estimadas == null ? '' : p.horas_estimadas}" placeholder="opcional"></label>

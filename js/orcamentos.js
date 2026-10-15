@@ -223,7 +223,7 @@ const Orc = {
         <div class="orc-principal">${area ? `
           ${editavel ? `<button type="button" class="btn btn-sm btn-danger" data-orc-acao="rm-area|${area.id}" style="float:right;">Remover esta área</button>` : ''}
           ${E.SECCOES.map(s => this.htmlSeccao(area, s, editavel, o)).join('')}
-          <label style="margin-top:10px;">Custos específicos do departamento (€) <span class="hint">(repartidos pelas rubricas na vista do cliente)</span>
+          <label style="margin-top:10px;"><span class="rotulo-campo">Custos específicos do departamento (€) <span class="nota">(repartidos pelas rubricas na vista do cliente)</span></span>
             <input type="number" step="any" min="0" class="orc-num" data-orc="area|${area.id}|custos_especificos" value="${escapeAttr(area.custos_especificos || '')}" placeholder="0"${editavel ? '' : ' disabled'} style="width:120px"></label>`
         : '<p class="hint">Acrescenta uma área (departamento) para começar a orçamentar.</p>'}
           <label style="margin-top:10px;">Notas internas <textarea rows="2" data-orc="cab|notas"${editavel ? '' : ' disabled'}>${escapeHtml(o.notas || '')}</textarea></label>
@@ -439,7 +439,7 @@ const Orc = {
         <label>Para (contacto da oportunidade) <select id="envPara">${comEmail.map(c => `<option value="${escapeAttr(c.email)}"${c.id === principal.id ? ' selected' : ''}>${escapeHtml(c.nome)} &lt;${escapeHtml(c.email)}&gt;</option>`).join('')}</select></label>
         <label>Outro endereço (opcional) <input type="text" id="envOutro" placeholder="nome@empresa.pt"></label>
       </div>
-      <label>Cópia (CC) <span class="hint">(o responsável também recebe as respostas)</span> <input type="text" id="envCc" value="${escapeAttr(cc.join(', '))}"></label>
+      <label><span class="rotulo-campo">Cópia (CC) <span class="nota">(o responsável também recebe as respostas)</span></span> <input type="text" id="envCc" value="${escapeAttr(cc.join(', '))}"></label>
       <label>Assunto <input type="text" id="envAssunto" value="${escapeAttr(OrcEnvio.assuntoPadrao({ referencia, titulo }))}"></label>
       <label>Mensagem <textarea id="envMensagem" rows="9">${escapeHtml(OrcEnvio.mensagemPadrao({ referencia, titulo, contacto: principal.nome, validadeDias: o.validade_dias, responsavel: resp && resp.nome }))}</textarea></label>
       <h4 class="crm-h">Anexos do email</h4>
@@ -591,7 +591,7 @@ const Orc = {
         <label>Custo por km (€/km) <input type="number" step="any" min="0" data-orc-par="custo_km" value="${escapeAttr(p.custo_km)}"></label>
       </div>
       <label style="max-width:300px;">Validade das propostas por omissão (dias) <input type="number" min="1" data-orc-par="validade_dias" value="${escapeAttr(p.validade_dias)}"></label>
-      <label style="max-width:900px;margin-top:8px;">Link da pasta CLIENTES no SharePoint <span class="hint">(as propostas ficam em CLIENTES / nome do cliente / proposta)</span>
+      <label style="max-width:900px;margin-top:8px;"><span class="rotulo-campo">Link da pasta CLIENTES no SharePoint <span class="nota">(as propostas ficam em CLIENTES / nome do cliente / proposta)</span></span>
         <input type="text" data-orc-par-txt="sharepoint_url" value="${escapeAttr(p.sharepoint_url || '')}" placeholder="https://citeve2.sharepoint.com/…" spellcheck="false"></label>
       <span class="hint" id="orcSpMsg"></span><br>
       <span class="hint" id="orcParMsg"></span>`;

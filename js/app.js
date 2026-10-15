@@ -1332,11 +1332,11 @@ const App = {
       <label>Gestor de Projeto
         <select id="novoProjGestor">${opcoesGestor}</select>
       </label>
-      <div class="row-2">
+      <div class="row-2" style="align-items:end;">
         <label>Tipo de referência
           <select id="novoProjTipoRef"><option value="giaf">GIAF (faturação)</option><option value="interno">Interno (sem GIAF)</option></select>
         </label>
-        <label id="novoProjRefWrap">Referência GIAF <span class="hint">(AAAA/NNN)</span>
+        <label id="novoProjRefWrap"><span class="rotulo-campo">Referência GIAF <span class="nota">(AAAA/NNN)</span></span>
           <input type="text" id="novoProjRef" placeholder="ex.: 2026/384" autocomplete="off" spellcheck="false">
         </label>
       </div>
@@ -1690,7 +1690,7 @@ const App = {
       <label class="zoom-label" style="padding:5px 0;"><input type="radio" name="recFim" value="data"> Numa data <input type="date" id="recDataFim" disabled></label>
       <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Atribuir consultores a cada ocorrência <span class="hint">(opcional — dá para ajustar depois em cada uma)</span></p>
       ${this.state.recursos.length ? this.state.recursos.map(r => `<label class="zoom-label" style="padding:3px 0;"><input type="checkbox" class="rec-recorrente-recurso" value="${escapeAttr(r.id)}"> ${escapeHtml(r.nome)}</label>`).join('') : '<p class="hint">Sem consultores definidos.</p>'}
-      <label style="margin-top:8px;">Horas previstas por ocorrência, para cada consultor escolhido <span class="hint">(obrigatório se escolheres algum consultor)</span>
+      <label style="margin-top:8px;"><span class="rotulo-campo">Horas previstas por ocorrência, para cada consultor escolhido <span class="nota">(obrigatório se escolheres algum consultor)</span></span>
         <input type="number" id="recHoras" min="0.25" step="0.25" placeholder="ex.: 2">
       </label>
       <button class="btn btn-primary" id="btnGerarRecorrente" style="margin-top:12px;">Gerar ocorrências</button>
@@ -8721,7 +8721,7 @@ const App = {
         ${secoesVisiveis.map(s => `<label style="flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" data-resumo="${s.k}" ${prefsResumo[s.k] === false ? '' : 'checked'}> ${escapeHtml(s.rotulo)}</label>`).join('')}
         <span class="hint">Cada secção só aparece no email quando tiver alguma coisa para mostrar; se desligares tudo, deixas de receber o resumo.</span>
       </fieldset>
-      <label>Nova password <span class="hint">(deixa em branco para não alterar)</span>
+      <label><span class="rotulo-campo">Nova password <span class="nota">(deixa em branco para não alterar)</span></span>
         <input type="password" id="contaPassword" minlength="6" placeholder="••••••" autocomplete="new-password">
       </label>
       <label>Confirmar nova password
