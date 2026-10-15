@@ -1665,7 +1665,7 @@ const App = {
     const selecionada = this.selecionadaId ? this.tarefaPorId(p, this.selecionadaId) : null;
     const inicioDefault = selecionada ? selecionada.inicio : DateUtil.todayISO();
     const html = `
-      <label>Nome base <span style="color:var(--vermelho);">*</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Nome base</span>
         <input type="text" id="recNome" value="Nova tarefa recorrente">
       </label>
       ${selecionada ? `
@@ -1674,14 +1674,14 @@ const App = {
         Criar como subtarefas de "${escapeHtml(selecionada.nome)}"
       </label>` : ''}
       <div class="row-2">
-        <label>Início da 1ª ocorrência <span style="color:var(--vermelho);">*</span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Início da 1ª ocorrência</span>
           <input type="date" id="recDataInicio" value="${escapeAttr(inicioDefault)}">
         </label>
-        <label>Duração de cada ocorrência (dias) <span style="color:var(--vermelho);">*</span>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Duração de cada ocorrência (dias)</span>
           <input type="number" id="recDuracao" min="1" step="1" value="1">
         </label>
       </div>
-      <label>Repete a cada (dias) <span style="color:var(--vermelho);">*</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Repete a cada (dias)</span>
         <input type="number" id="recIntervalo" min="1" step="1" value="7">
       </label>
       <p style="margin:14px 0 4px;font-weight:600;font-size:12.5px;color:var(--cinza-700);">Termina</p>
@@ -2011,10 +2011,10 @@ const App = {
     }
     const html = `
       <p class="pagina-sub" style="margin-top:0;">Vai associar um consultor a ${ids.length} tarefa(s) selecionada(s).</p>
-      <label>Consultor <span style="color:var(--vermelho);">*</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Consultor</span>
         <select id="loteRecursoId"><option value="">Seleciona…</option>${this.state.recursos.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</select>
       </label>
-      <label>Horas totais previstas, por tarefa <span style="color:var(--vermelho);">*</span> <span class="hint">(obrigatório — o mesmo número em cada uma das tarefas selecionadas)</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Horas totais previstas, por tarefa <span class="nota">(obrigatório — o mesmo número em cada uma das tarefas selecionadas)</span></span>
         <input type="number" id="loteHoras" min="0.25" step="0.25" placeholder="ex.: 8">
       </label>
       <button class="btn btn-primary" id="btnAplicarRecursoLote" style="margin-top:10px;">Aplicar a ${ids.length} tarefa(s)</button>
@@ -7379,7 +7379,7 @@ const App = {
     const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const temTarefas = tarefasFolha.length > 0;
     const html = `
-      <label>Descrição <span style="color:var(--vermelho);">*</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Descrição</span>
         <input type="text" id="npDescricao" placeholder="O que precisa de acontecer?">
       </label>
       <div class="row-2" style="margin-top:10px;align-items:center;">
@@ -7400,7 +7400,7 @@ const App = {
         <label>Responsável <select id="npResponsavel">${opcoesResponsavel}</select></label>
         <label>Data prevista <input type="date" id="npDataPrevista" value="${DateUtil.todayISO()}"></label>
       </div>
-      <label id="npHorasWrap" style="margin-top:10px;display:none;">Horas previstas para o responsável <span style="color:var(--vermelho);">*</span> <input type="number" id="npHoras" min="0.25" step="0.25" placeholder="ex.: 4"></label>
+      <label id="npHorasWrap" style="margin-top:10px;display:none;"><span class="rotulo-campo"><span class="obrig">*</span> Horas previstas para o responsável</span> <input type="number" id="npHoras" min="0.25" step="0.25" placeholder="ex.: 4"></label>
       <p class="hint" style="margin-top:12px;">Fica associado ao Ponto de Situação de ${DateUtil.formatShort(DateUtil.parseISO(ps.data))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 60)) : ''}.</p>
       <button type="button" class="btn btn-primary" id="btnCriarNovoPasso" style="margin-top:10px;">Criar Next Step</button>`;
     this.abrirModal(`Novo Next Step — ${p.nome}`, html);

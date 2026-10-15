@@ -442,7 +442,7 @@ const Crm = {
     const motivos = CrmLogica.motivosDoTipo(this.d.motivos, op.tipo_id);
     this.abrir(`Perdida — ${op.titulo}`, `
       <p class="hint" style="margin:0 0 10px;">A oportunidade passa para "${escapeHtml(etapa.nome)}". O motivo é obrigatório (alimenta a análise de perdas).</p>
-      <label>Motivo da perda <span style="color:var(--vermelho);">*</span>
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Motivo da perda</span>
         <select id="crmPerdaMotivo">${this.opcoes(motivos, '', m => m.nome, 'Seleciona…')}</select></label>
       <label>Notas <textarea id="crmPerdaNotas" rows="3" placeholder="O que aconteceu? (opcional)"></textarea></label>
       <span id="crmPerdaMsg" class="calc-line" style="border:none;display:block;margin-top:6px;color:var(--vermelho);"></span>
@@ -539,8 +539,8 @@ const Crm = {
     const catAtual = op ? CrmLogica.categoriaDe(op, this.idx.etapa) : 'aberta';
     const html = `
       <div class="row-2">
-        <label>Título <span style="color:var(--vermelho);">*</span><input type="text" id="opTitulo" value="${escapeAttr(o.titulo)}" placeholder="Ex.: Projeto de eficiência energética"></label>
-        <label>Conta <span style="color:var(--vermelho);">*</span><select id="opConta">${this.opcoes(this.contasOrdenadas(), o.conta_id, c => c.nome, 'Seleciona…')}</select></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Título</span><input type="text" id="opTitulo" value="${escapeAttr(o.titulo)}" placeholder="Ex.: Projeto de eficiência energética"></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Conta</span><select id="opConta">${this.opcoes(this.contasOrdenadas(), o.conta_id, c => c.nome, 'Seleciona…')}</select></label>
       </div>
       <div class="row-2">
         <label>Contacto principal <select id="opContacto"></select></label>
@@ -552,7 +552,7 @@ const Crm = {
       </div>
       <div id="opPerdaWrap" style="display:none;">
         <div class="row-2">
-          <label>Motivo da perda <span style="color:var(--vermelho);">*</span><select id="opMotivo"></select></label>
+          <label><span class="rotulo-campo"><span class="obrig">*</span> Motivo da perda</span><select id="opMotivo"></select></label>
           <label>Notas da perda <input type="text" id="opMotivoNotas" value="${escapeAttr(o.motivo_perda_notas || '')}"></label>
         </div>
       </div>
@@ -710,7 +710,7 @@ const Crm = {
     const ops = this.d.oportunidades.slice().sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt'));
     const rotuloOp = o => { const c = this.idx.conta.get(o.conta_id); return `${o.titulo} — ${c ? c.nome : '?'}`; };
     return `<div class="row-2">
-        <label>Oportunidade <span style="color:var(--vermelho);">*</span><select data-f="oportunidade_id"${fixarOp ? ' disabled' : ''}>${this.opcoes(ops, p.oportunidade_id, rotuloOp, 'Seleciona…')}</select></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Oportunidade</span><select data-f="oportunidade_id"${fixarOp ? ' disabled' : ''}>${this.opcoes(ops, p.oportunidade_id, rotuloOp, 'Seleciona…')}</select></label>
         <label><span class="rotulo-campo">Referência GIAF <span class="nota">(da oportunidade + nº sequencial)</span></span> <input type="text" data-f="referencia_giaf" value="${escapeAttr(p.referencia_giaf || '')}" placeholder="Ex.: 2026/829-01"></label>
       </div>
       <div class="row-2">
@@ -860,7 +860,7 @@ const Crm = {
         <label>Data <input type="date" data-f="data" value="${escapeAttr(i.data || this.hoje())}"></label>
       </div>
       <label>Contacto <select data-f="contacto_id">${this.opcoes(contactos, i.contacto_id, c => c.nome, 'Sem contacto específico')}</select></label>
-      <label>Resumo <span style="color:var(--vermelho);">*</span><textarea data-f="resumo" rows="3" placeholder="O que foi falado/acordado?">${escapeHtml(i.resumo || '')}</textarea></label>`;
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Resumo</span><textarea data-f="resumo" rows="3" placeholder="O que foi falado/acordado?">${escapeHtml(i.resumo || '')}</textarea></label>`;
   },
   secInteracoes(raiz, ctx) {
     const lista = this.d.interacoes.filter(i => ctx.opId ? i.oportunidade_id === ctx.opId : i.conta_id === ctx.contaId)
@@ -891,7 +891,7 @@ const Crm = {
 
   // ---------- Tarefas de follow-up ----------
   htmlFormTarefa(t) {
-    return `<label>O que fazer <span style="color:var(--vermelho);">*</span><input type="text" data-f="descricao" value="${escapeAttr(t.descricao || '')}" placeholder="Ex.: Enviar proposta revista"></label>
+    return `<label><span class="rotulo-campo"><span class="obrig">*</span> O que fazer</span><input type="text" data-f="descricao" value="${escapeAttr(t.descricao || '')}" placeholder="Ex.: Enviar proposta revista"></label>
       <div class="row-2">
         <label>Responsável <select data-f="responsavel_id">${this.optResponsaveis(t.responsavel_id, 'Sem responsável')}</select></label>
         <label>Data limite <input type="date" data-f="data_limite" value="${escapeAttr(t.data_limite || '')}"></label>
@@ -1044,7 +1044,7 @@ const Crm = {
     if (id && !c) return;
     const html = `
       <div class="row-2">
-        <label>Nome <span style="color:var(--vermelho);">*</span><input type="text" id="ctNome" value="${escapeAttr(c.nome)}"></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Nome</span><input type="text" id="ctNome" value="${escapeAttr(c.nome)}"></label>
         <label>NIF <input type="text" id="ctNif" value="${escapeAttr(c.nif || '')}" inputmode="numeric"></label>
       </div>
       <div class="row-2">
@@ -1124,8 +1124,8 @@ const Crm = {
   // ============================ Contactos ============================
   htmlFormContacto(c, fixarConta) {
     return `<div class="row-2">
-        <label>Conta <span style="color:var(--vermelho);">*</span><select data-f="conta_id"${fixarConta ? ' disabled' : ''}>${this.opcoes(this.contasOrdenadas(), c.conta_id, x => x.nome, 'Seleciona…')}</select></label>
-        <label>Nome <span style="color:var(--vermelho);">*</span><input type="text" data-f="nome" value="${escapeAttr(c.nome || '')}"></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Conta</span><select data-f="conta_id"${fixarConta ? ' disabled' : ''}>${this.opcoes(this.contasOrdenadas(), c.conta_id, x => x.nome, 'Seleciona…')}</select></label>
+        <label><span class="rotulo-campo"><span class="obrig">*</span> Nome</span><input type="text" data-f="nome" value="${escapeAttr(c.nome || '')}"></label>
       </div>
       <div class="row-2">
         <label>Cargo <input type="text" data-f="cargo" value="${escapeAttr(c.cargo || '')}"></label>
@@ -1603,7 +1603,7 @@ A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
       raiz.innerHTML = `
         ${folhas.length > 1 ? `<label>Folha <select id="impFolha">${folhas.map((f, i) => `<option value="${i}"${f === folha ? ' selected' : ''}>${escapeHtml(f.nome)} (${f.matriz.length - 1} linhas)</option>`).join('')}</select></label>` : `<p class="hint">${folha.matriz.length - 1} linhas de dados.</p>`}
         <h4 class="crm-h">Associar colunas</h4>
-        <div class="crm-mapa">${campos.map(c => `<label>${escapeHtml(c.rotulo)}${c.obrig ? ' <span style="color:var(--vermelho);">*</span>' : ''}<select data-imp-campo="${c.k}">${opcoesCol(mapa[c.k])}</select></label>`).join('')}</div>
+        <div class="crm-mapa">${campos.map(c => `<label><span class="rotulo-campo">${c.obrig ? '<span class="obrig">*</span> ' : ''}${escapeHtml(c.rotulo)}</span><select data-imp-campo="${c.k}">${opcoesCol(mapa[c.k])}</select></label>`).join('')}</div>
         ${ehConta
           ? `<label style="margin-top:8px;">Estado das contas sem essa informação <select id="impEstado"><option value="prospeto">Prospeto</option><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label>`
           : `<label class="zoom-label" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="impCriarContas" checked> Criar a conta quando ainda não existir</label>`}
