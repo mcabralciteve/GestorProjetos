@@ -86,5 +86,42 @@ const AnaliseHoras = {
     });
     return { periodos, categorias, valores, totais };
   },
+  // Composição do total: as "max" categorias com mais horas ficam com cor própria (mesma paleta das barras), o
+  // resto junta-se em "Outros" (cinzento). [{chave, horas, pct, cor}] por ordem decrescente, "Outros" no fim.
+  composicao(itens, chaveFn, max) {
+    const total = itens.reduce((s, i) => s + i.horas, 0);
+    const n = max || this.MAX_CATEGORIAS;
+    const ranking = this.totaisPor(itens, chaveFn);
+    const fatias = ranking.slice(0, n).map((t, idx) => ({ chave: t.chave, horas: t.horas, cor: this.PALETA[idx % this.PALETA.length] }));
+    const resto = ranking.slice(n).reduce((s, t) => s + t.horas, 0);
+    if (resto > 0) fatias.push({ chave: 'Outros', horas: resto, cor: this.COR_OUTROS });
+    return fatias.map(f => Object.assign(f, { pct: total ? f.horas / total : 0 }));
+  },
+
+  // Por pessoa: horas em projeto vs. outras atividades (formação, comercial, interno…). As "max" pessoas com mais
+  // horas; "restantes" diz quantas ficaram de fora.
+  projetoVsOutras(itens, max) {
+    const n = max || 12;
+    const m = new Map();
+    itens.forEach(i => {
+      const o = m.get(i.pessoa) || { pessoa: i.pessoa, projeto: 0, outras: 0 };
+      if (i.emProjeto) o.projeto += i.horas; else o.outras += i.horas;
+      m.set(i.pessoa, o);
+    });
+    const todas = [...m.values()].map(o => Object.assign(o, { total: o.projeto + o.outras }))
+      .sort((a, b) => b.total - a.total || a.pessoa.localeCompare(b.pessoa, 'pt'));
+    return { linhas: todas.slice(0, n), restantes: Math.max(0, todas.length - n) };
+  },
+
+  // Horas por cliente (só registos em projeto; projetos sem cliente juntam-se em "Sem cliente").
+  porCliente(itens, max) {
+    return this.composicao(itens.filter(i => i.emProjeto), i => i.cliente || 'Sem cliente', max || 8);
+  },
+
+  // Fatias de um gráfico circular: para cada categoria, onde começa e quanto ocupa (frações de 0 a 1).
+  fatiasCirculares(fatias) {
+    let acumulado = 0;
+    return fatias.filter(f => f.pct > 0).map(f => { const r = { chave: f.chave, cor: f.cor, inicio: acumulado, pct: f.pct }; acumulado += f.pct; return r; });
+  },
 };
 if (typeof module !== 'undefined') module.exports = AnaliseHoras;

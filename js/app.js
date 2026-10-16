@@ -292,6 +292,7 @@ const App = {
       anAgrupar: document.getElementById('anAgrupar'), anGran: document.getElementById('anGran'), anDept: document.getElementById('anDept'), anEquipa: document.getElementById('anEquipa'),
       anPessoa: document.getElementById('anPessoa'), anTipo: document.getElementById('anTipo'), anProjeto: document.getElementById('anProjeto'),
       anBarras: document.getElementById('anBarras'), anEvolucao: document.getElementById('anEvolucao'), anLegenda: document.getElementById('anLegenda'),
+      anTipoDonut: document.getElementById('anTipoDonut'), anPessoasPV: document.getElementById('anPessoasPV'), anClientes: document.getElementById('anClientes'),
       anTituloBarras: document.getElementById('anTituloBarras'), anTabela: document.getElementById('anTabela'),
       btnAnaliseExportar: document.getElementById('btnAnaliseExportar'), btnAnaliseLimpar: document.getElementById('btnAnaliseLimpar'),
       tabBtnFinanceiro: document.getElementById('tabBtnFinanceiro'),
@@ -8640,7 +8641,7 @@ const App = {
       const i = {
         registo: r, data: r.data, horas: parseFloat(r.horas) || 0, pessoa: r.pessoa,
         equipaId: org.equipaId, equipa: org.equipaNome, deptId: org.deptId, dept: org.deptNome,
-        projetoKey: emProjeto ? (r.projetoId || r.projetoIdInterno) : '', projeto: projetoRotulo, emProjeto,
+        projetoKey: emProjeto ? (r.projetoId || r.projetoIdInterno) : '', projeto: projetoRotulo, emProjeto, cliente: emProjeto ? (r.cliente || '') : '',
         tipoKey: tipo.id || '__projeto__', tipo: tipo.nome
       };
       if (comFiltros) {
@@ -8685,6 +8686,7 @@ const App = {
     if (f.de > f.ate) {
       e.anKpis.innerHTML = '<p class="hint">A data inicial é depois da final.</p>';
       e.anBarras.innerHTML = e.anEvolucao.innerHTML = e.anLegenda.innerHTML = e.anTabela.innerHTML = '';
+      e.anTipoDonut.innerHTML = e.anPessoasPV.innerHTML = e.anClientes.innerHTML = '';
       return;
     }
     const { itens, rotulos } = this.itensAnalise({ de: f.de, ate: f.ate, comFiltros: true });
@@ -8696,6 +8698,7 @@ const App = {
     if (!itens.length) {
       const vazio = '<p class="hint">Sem registos neste período/filtro.</p>';
       e.anBarras.innerHTML = vazio; e.anEvolucao.innerHTML = ''; e.anLegenda.innerHTML = ''; e.anTabela.innerHTML = '';
+      e.anTipoDonut.innerHTML = vazio; e.anPessoasPV.innerHTML = vazio; e.anClientes.innerHTML = vazio;
       return;
     }
     const serie = AnaliseHoras.seriePorCategoria(itens, f.gran, dim.chave, f.de, f.ate);
@@ -8733,6 +8736,60 @@ const App = {
     e.anTabela.innerHTML = `<thead><tr><th>${escapeHtml(dim.titulo.charAt(0).toUpperCase() + dim.titulo.slice(1))}</th><th>Horas</th><th>% do total</th><th>Pessoas</th><th>Projetos</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr><td><b>Total</b></td><td><b>${this.formatarHorasAnalise(k.horas)}</b></td><td>100%</td><td>${k.pessoas}</td><td>${k.projetos}</td></tr></tfoot>`;
+
+    // ---- Painéis extra (independentes de "Ver por"; respeitam todos os filtros do ecrã) ----
+    const horas = h => this.formatarHorasAnalise(h);
+    // 1) Horas por tipo de atividade — gráfico circular + legenda (clicar filtra por esse tipo).
+    const tipos = AnaliseHoras.composicao(itens, i => i.tipoKey, 7);
+    const nomeTipo = (chave) => chave === 'Outros' ? 'Outros' : (rotulos.tipo.get(chave) || chave);
+    const RAIO = 44, CIRC = 2 * Math.PI * RAIO;
+    const fatias = AnaliseHoras.fatiasCirculares(tipos);
+    e.anTipoDonut.innerHTML = `<div class="an-donut-wrap">
+        <svg class="an-donut" viewBox="0 0 120 120" role="img" aria-label="Horas por tipo de atividade">
+          <circle cx="60" cy="60" r="${RAIO}" class="an-donut-fundo"></circle>
+          ${fatias.map(f => `<circle class="an-donut-fatia" cx="60" cy="60" r="${RAIO}" stroke="${f.cor}" stroke-dasharray="${(f.pct * CIRC).toFixed(2)} ${CIRC.toFixed(2)}" stroke-dashoffset="${(-f.inicio * CIRC).toFixed(2)}" transform="rotate(-90 60 60)"${f.chave === 'Outros' ? '' : ` data-an-tipo="${escapeAttr(f.chave)}"`}><title>${escapeHtml(nomeTipo(f.chave))}: ${horas(tipos.find(t => t.chave === f.chave).horas)} (${Math.round(f.pct * 100)}%)</title></circle>`).join('')}
+          <text x="60" y="58" class="an-donut-total">${escapeHtml(horas(k.horas))}</text>
+          <text x="60" y="73" class="an-donut-sub">registadas</text>
+        </svg>
+        <div class="an-donut-leg">${tipos.map(t => `
+          <div class="an-leg-linha${t.chave === 'Outros' ? ' an-leg-fixa' : ''}"${t.chave === 'Outros' ? '' : ` role="button" tabindex="0" data-an-tipo="${escapeAttr(t.chave)}" title="Clica para filtrar por este tipo."`}>
+            <i style="background:${t.cor}"></i><span class="an-rot">${escapeHtml(nomeTipo(t.chave))}</span>
+            <span class="an-val">${horas(t.horas)} · ${Math.round(t.pct * 100)}%</span>
+          </div>`).join('')}</div>
+      </div>`;
+
+    // 2) Por pessoa: horas em projeto vs. outras atividades (clicar filtra pela pessoa).
+    const pv = AnaliseHoras.projetoVsOutras(itens, 12);
+    const topoPv = pv.linhas[0] ? pv.linhas[0].total || 1 : 1;
+    const COR_PROJETO = AnaliseHoras.PALETA[0], COR_OUTRAS = AnaliseHoras.PALETA[1];
+    e.anPessoasPV.innerHTML = pv.linhas.map(l => `
+      <div class="an-linha" role="button" tabindex="0" data-an-pessoa="${escapeAttr(l.pessoa)}" title="${escapeAttr(l.pessoa)} — ${horas(l.projeto)} em projeto, ${horas(l.outras)} noutras atividades. Clica para filtrar.">
+        <span class="an-rot">${escapeHtml(l.pessoa)}</span>
+        <span class="an-barra"><span class="an-pv" style="width:${Math.max(2, l.total / topoPv * 100)}%">${l.projeto ? `<i style="flex:${l.projeto};background:${COR_PROJETO}"></i>` : ''}${l.outras ? `<i style="flex:${l.outras};background:${COR_OUTRAS}"></i>` : ''}</span></span>
+        <span class="an-val">${horas(l.total)} · ${Math.round(l.projeto / (l.total || 1) * 100)}% projeto</span>
+      </div>`).join('') +
+      `<div class="an-legenda"><span><i style="background:${COR_PROJETO}"></i>Em projeto</span><span><i style="background:${COR_OUTRAS}"></i>Outras atividades</span></div>` +
+      (pv.restantes ? `<p class="hint" style="margin:6px 6px 0;">+ ${pv.restantes} pessoa(s) com menos horas, só na tabela do Excel exportado.</p>` : '');
+
+    // 3) Horas por cliente (só registos em projeto).
+    const clientes = AnaliseHoras.porCliente(itens, 8);
+    const topoCli = clientes[0] ? clientes[0].horas || 1 : 1;
+    const totalCli = clientes.reduce((s, c) => s + c.horas, 0) || 1;
+    e.anClientes.innerHTML = clientes.length ? clientes.map(c => `
+      <div class="an-linha an-linha-fixa" title="${escapeAttr(c.chave)} — ${horas(c.horas)}">
+        <span class="an-rot">${escapeHtml(c.chave)}</span>
+        <span class="an-barra"><i style="width:${Math.max(2, c.horas / topoCli * 100)}%;background:${c.cor}"></i></span>
+        <span class="an-val">${horas(c.horas)} · ${Math.round(c.horas / totalCli * 100)}%</span>
+      </div>`).join('') : '<p class="hint">Sem horas em projeto neste período/filtro.</p>';
+  },
+  // Clicar numa fatia/linha dos painéis extra filtra por esse tipo ou por essa pessoa.
+  filtrarPainelExtra(ev) {
+    if (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ') return;
+    const f = this.filtrosAnalise;
+    const t = ev.target.closest('[data-an-tipo]');
+    if (t) { ev.preventDefault(); f.tipo = t.dataset.anTipo; this.renderAnalise(); return; }
+    const p = ev.target.closest('[data-an-pessoa]');
+    if (p) { ev.preventDefault(); f.pessoa = p.dataset.anPessoa; this.renderAnalise(); }
   },
   aplicarFiltrosAnalise(origem) {
     const e = this.els;
@@ -10026,6 +10083,7 @@ const App = {
         const linha = ev.target.closest('[data-an-chave]');
         if (linha && (ev.type === 'click' || ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); this.filtrarPelaBarra(linha.dataset.anChave); }
       };
+      [e.anTipoDonut, e.anPessoasPV].forEach(el => { el.addEventListener('click', ev => this.filtrarPainelExtra(ev)); el.addEventListener('keydown', ev => this.filtrarPainelExtra(ev)); });
       e.anBarras.addEventListener('click', aoEscolherBarra);
       e.anBarras.addEventListener('keydown', aoEscolherBarra);
     }

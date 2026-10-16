@@ -584,6 +584,26 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .an-eixo span{flex:1 1 0;min-width:0;text-align:center;overflow:hidden;white-space:nowrap;}
 .an-legenda{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;font-size:11.5px;color:var(--cinza-700);}
 .an-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+/* Painéis extra da Análise: tipo de atividade (circular), projeto vs. outras por pessoa, por cliente */
+.an-grelha.an-grelha3{grid-template-columns:repeat(auto-fit,minmax(330px,1fr));}
+.an-linha-fixa{cursor:default;}
+.an-linha-fixa:hover{background:none;}
+.an-pv{display:flex;height:100%;border-radius:7px;overflow:hidden;}
+.an-pv i{border-radius:0;}
+.an-donut-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+.an-donut{width:150px;height:150px;flex:0 0 auto;}
+.an-donut-fundo{fill:none;stroke:var(--cinza-100);stroke-width:20;}
+.an-donut-fatia{fill:none;stroke-width:20;}
+.an-donut-fatia[data-an-tipo]{cursor:pointer;}
+.an-donut-fatia[data-an-tipo]:hover{stroke-width:23;}
+.an-donut-total{fill:var(--cinza-900);text-anchor:middle;font-size:15px;font-weight:700;font-family:var(--display);}
+.an-donut-sub{fill:var(--cinza-500);text-anchor:middle;font-size:7.5px;text-transform:uppercase;letter-spacing:.04em;}
+.an-donut-leg{flex:1 1 170px;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.an-leg-linha{display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px;}
+.an-leg-linha:hover,.an-leg-linha:focus-visible{background:var(--cinza-100);outline:none;}
+.an-leg-linha.an-leg-fixa{cursor:default;}
+.an-leg-linha.an-leg-fixa:hover{background:none;}
+.an-leg-linha i{display:block;width:10px;height:10px;border-radius:3px;}
 .badge-interno{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:var(--radius-pill);background:#e3edf7;color:var(--azul-esc);font-size:10px;font-weight:700;letter-spacing:.03em;white-space:nowrap;}
 :root[data-tema="escuro"] .badge-interno{background:#22384f;color:#cfe3f7;}
 .badge-suspenso{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--radius-pill);background:var(--cinza-200);color:var(--cinza-700);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;}

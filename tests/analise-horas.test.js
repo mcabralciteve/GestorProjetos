@@ -56,3 +56,34 @@ test('registos fora do intervalo não entram na série', () => {
   assert.deepEqual(s.periodos, ['2026-09']);
   assert.equal(s.totais['2026-09'], 2);
 });
+
+// ---------- Painéis extra: tipo de atividade, projeto vs outras por pessoa, por cliente ----------
+const it2 = (pessoa, horas, tipo, cliente = '') => ({ data: '2026-09-01', horas, pessoa, tipo, emProjeto: tipo === 'Projeto', cliente });
+
+test('composição: maiores com cor própria, resto em "Outros", percentagens somam 1', () => {
+  const itens = [it2('A', 10, 'Projeto'), it2('A', 4, 'Formação'), it2('B', 3, 'Comercial'), it2('B', 2, 'Interno'), it2('C', 1, 'Reunião')];
+  const c = A.composicao(itens, i => i.tipo, 3);
+  assert.deepEqual(c.map(x => x.chave), ['Projeto', 'Formação', 'Comercial', 'Outros']);
+  assert.deepEqual(c.map(x => x.horas), [10, 4, 3, 3]);
+  assert.equal(c[3].cor, A.COR_OUTROS); assert.equal(c[0].cor, A.PALETA[0]);
+  assert.ok(Math.abs(c.reduce((s, x) => s + x.pct, 0) - 1) < 1e-9);
+  assert.deepEqual(A.composicao([], i => i.tipo), []);
+});
+
+test('projeto vs outras por pessoa: ordenado por horas, com os que ficaram de fora', () => {
+  const itens = [it2('Ana', 6, 'Projeto'), it2('Ana', 2, 'Formação'), it2('Bruno', 10, 'Projeto'), it2('Cris', 1, 'Interno')];
+  const r = A.projetoVsOutras(itens, 2);
+  assert.deepEqual(r.linhas.map(l => l.pessoa), ['Bruno', 'Ana']);
+  assert.deepEqual(r.linhas[1], { pessoa: 'Ana', projeto: 6, outras: 2, total: 8 });
+  assert.equal(r.restantes, 1);
+  assert.equal(A.projetoVsOutras([], 5).linhas.length, 0);
+});
+
+test('por cliente: só registos em projeto; sem cliente agrupa-se; fatias circulares seguidas', () => {
+  const itens = [it2('A', 5, 'Projeto', 'Alfa'), it2('B', 3, 'Projeto', 'Alfa'), it2('B', 2, 'Projeto', ''), it2('C', 9, 'Formação')];
+  const c = A.porCliente(itens, 5);
+  assert.deepEqual(c.map(x => [x.chave, x.horas]), [['Alfa', 8], ['Sem cliente', 2]]);
+  const fatias = A.fatiasCirculares(c);
+  assert.equal(fatias[0].inicio, 0); assert.ok(Math.abs(fatias[1].inicio - 0.8) < 1e-9);
+  assert.equal(A.fatiasCirculares([{ chave: 'x', cor: '#000', pct: 0 }]).length, 0);
+});
