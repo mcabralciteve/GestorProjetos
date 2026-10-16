@@ -2293,6 +2293,105 @@ const App = {
     this.persist();
     this.renderTudo();
   },
+  // ---------- Substituição de uma pessoa num projeto (Administrador ou Gestor do projeto) ----------
+  // Passa o trabalho POR FAZER de "deId" neste projeto para outra pessoa (ou deixa-o por atribuir) — em bloco
+  // ("Passar tudo para…") ou linha a linha. Só passa o remanescente das horas previstas; o que a pessoa já
+  // registou fica com ela, e o registo de cada passagem fica guardado (pessoas_substituicoes). As regras estão
+  // em PessoasLogica.planearSubstituicao/aplicarSubstituicao (testadas).
+  abrirModalSubstituirPessoa(projetoId, deId, aoConcluir) {
+    const p = this.state.projetos[projetoId];
+    const de = this.state.recursos.find(r => r.id === deId);
+    if (!p || !de) return;
+    if (!this.possoEditarProjeto(projetoId)) { this.toast('Só o Administrador ou o Gestor deste projeto pode passar trabalho para outra pessoa.'); return; }
+    const hoje = DateUtil.todayISO();
+    const opcoesCalc = {
+      horasRegistadas: (pr, t, rid) => this.horasJaRegistadasTarefa(pr, t, rid),
+      pendente: pp => this.proximoPassoPendente(pp)
+    };
+    const pend = PessoasLogica.pendencias(this.state, deId, opcoesCalc);
+    const tarefas = pend.tarefas.filter(t => t.projetoId === projetoId);
+    const nextSteps = pend.nextSteps.filter(n => n.projetoId === projetoId);
+    if (!tarefas.length && !nextSteps.length) { this.toast(`${de.nome} não tem trabalho por fazer neste projeto.`); return; }
+    // Candidatos: só pessoas ativas e sem saída marcada; a equipa da pessoa que sai vem primeiro.
+    const candidatos = this.state.recursos.filter(r => r.id !== deId && PessoasLogica.estado(r, hoje) === 'ativo');
+    const grupos = new Map();
+    candidatos.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).forEach(r => {
+      const eq = this.state.equipas.find(x => x.id === r.equipaId);
+      const chave = eq ? eq.nome : 'Sem equipa';
+      if (!grupos.has(chave)) grupos.set(chave, { primeiro: !!eq && eq.id === de.equipaId, itens: [] });
+      grupos.get(chave).itens.push(r);
+    });
+    const opcoesPessoas = [...grupos.entries()].sort((a, b) => (b[1].primeiro - a[1].primeiro) || a[0].localeCompare(b[0], 'pt'))
+      .map(([nome, g]) => `<optgroup label="${escapeAttr(nome)}">${g.itens.map(r => `<option value="p:${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</optgroup>`).join('');
+    if (!candidatos.length) { this.toast('Não há outras pessoas ativas para ficar com o trabalho.'); return; }
+    const linhaTarefa = t => `
+      <tr data-tarefa="${escapeAttr(t.tarefaId)}">
+        <td>${escapeHtml(t.tarefaNome)}</td>
+        <td style="white-space:nowrap;">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(t.inicio)))} → ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(t.fim)))}</td>
+        <td style="text-align:right;white-space:nowrap;">${t.restantes} h <span class="hint">de ${t.previstas} (feitas: ${t.registadas})</span></td>
+        <td><select data-escolha><option value="manter">Manter com ${escapeHtml(de.nome)}</option><option value="remover">Deixar por atribuir</option>${opcoesPessoas}</select></td>
+      </tr>`;
+    const linhaNext = n => `
+      <tr data-nextstep="${escapeAttr(n.ppId)}">
+        <td colspan="3">${escapeHtml(n.descricao || '(sem descrição)')}${n.dataPrevista ? ` <span class="hint">até ${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(n.dataPrevista)))}</span>` : ''}</td>
+        <td><select data-escolha><option value="manter">Manter com ${escapeHtml(de.nome)}</option>${opcoesPessoas}</select></td>
+      </tr>`;
+    const html = `
+      <p class="pagina-sub" style="margin-top:0;"><b>${escapeHtml(de.nome)}</b> — ${escapeHtml(PessoasLogica.rotuloEstado(de, hoje))} · projeto <b>${escapeHtml(this.rotuloProjetoCompleto(p))}</b></p>
+      <p class="hint" style="margin-top:0;">Só passam as horas <b>por fazer</b>; as já registadas ficam com ${escapeHtml(de.nome)}. Se ele/ela já registou horas numa tarefa, continua associado(a) a ela (histórico); se não, sai da tarefa. Tarefas concluídas não se alteram.</p>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:8px 0;">
+        <label style="margin:0;flex:1;min-width:200px;"><span class="rotulo-campo">Passar tudo para</span>
+          <select id="substTodos"><option value="">Escolhe a pessoa…</option>${opcoesPessoas}</select></label>
+        <button class="btn btn-sm" id="btnSubstTodos">Aplicar a todas as linhas</button>
+      </div>
+      <div class="table-scroll" style="max-height:44vh;overflow:auto;">
+        <table class="tabela-crud" style="width:100%;">
+          <thead><tr><th>Tarefa / Next step</th><th>Datas</th><th style="text-align:right;">Por fazer</th><th>Passa para</th></tr></thead>
+          <tbody>${tarefas.map(linhaTarefa).join('')}${nextSteps.length ? `<tr><td colspan="4" class="hint" style="padding-top:10px;"><b>Next steps abertos</b></td></tr>` + nextSteps.map(linhaNext).join('') : ''}</tbody>
+        </table>
+      </div>
+      <p id="substMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-primary" id="btnSubstAplicar">Aplicar</button>
+        <button class="btn" id="btnSubstCancelar">Cancelar</button>
+      </div>`;
+    this.abrirModal(`Passar trabalho de ${de.nome}`, html);
+    const corpo = this.els.modalCorpo;
+    const msg = corpo.querySelector('#substMsg');
+    const erro = t => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
+    corpo.querySelector('#btnSubstTodos').addEventListener('click', () => {
+      const v = corpo.querySelector('#substTodos').value;
+      if (!v) return erro('Escolhe primeiro a pessoa que fica com o trabalho.');
+      corpo.querySelectorAll('select[data-escolha]').forEach(s => { s.value = v; });
+      msg.textContent = '';
+    });
+    corpo.querySelector('#btnSubstCancelar').addEventListener('click', () => { this.fecharModal(); if (aoConcluir) aoConcluir(); });
+    corpo.querySelector('#btnSubstAplicar').addEventListener('click', async () => {
+      const escolhas = { tarefas: {}, nextSteps: {} };
+      const ler = (tr, destino, id) => {
+        const v = tr.querySelector('select[data-escolha]').value;
+        destino[id] = v === 'manter' ? { acao: 'manter' } : v === 'remover' ? { acao: 'remover' } : { acao: 'passar', paraId: v.slice(2) };
+      };
+      corpo.querySelectorAll('tr[data-tarefa]').forEach(tr => ler(tr, escolhas.tarefas, tr.dataset.tarefa));
+      corpo.querySelectorAll('tr[data-nextstep]').forEach(tr => ler(tr, escolhas.nextSteps, tr.dataset.nextstep));
+      const plano = PessoasLogica.planearSubstituicao(this.state, projetoId, deId, escolhas, { horasRegistadas: opcoesCalc.horasRegistadas, hojeISO: hoje });
+      if (plano.erros.length) return erro(plano.erros.join(' '));
+      if (!plano.ops.length && !plano.nextSteps.length) return erro('Escolhe, em pelo menos uma linha, o que fazer (passar para alguém ou deixar por atribuir).');
+      const nPassar = plano.ops.filter(o => o.paraId).length, nRemover = plano.ops.filter(o => !o.paraId).length;
+      const resumo = [nPassar ? `${nPassar} tarefa(s) passam para outra pessoa` : '', nRemover ? `${nRemover} tarefa(s) ficam por atribuir` : '', plano.nextSteps.length ? `${plano.nextSteps.length} next step(s) mudam de responsável` : ''].filter(Boolean).join('; ');
+      if (!confirm(`${resumo}. Confirmas?`)) return;
+      const linhas = PessoasLogica.aplicarSubstituicao(this.state, projetoId, deId, plano, this.perfilAtual()?.recursoId);
+      this.persist();
+      this.fecharModal();
+      this.renderTudo();
+      let aviso = '';
+      try { await Sync.registarSubstituicoes(linhas); }
+      catch (err) { aviso = /pessoas_substituicoes|does not exist|schema cache/i.test(err.message || '') ? ' Atenção: o registo da substituição não ficou guardado (corre supabase/pessoas_substituicoes.sql).' : ` Atenção: o registo da substituição não ficou guardado (${err.message}).`; }
+      this.toast(`Feito: ${resumo}.${aviso}`);
+      if (aoConcluir) aoConcluir();
+    });
+  },
+
   // ---------- Saída de uma pessoa (só Administrador) ----------
   // Ecrã único para: marcar uma data de saída (a pessoa trabalha até esse dia), inativar já, ou
   // reativar. Mostra primeiro o que a pessoa tem em aberto (tarefas por concluir, projetos que gere,
@@ -2323,7 +2422,11 @@ const App = {
         bloco('Next steps abertos', pend.nextSteps, n => `${escapeHtml(rotuloProj(n))} — ${escapeHtml(n.descricao || '(sem descrição)')}`) +
         bloco('Equipas que lidera', pend.equipasLideradas, e => escapeHtml(e.nome), '— altera o líder em Equipas') +
         bloco('Departamentos que dirige', pend.departamentosDirigidos, d => escapeHtml(d.nome), '— altera o diretor em Departamentos') +
-        '<p class="hint" style="margin-top:10px;">Nada disto é alterado automaticamente. Passar tarefas e projetos para outra pessoa chega numa próxima versão; por agora ficam atribuídos a quem sai e deixam de contar na capacidade.</p>';
+        '<p class="hint" style="margin-top:10px;">Nada disto é alterado automaticamente. Tarefas e next steps passam para outra pessoa projeto a projeto (botões abaixo); projetos que gere e liderança de equipa/departamento ficam para a fase seguinte.</p>';
+    const projsComTrabalho = [...new Map([...pend.tarefas, ...pend.nextSteps].map(x => [x.projetoId, x])).values()];
+    const substHtml = projsComTrabalho.length
+      ? `<div style="margin:10px 0;"><b>Passar o trabalho por fazer para outra pessoa</b> <span class="hint">(só o que falta; o já registado fica com ${escapeHtml(r.nome)})</span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">${projsComTrabalho.map(x => `<button class="btn btn-sm" data-subst-proj="${escapeAttr(x.projetoId)}" style="text-align:left;">↔ ${escapeHtml(rotuloProj(x))}</button>`).join('')}</div></div>` : '';
     const estadoTxt = PessoasLogica.rotuloEstado(r, hoje);
     const html = `
       <p class="pagina-sub" style="margin-top:0;"><b>${escapeHtml(r.nome)}</b> — estado atual: ${escapeHtml(estadoTxt)}.</p>
@@ -2332,6 +2435,8 @@ const App = {
         <input type="date" id="saidaData" value="${escapeAttr(r.dataSaida || '')}">
       </label>
       ${pendHtml}
+      ${substHtml}
+      <div id="saidaHistorico"></div>
       <p id="saidaMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
         <button class="btn btn-primary" id="btnSaidaGuardar">Guardar data de saída</button>
@@ -2344,6 +2449,15 @@ const App = {
     const inpData = corpo.querySelector('#saidaData');
     const erro = t => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
     const botoes = [...corpo.querySelectorAll('button')];
+    corpo.querySelectorAll('[data-subst-proj]').forEach(b => b.addEventListener('click', () =>
+      this.abrirModalSubstituirPessoa(b.dataset.substProj, id, () => this.abrirModalSaidaPessoa(id))));
+    // Histórico de substituições já feitas (tabela pessoas_substituicoes; se ainda não existir, não mostra nada).
+    Sync.lerSubstituicoes(id, 15).then(linhas => {
+      const el = corpo.querySelector('#saidaHistorico');
+      if (!el || !el.isConnected || !linhas.length) return;
+      el.innerHTML = `<div style="margin:10px 0;"><b>Substituições já feitas</b> (${linhas.length})<ul style="margin:4px 0 0;padding-left:18px;">${linhas.map(l =>
+        `<li>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(String(l.feito_em).slice(0, 10))))} — ${escapeHtml(l.projeto_nome)}: ${escapeHtml(l.tarefa_nome || '')} → ${escapeHtml(l.para_nome || 'por atribuir')}${Number(l.horas) ? ` (${Number(l.horas)} h)` : ''}</li>`).join('')}</ul></div>`;
+    }).catch(() => { /* tabela ainda não existe */ });
     const executar = async (acao) => {
       const data = inpData.value;
       if (acao === 'guardar') {
@@ -4387,10 +4501,24 @@ const App = {
     if (cardConsultores) cardConsultores.style.display = '';
     const idsConsultores = new Set();
     p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => idsConsultores.add(rid)));
-    const nomes = [...idsConsultores].map(rid => (this.state.recursos.find(r => r.id === rid) || {}).nome).filter(Boolean);
-    e.listaConsultoresProjeto.innerHTML = nomes.length
-      ? nomes.map(n => `<span class="chip">${escapeHtml(n)}</span>`).join(' ')
+    // Pessoas que saem (data de saída marcada) ou já inativas aparecem sinalizadas; quem pode editar o projeto
+    // vê "↔ Substituir" se ainda tiverem trabalho por fazer aqui (ver abrirModalSubstituirPessoa).
+    const hoje = DateUtil.todayISO();
+    const pode = this.possoEditarProjeto(p.id) && p.ativo !== false;
+    const pessoas = [...idsConsultores].map(rid => this.state.recursos.find(r => r.id === rid)).filter(Boolean);
+    const trabalhoAqui = (rid) => p.tarefas.some(t => (t.recursoIds || []).includes(rid) && (t.progresso || 0) < 100)
+      || (p.proximosPassos || []).some(pp => pp.responsavelId === rid && this.proximoPassoPendente(pp));
+    e.listaConsultoresProjeto.innerHTML = pessoas.length
+      ? pessoas.map(r => {
+        const estado = PessoasLogica.estado(r, hoje);
+        const badge = estado === 'ativo' ? '' : ` <span class="badge-estado-pessoa ${estado}">${escapeHtml(PessoasLogica.rotuloEstado(r, hoje))}</span>`;
+        const botao = pode && estado !== 'ativo' && trabalhoAqui(r.id)
+          ? ` <button class="btn btn-sm" data-substituir="${escapeAttr(r.id)}" title="Passar o trabalho por fazer desta pessoa para outra">↔ Substituir</button>` : '';
+        return `<span class="chip">${escapeHtml(r.nome)}${badge}</span>${botao}`;
+      }).join(' ')
       : 'Ainda sem consultores — associa consultores às tarefas no Gantt.';
+    e.listaConsultoresProjeto.querySelectorAll('[data-substituir]').forEach(b =>
+      b.addEventListener('click', () => this.abrirModalSubstituirPessoa(p.id, b.dataset.substituir)));
   },
 
   // ---------- Tab: Projetos ----------
@@ -7539,7 +7667,7 @@ const App = {
     // mesmo nome em sessões/fases diferentes (ex.: "Reconhecimento de Processos" em duas sessões)
     // ficavam indistinguíveis nesta lista, e não dava para perceber onde se estava mesmo a alocar.
     const opcoesTarefa = tarefasFolha.map(t => `<option value="${t.id}">${escapeHtml(this.rotuloTarefaComPai(p, t))}</option>`).join('');
-    const consultores = this.consultoresDoProjeto(p);
+    const consultores = this.recursosAtivos(this.consultoresDoProjeto(p));
     const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
     const temTarefas = tarefasFolha.length > 0;
     const html = `

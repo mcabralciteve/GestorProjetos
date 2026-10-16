@@ -401,6 +401,25 @@ const Sync = {
     if (!data || data.length !== 1) throw new Error('Não foi possível gravar (sem permissão ou pessoa já não existe).');
   },
 
+  // ---------- Registo de substituições (só acrescenta; ver supabase/pessoas_substituicoes.sql) ----------
+  // "linhas" vêm de PessoasLogica.aplicarSubstituicao. Falha com um erro legível se a tabela ainda não existir.
+  async registarSubstituicoes(linhas) {
+    if (!linhas || !linhas.length) return;
+    const { error } = await supabaseClient.from('pessoas_substituicoes').insert(linhas.map(l => ({
+      feito_por: l.feitoPor || null, tipo: l.tipo, projeto_id: l.projetoId || null, projeto_nome: l.projetoNome || '',
+      tarefa_id: l.tarefaId || null, tarefa_nome: l.tarefaNome || '',
+      de_recurso_id: l.deId || null, de_nome: l.deNome || '', para_recurso_id: l.paraId || null, para_nome: l.paraNome || '',
+      horas: l.horas || 0, observacoes: l.observacoes || ''
+    })));
+    if (error) throw error;
+  },
+  async lerSubstituicoes(deRecursoId, limite) {
+    const { data, error } = await supabaseClient.from('pessoas_substituicoes').select('*')
+      .eq('de_recurso_id', deRecursoId).order('feito_em', { ascending: false }).limit(limite || 20);
+    if (error) throw error;
+    return data || [];
+  },
+
   // ---------- "A minha conta" (nome/password próprios) ----------
   // "nome" vive em dois sítios: user_metadata (é o que a topbar mostra, via Auth.atualizarUI) e
   // recursos.nome (é o que o resto da app usa — tabelas, seletor de gestor, etc.). Escrevem-se os

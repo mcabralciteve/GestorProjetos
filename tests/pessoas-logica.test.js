@@ -83,3 +83,77 @@ test('inativar: nunca o único Administrador ativo', () => {
   assert.equal(P.podeInativar(e, 'adm1', HOJE).ok, true);                                // há outro ativo
   assert.equal(P.podeInativar(e, 'nao-existe', HOJE).ok, false);
 });
+
+// ---------- Substituição (Fase 2) ----------
+const cenario = () => {
+  const e = estado();
+  e.recursos.push({ id: 'n', nome: 'Nuno' }, { id: 'sai2', nome: 'Sofia', dataSaida: '2026-12-01' });
+  e.projetos.p1.tarefas.push({ id: 't5', nome: 'Workshop', recursoIds: ['a', 'n'], alocacoesHoras: { a: 6, n: 2 }, progresso: 10 });
+  return e;
+};
+const reg = (p, t, rid) => (rid === 'a' ? ({ t1: 12, t5: 0, t3: 0 }[t.id] || 0) : 0);
+const O = { horasRegistadas: reg, hojeISO: HOJE };
+
+test('substituir: passa só o remanescente; quem já registou horas fica na tarefa com as horas feitas', () => {
+  const e = cenario();
+  const plano = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t1: { acao: 'passar', paraId: 'b' } } }, O);
+  assert.deepEqual(plano.erros, []);
+  assert.equal(plano.ops.length, 1);
+  assert.equal(plano.ops[0].restantes, 8); assert.equal(plano.ops[0].sai, false);
+  const linhas = P.aplicarSubstituicao(e, 'p1', 'a', plano, 'adm1');
+  const t1 = e.projetos.p1.tarefas[0];
+  assert.deepEqual(t1.recursoIds.sort(), ['a', 'b']);
+  assert.equal(t1.alocacoesHoras.a, 12);            // o que já fez
+  assert.equal(t1.alocacoesHoras.b, 13);            // 5 que já tinha + 8 do remanescente
+  assert.equal(linhas.length, 1); assert.equal(linhas[0].paraNome, 'Bruno'); assert.equal(linhas[0].horas, 8); assert.equal(linhas[0].feitoPor, 'adm1');
+});
+
+test('substituir: sem horas registadas sai da tarefa; o novo entra com as horas por fazer', () => {
+  const e = cenario();
+  const plano = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t5: { acao: 'passar', paraId: 'c' } } }, O);
+  P.aplicarSubstituicao(e, 'p1', 'a', plano);
+  const t5 = e.projetos.p1.tarefas.find(t => t.id === 't5');
+  assert.deepEqual(t5.recursoIds.sort(), ['c', 'n']);
+  assert.equal(t5.alocacoesHoras.a, undefined); assert.equal(t5.alocacoesHoras.c, 6); assert.equal(t5.alocacoesHoras.n, 2);
+});
+
+test('substituir: "deixar por atribuir" não dá as horas a ninguém; "manter" e tarefas concluídas não se tocam', () => {
+  const e = cenario();
+  const plano = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t5: { acao: 'remover' }, t1: { acao: 'manter' }, t2: { acao: 'passar', paraId: 'b' } } }, O);
+  assert.deepEqual(plano.erros, []);
+  assert.deepEqual(plano.ops.map(o => o.tarefaId), ['t5']);            // t2 está 100% e t1 fica
+  const linhas = P.aplicarSubstituicao(e, 'p1', 'a', plano);
+  const t5 = e.projetos.p1.tarefas.find(t => t.id === 't5');
+  assert.deepEqual(t5.recursoIds, ['n']);
+  assert.equal(linhas[0].paraId, null); assert.equal(linhas[0].observacoes, 'Deixada por atribuir');
+  assert.deepEqual(e.projetos.p1.tarefas.find(t => t.id === 't2').recursoIds, ['a']);
+});
+
+test('substituir: destino inválido (a mesma pessoa, inexistente, ou também de saída) → erro e nada muda', () => {
+  const e = cenario();
+  const antes = JSON.stringify(e);
+  for (const paraId of ['a', 'zzz', 'sai2', undefined]) {
+    const plano = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t1: { acao: 'passar', paraId } } }, O);
+    assert.equal(plano.erros.length, 1, String(paraId)); assert.equal(plano.ops.length, 0);
+  }
+  const ina = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t1: { acao: 'passar', paraId: 'adm2' } } }, O);   // adm2 já saiu
+  assert.equal(ina.erros.length, 1);
+  assert.equal(JSON.stringify(e), antes);                                // o planeamento nunca altera o estado
+});
+
+test('substituir: next steps abertos passam para o novo responsável', () => {
+  const e = cenario();
+  const plano = P.planearSubstituicao(e, 'p1', 'a', { nextSteps: { n1: { acao: 'passar', paraId: 'b' }, n2: { acao: 'passar', paraId: 'b' } } }, O);
+  assert.equal(plano.nextSteps.length, 2);
+  P.aplicarSubstituicao(e, 'p1', 'a', plano);
+  assert.equal(e.projetos.p1.proximosPassos[0].responsavelId, 'b');
+});
+
+test('substituir: horas ultrapassadas (registado > previsto) → remanescente 0, a pessoa mantém as previstas', () => {
+  const e = cenario();
+  const plano = P.planearSubstituicao(e, 'p1', 'a', { tarefas: { t1: { acao: 'passar', paraId: 'c' } } }, { horasRegistadas: () => 30, hojeISO: HOJE });
+  assert.equal(plano.ops[0].restantes, 0);
+  P.aplicarSubstituicao(e, 'p1', 'a', plano);
+  const t1 = e.projetos.p1.tarefas[0];
+  assert.equal(t1.alocacoesHoras.a, 20); assert.equal(t1.alocacoesHoras.c, 0);
+});
