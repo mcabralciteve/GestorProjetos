@@ -586,6 +586,23 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .an-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 /* Painéis extra da Análise: tipo de atividade (circular), projeto vs. outras por pessoa, por cliente */
 .an-grelha.an-grelha3{grid-template-columns:repeat(auto-fit,minmax(330px,1fr));}
+.an-span2{grid-column:span 2;}
+@media (max-width:760px){.an-span2{grid-column:auto;}}
+.an-grelha3 > .card[hidden]{display:none;}
+.an-pr{margin-bottom:12px;}
+.an-pr-rot{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;margin-bottom:2px;}
+.an-pr-rot b{font-size:11.5px;color:var(--cinza-700);white-space:nowrap;}
+.an-pr-rot b.an-pr-acima{color:#b4432f;}
+.an-pr-linha{display:grid;grid-template-columns:56px 1fr auto;gap:8px;align-items:center;font-size:11.5px;color:var(--cinza-700);margin:2px 0;}
+.an-pr-linha .an-barra{height:9px;}
+.an-calor{display:grid;gap:2px;align-items:center;}
+.an-calor-cab{font-size:10px;color:var(--cinza-500);text-align:center;overflow:hidden;white-space:nowrap;}
+.an-calor-rot{font-size:11.5px;}
+.an-cel{display:block;height:16px;border-radius:3px;background:var(--cinza-100);}
+.an-acum{width:100%;height:auto;max-height:230px;}
+.an-acum-grelha{stroke:var(--cinza-200);stroke-width:1;}
+.an-acum-hoje{stroke:var(--cinza-500);stroke-width:1;stroke-dasharray:3 3;}
+.an-acum-eixo{fill:var(--cinza-500);font-size:9.5px;}
 .an-linha-fixa{cursor:default;}
 .an-linha-fixa:hover{background:none;}
 .an-pv{display:flex;height:100%;border-radius:7px;overflow:hidden;}

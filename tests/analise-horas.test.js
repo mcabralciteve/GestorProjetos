@@ -87,3 +87,51 @@ test('por cliente: só registos em projeto; sem cliente agrupa-se; fatias circul
   assert.equal(fatias[0].inicio, 0); assert.ok(Math.abs(fatias[1].inicio - 0.8) < 1e-9);
   assert.equal(A.fatiasCirculares([{ chave: 'x', cor: '#000', pct: 0 }]).length, 0);
 });
+
+// ---------- Mais gráficos ----------
+test('preenchimento: menor primeiro, sem as pessoas sem horas esperadas, e percentagem global', () => {
+  const r = A.preenchimento([
+    { nome: 'Ana', esperado: 80, registado: 80 }, { nome: 'Bruno', esperado: 80, registado: 40 },
+    { nome: 'Cris', esperado: 0, registado: 5 }, { nome: 'Dani', esperado: 40, registado: 44 }], 2);
+  assert.deepEqual(r.linhas.map(l => l.nome), ['Bruno', 'Ana']);
+  assert.equal(r.linhas[0].pct, 0.5); assert.equal(r.restantes, 1);
+  assert.equal(r.esperado, 200); assert.equal(r.registado, 164); assert.ok(Math.abs(r.pctGlobal - 0.82) < 1e-9);
+  assert.equal(A.preenchimento([], 5).pctGlobal, 0);
+});
+
+test('previsto vs real: mais horas reais primeiro; pct só com previsto', () => {
+  const r = A.previstoVsReal([{ chave: 'a', rotulo: 'A', real: 10, previsto: 20, vendido: 30 }, { chave: 'b', rotulo: 'B', real: 50, previsto: 0, vendido: null }, { chave: 'c', rotulo: 'C', real: 5, previsto: 5, vendido: 5 }], 2);
+  assert.deepEqual(r.linhas.map(l => l.chave), ['b', 'a']);
+  assert.equal(r.linhas[0].pct, null); assert.equal(r.linhas[1].pct, 0.5); assert.equal(r.restantes, 1);
+});
+
+test('mapa de calor: horas por pessoa e semana, só as pessoas com mais horas', () => {
+  const itens = [it2('Ana', 8, 'Projeto'), { ...it2('Ana', 4, 'Projeto'), data: '2026-09-09' }, { ...it2('Bruno', 3, 'Projeto'), data: '2026-09-09' }, { ...it2('Cris', 1, 'Projeto'), data: '2026-09-30' }];
+  const m = A.matrizPessoaSemana(itens, '2026-08-31', '2026-09-30', 'semana', 2);
+  assert.deepEqual(m.periodos, ['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28']);
+  assert.deepEqual(m.linhas.map(l => l.pessoa), ['Ana', 'Bruno']);
+  assert.deepEqual(m.linhas[0].valores, [8, 4, 0, 0, 0]);       // 1 set (terça) na semana de 31/08; 9 set na de 07/09
+  assert.equal(m.restantes, 1);
+});
+
+test('dia da semana: segunda = 0, domingo = 6', () => {
+  const d = A.porDiaSemana([{ ...it2('A', 2, 'Projeto'), data: '2026-09-21' }, { ...it2('A', 3, 'Projeto'), data: '2026-09-27' }, { ...it2('A', 1, 'Projeto'), data: '2026-09-23' }]);
+  assert.deepEqual(d.map(x => x.horas), [2, 0, 1, 0, 0, 0, 3]);
+  assert.equal(d[0].rotulo, 'Seg'); assert.equal(d[6].rotulo, 'Dom');
+});
+
+test('acumulado semanal: previsto reparte pelos dias úteis; real pára na semana de hoje', () => {
+  const r = A.acumuladoSemanal({
+    registos: [{ data: '2026-09-22', horas: 6 }, { data: '2026-09-29', horas: 4 }],
+    tarefas: [{ inicio: '2026-09-21', fim: '2026-10-02', horas: 20 }],     // 10 dias úteis, 2 h/dia → 10 h por semana
+    hojeISO: '2026-09-24'
+  });
+  assert.deepEqual(r.semanas, ['2026-09-21', '2026-09-28']);
+  assert.deepEqual(r.previsto.map(x => Math.round(x * 100) / 100), [10, 20]);
+  assert.deepEqual(r.real, [6, null]);                                      // 2.ª semana é futura: sem linha real
+  assert.equal(r.semanaHoje, '2026-09-21');
+  assert.deepEqual(A.acumuladoSemanal({ registos: [], tarefas: [], hojeISO: '2026-09-24' }).semanas, []);
+  // fim de semana dentro do prazo não recebe horas
+  const fds = A.acumuladoSemanal({ registos: [], tarefas: [{ inicio: '2026-09-26', fim: '2026-09-28', horas: 8 }], hojeISO: '2026-09-30' });
+  assert.deepEqual(fds.previsto.map(x => Math.round(x * 100) / 100), [0, 8]);
+});

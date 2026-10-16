@@ -123,5 +123,78 @@ const AnaliseHoras = {
     let acumulado = 0;
     return fatias.filter(f => f.pct > 0).map(f => { const r = { chave: f.chave, cor: f.cor, inicio: acumulado, pct: f.pct }; acumulado += f.pct; return r; });
   },
+  // ---------- Mais gráficos: preenchimento, real vs previsto, mapa de calor, dia da semana, acumulado ----------
+
+  // pessoas: [{nome, esperado, registado}] (horas esperadas = dias úteis × 8h, sem férias/feriados). Devolve as "max" com
+  // menor preenchimento primeiro; pct = registado/esperado (pode passar de 1). Pessoas sem horas esperadas ficam de fora.
+  preenchimento(pessoas, max) {
+    const n = max || 12;
+    const todas = pessoas.filter(p => p.esperado > 0)
+      .map(p => Object.assign({}, p, { pct: p.registado / p.esperado }))
+      .sort((a, b) => a.pct - b.pct || a.nome.localeCompare(b.nome, 'pt'));
+    const esperado = todas.reduce((s, p) => s + p.esperado, 0), registado = todas.reduce((s, p) => s + p.registado, 0);
+    return { linhas: todas.slice(0, n), restantes: Math.max(0, todas.length - n), pctGlobal: esperado ? registado / esperado : 0, esperado, registado };
+  },
+
+  // projetos: [{chave, rotulo, real, previsto, vendido|null}] → os "max" com mais horas reais; pct = real/previsto (null sem previsto).
+  previstoVsReal(projetos, max) {
+    const n = max || 8;
+    const todos = projetos.map(p => Object.assign({}, p, { pct: p.previsto > 0 ? p.real / p.previsto : null }))
+      .sort((a, b) => b.real - a.real || String(a.rotulo).localeCompare(String(b.rotulo), 'pt'));
+    return { linhas: todos.slice(0, n), restantes: Math.max(0, todos.length - n) };
+  },
+
+  // Matriz pessoa × período (horas): as "max" pessoas com mais horas. {periodos, linhas:[{pessoa,total,valores:[h…]}], restantes}
+  matrizPessoaSemana(itens, de, ate, gran, max) {
+    const n = max || 15;
+    const periodos = this.periodosEntre(de, ate, gran);
+    const idx = new Map(periodos.map((p, i) => [p, i]));
+    const m = new Map();
+    itens.forEach(i => {
+      const k = idx.get(this.chavePeriodo(i.data, gran));
+      if (k === undefined) return;
+      const o = m.get(i.pessoa) || { pessoa: i.pessoa, total: 0, valores: periodos.map(() => 0) };
+      o.valores[k] += i.horas; o.total += i.horas;
+      m.set(i.pessoa, o);
+    });
+    const todas = [...m.values()].sort((a, b) => b.total - a.total || a.pessoa.localeCompare(b.pessoa, 'pt'));
+    return { periodos, linhas: todas.slice(0, n), restantes: Math.max(0, todas.length - n) };
+  },
+
+  // Horas por dia da semana (segunda = 0 … domingo = 6).
+  porDiaSemana(itens) {
+    const rotulos = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+    const horas = [0, 0, 0, 0, 0, 0, 0];
+    itens.forEach(i => { horas[(this._utc(i.data).getUTCDay() + 6) % 7] += i.horas; });
+    return horas.map((h, d) => ({ dia: d, rotulo: rotulos[d], horas: h }));
+  },
+
+  // Horas acumuladas por semana: reais (registos) vs previstas (cada tarefa reparte as suas horas igualmente pelos dias úteis
+  // do prazo). registos: [{data, horas}]; tarefas: [{inicio, fim, horas}]. A linha real pára na semana de "hojeISO" (null depois).
+  acumuladoSemanal({ registos, tarefas, hojeISO }) {
+    const datas = [...registos.map(r => r.data), ...tarefas.flatMap(t => [t.inicio, t.fim])].filter(Boolean).sort();
+    if (!datas.length) return { semanas: [], real: [], previsto: [], semanaHoje: null };
+    const semanas = this.periodosEntre(this.segunda(datas[0]), this.segunda(datas[datas.length - 1]), 'semana');
+    const idx = new Map(semanas.map((s, i) => [s, i]));
+    const real = semanas.map(() => 0), previsto = semanas.map(() => 0);
+    registos.forEach(r => { const k = idx.get(this.segunda(r.data)); if (k !== undefined) real[k] += r.horas; });
+    tarefas.forEach(t => {
+      if (!t.inicio || !t.fim || !(t.horas > 0) || t.fim < t.inicio) return;
+      const dias = [];
+      for (let d = this._utc(t.inicio), fim = this._utc(t.fim), guarda = 0; d <= fim && guarda < 3000; d.setUTCDate(d.getUTCDate() + 1), guarda++) {
+        const dow = d.getUTCDay();
+        if (dow !== 0 && dow !== 6) dias.push(this._iso(d));
+      }
+      if (!dias.length) return;
+      dias.forEach(iso => { const k = idx.get(this.segunda(iso)); if (k !== undefined) previsto[k] += t.horas / dias.length; });
+    });
+    const semanaHoje = hojeISO ? this.segunda(hojeISO) : null;
+    let ar = 0, ap = 0;
+    return {
+      semanas, semanaHoje,
+      real: real.map((h, i) => { ar += h; return semanaHoje && semanas[i] > semanaHoje ? null : ar; }),
+      previsto: previsto.map(h => { ap += h; return ap; })
+    };
+  },
 };
 if (typeof module !== 'undefined') module.exports = AnaliseHoras;

@@ -293,6 +293,9 @@ const App = {
       anPessoa: document.getElementById('anPessoa'), anTipo: document.getElementById('anTipo'), anProjeto: document.getElementById('anProjeto'),
       anBarras: document.getElementById('anBarras'), anEvolucao: document.getElementById('anEvolucao'), anLegenda: document.getElementById('anLegenda'),
       anTipoDonut: document.getElementById('anTipoDonut'), anPessoasPV: document.getElementById('anPessoasPV'), anClientes: document.getElementById('anClientes'),
+      anPreench: document.getElementById('anPreench'), anPrevReal: document.getElementById('anPrevReal'), anCalor: document.getElementById('anCalor'),
+      anDiaSemana: document.getElementById('anDiaSemana'), anAcumulado: document.getElementById('anAcumulado'),
+      btnAnaliseGraficos: document.getElementById('btnAnaliseGraficos'), painelAnaliseGraficos: document.getElementById('painelAnaliseGraficos'),
       anTituloBarras: document.getElementById('anTituloBarras'), anTabela: document.getElementById('anTabela'),
       btnAnaliseExportar: document.getElementById('btnAnaliseExportar'), btnAnaliseLimpar: document.getElementById('btnAnaliseLimpar'),
       tabBtnFinanceiro: document.getElementById('tabBtnFinanceiro'),
@@ -8681,12 +8684,13 @@ const App = {
     e.anProjeto.innerHTML = '<option value="">Todos</option>' + ordenar(base.projeto).map(([k, n]) => `<option value="${escapeAttr(k)}">${escapeHtml(n)}</option>`).join('');
     e.anProjeto.value = base.projeto.has(f.projeto) ? f.projeto : ''; f.projeto = e.anProjeto.value;
 
+    this.aplicarVisibilidadeGraficosAnalise();
     const dim = this.ANALISE_DIMENSOES[f.agrupar] || this.ANALISE_DIMENSOES.equipa;
     e.anTituloBarras.textContent = `Horas por ${dim.titulo}`;
     if (f.de > f.ate) {
       e.anKpis.innerHTML = '<p class="hint">A data inicial é depois da final.</p>';
       e.anBarras.innerHTML = e.anEvolucao.innerHTML = e.anLegenda.innerHTML = e.anTabela.innerHTML = '';
-      e.anTipoDonut.innerHTML = e.anPessoasPV.innerHTML = e.anClientes.innerHTML = '';
+      this.limparGraficosAnalise('');
       return;
     }
     const { itens, rotulos } = this.itensAnalise({ de: f.de, ate: f.ate, comFiltros: true });
@@ -8698,7 +8702,8 @@ const App = {
     if (!itens.length) {
       const vazio = '<p class="hint">Sem registos neste período/filtro.</p>';
       e.anBarras.innerHTML = vazio; e.anEvolucao.innerHTML = ''; e.anLegenda.innerHTML = ''; e.anTabela.innerHTML = '';
-      e.anTipoDonut.innerHTML = vazio; e.anPessoasPV.innerHTML = vazio; e.anClientes.innerHTML = vazio;
+      this.limparGraficosAnalise(vazio);
+      this.renderPreenchimentoAnalise(rec, f, hoje);    // quem não registou nada também conta (0%)
       return;
     }
     const serie = AnaliseHoras.seriePorCategoria(itens, f.gran, dim.chave, f.de, f.ate);
@@ -8781,7 +8786,193 @@ const App = {
         <span class="an-barra"><i style="width:${Math.max(2, c.horas / topoCli * 100)}%;background:${c.cor}"></i></span>
         <span class="an-val">${horas(c.horas)} · ${Math.round(c.horas / totalCli * 100)}%</span>
       </div>`).join('') : '<p class="hint">Sem horas em projeto neste período/filtro.</p>';
+
+    // ---- Gráficos extra (só se estiverem visíveis) ----
+    this.renderPreenchimentoAnalise(rec, f, hoje);
+    const precisaAcumulado = !this.analiseGraficoOculto('previstoReal') || !this.analiseGraficoOculto('acumulado');
+    const todosAcum = precisaAcumulado ? this.itensAnalise({ de: '0000-01-01', ate: '9999-12-31', comFiltros: false }).itens : [];
+    this.renderPrevistoRealAnalise(itens, rotulos, todosAcum);
+    this.renderCalorAnalise(itens, f);
+    this.renderDiaSemanaAnalise(itens);
+    this.renderAcumuladoAnalise(f, todosAcum, hoje);
   },
+  // ---------- Análise: escolha dos gráficos e gráficos extra ----------
+  // Cada cartão do ecrã tem data-grafico="chave"; a pessoa escolhe os que quer ver em "⚙ Gráficos" (preferência só deste
+  // browser, como o painel do Início). Os gráficos escondidos nem se calculam.
+  GRAFICOS_ANALISE: [
+    { key: 'barras', label: 'Horas por equipa / pessoa / projeto… (segundo "Ver por")' },
+    { key: 'evolucao', label: 'Evolução no tempo' },
+    { key: 'tipo', label: 'Horas por tipo de atividade' },
+    { key: 'pv', label: 'Projeto vs. outras atividades, por pessoa' },
+    { key: 'clientes', label: 'Horas por cliente' },
+    { key: 'preenchimento', label: 'Preenchimento do registo, por pessoa' },
+    { key: 'previstoReal', label: 'Real vs. previsto (e vendido), por projeto' },
+    { key: 'calor', label: 'Mapa de calor: pessoa × período' },
+    { key: 'diaSemana', label: 'Horas por dia da semana' },
+    { key: 'acumulado', label: 'Acumulado: real vs. previsto (de um projeto)' }
+  ],
+  GRAFICOS_ANALISE_ESCONDIDOS_POR_OMISSAO: ['calor', 'acumulado'],
+  analiseGraficosOcultosSet() {
+    const guardado = this.lerPrefsUI().analiseGraficosOcultos;
+    return new Set(Array.isArray(guardado) ? guardado : this.GRAFICOS_ANALISE_ESCONDIDOS_POR_OMISSAO);
+  },
+  analiseGraficoOculto(key) { return this.analiseGraficosOcultosSet().has(key); },
+  aplicarVisibilidadeGraficosAnalise() {
+    const ocultos = this.analiseGraficosOcultosSet();
+    document.querySelectorAll('#anGraficos [data-grafico]').forEach(c => { c.hidden = ocultos.has(c.dataset.grafico); });
+  },
+  renderPainelGraficosAnalise() {
+    const painel = this.els.painelAnaliseGraficos;
+    if (!painel) return;
+    const ocultos = this.analiseGraficosOcultosSet();
+    painel.innerHTML = this.GRAFICOS_ANALISE.map(g => `
+      <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" data-grafico-escolha="${g.key}" ${ocultos.has(g.key) ? '' : 'checked'}> ${escapeHtml(g.label)}
+      </label>`).join('') + `<div style="padding:6px 12px 2px;display:flex;gap:10px;font-size:12px;">
+        <a href="#" data-grafico-todos="1">Mostrar todos</a><a href="#" data-grafico-todos="0">Repor padrão</a></div>`;
+    painel.querySelectorAll('input[data-grafico-escolha]').forEach(chk => chk.addEventListener('change', () => {
+      const s = this.analiseGraficosOcultosSet();
+      if (chk.checked) s.delete(chk.dataset.graficoEscolha); else s.add(chk.dataset.graficoEscolha);
+      this.gravarPrefUI('analiseGraficosOcultos', [...s]);
+      this.renderAnalise();
+    }));
+    painel.querySelectorAll('a[data-grafico-todos]').forEach(a => a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      this.gravarPrefUI('analiseGraficosOcultos', a.dataset.graficoTodos === '1' ? [] : this.GRAFICOS_ANALISE_ESCONDIDOS_POR_OMISSAO);
+      this.renderPainelGraficosAnalise();
+      this.renderAnalise();
+    }));
+  },
+  alternarPainelGraficosAnalise() {
+    const aberto = this.els.painelAnaliseGraficos.classList.toggle('aberto');
+    if (aberto) this.renderPainelGraficosAnalise();
+  },
+  limparGraficosAnalise(texto) {
+    const e = this.els;
+    [e.anTipoDonut, e.anPessoasPV, e.anClientes, e.anPreench, e.anPrevReal, e.anCalor, e.anDiaSemana, e.anAcumulado].forEach(el => { if (el) el.innerHTML = texto || ''; });
+  },
+  // Horas esperadas de uma pessoa num período: 8h por dia útil, sem fins de semana, feriados nem ausências.
+  horasEsperadasPeriodo(recursoId, deISO, ateISO) {
+    let h = 0;
+    for (let d = DateUtil.parseISO(deISO), fim = DateUtil.parseISO(ateISO); d <= fim; d = DateUtil.addDays(d, 1)) {
+      if (!Capacidade.ehFimDeSemana(d) && !Capacidade.ehFeriado(d) && !Capacidade.ehAusente(d, recursoId)) h += Capacidade.HORAS_DIA;
+    }
+    return h;
+  },
+  // Preenchimento do registo (horas registadas / esperadas até ontem). Não segue os filtros de Tipo/Projeto: conta todas as horas.
+  renderPreenchimentoAnalise(rec, f, hoje) {
+    const e = this.els;
+    if (this.analiseGraficoOculto('preenchimento') || !e.anPreench) return;
+    const ontem = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(hoje), -1));
+    const fim = f.ate < ontem ? f.ate : ontem;
+    if (fim < f.de) { e.anPreench.innerHTML = '<p class="hint">O período ainda não começou.</p>'; return; }
+    const registado = new Map();
+    this.itensAnalise({ de: f.de, ate: fim, comFiltros: false }).itens.forEach(i => registado.set(i.pessoa, (registado.get(i.pessoa) || 0) + i.horas));
+    const pessoas = rec.filter(r => !PessoasLogica.estaInativo(r, f.de) && (!f.pessoa || r.nome === f.pessoa))
+      .map(r => ({ nome: r.nome, esperado: this.horasEsperadasPeriodo(r.id, f.de, fim), registado: registado.get(r.nome) || 0 }));
+    const pr = AnaliseHoras.preenchimento(pessoas, 12);
+    if (!pr.linhas.length) { e.anPreench.innerHTML = '<p class="hint">Sem pessoas com dias úteis neste período.</p>'; return; }
+    const P = AnaliseHoras.PALETA;
+    const corDe = pct => pct >= 0.95 ? P[2] : pct >= 0.7 ? P[4] : P[5];
+    e.anPreench.innerHTML = `<p class="hint" style="margin:0 6px 6px;">Até ontem: ${this.formatarHorasAnalise(pr.registado)} registadas de ${this.formatarHorasAnalise(pr.esperado)} esperadas — <b>${Math.round(pr.pctGlobal * 100)}%</b>. Pior preenchimento primeiro.</p>` +
+      pr.linhas.map(l => `
+      <div class="an-linha an-linha-fixa" title="${escapeAttr(l.nome)} — ${this.formatarHorasAnalise(l.registado)} de ${this.formatarHorasAnalise(l.esperado)}">
+        <span class="an-rot">${escapeHtml(l.nome)}</span>
+        <span class="an-barra"><i style="width:${Math.max(2, Math.min(1, l.pct) * 100)}%;background:${corDe(l.pct)}"></i></span>
+        <span class="an-val">${Math.round(l.pct * 100)}% · ${this.formatarHorasAnalise(l.registado)}/${this.formatarHorasAnalise(l.esperado)}</span>
+      </div>`).join('') +
+      `<div class="an-legenda"><span><i style="background:${P[2]}"></i>95% ou mais</span><span><i style="background:${P[4]}"></i>70–95%</span><span><i style="background:${P[5]}"></i>abaixo de 70%</span></div>` +
+      (pr.restantes ? `<p class="hint" style="margin:6px 6px 0;">+ ${pr.restantes} pessoa(s) com melhor preenchimento.</p>` : '');
+  },
+  // Horas previstas (soma das horas atribuídas às tarefas-folha) de um projeto, só das pessoas que o utilizador pode ver.
+  horasPrevistasProjetoAnalise(p, idsEscopo, admin) {
+    let previsto = 0;
+    (p.tarefas || []).filter(t => !this.temFilhos(p, t.id)).forEach(t =>
+      Object.entries(t.alocacoesHoras || {}).forEach(([rid, h]) => { if (admin || idsEscopo.has(rid)) previsto += Number(h) || 0; }));
+    return previsto;
+  },
+  renderPrevistoRealAnalise(itens, rotulos, todosAcum) {
+    const e = this.els;
+    if (this.analiseGraficoOculto('previstoReal') || !e.anPrevReal) return;
+    const admin = this.souAdmin();
+    const idsEscopo = new Set(this.analiseRecursosEscopo().map(r => r.id));
+    const real = new Map();
+    todosAcum.forEach(i => { if (i.emProjeto) real.set(i.projetoKey, (real.get(i.projetoKey) || 0) + i.horas); });
+    const projetos = Object.values(this.state.projetos);
+    const lista = [...new Set(itens.filter(i => i.emProjeto).map(i => i.projetoKey))].map(chave => {
+      const p = projetos.find(x => x.id === chave || x.idInterno === chave);
+      if (!p) return null;
+      return { chave, rotulo: rotulos.projeto.get(chave) || p.nome, real: real.get(chave) || 0, previsto: this.horasPrevistasProjetoAnalise(p, idsEscopo, admin), vendido: admin ? (Number(p.horasVendidas) || 0) : null };
+    }).filter(Boolean);
+    const r = AnaliseHoras.previstoVsReal(lista, 8);
+    if (!r.linhas.length) { e.anPrevReal.innerHTML = '<p class="hint">Sem projetos neste período/filtro.</p>'; return; }
+    const P = AnaliseHoras.PALETA;
+    const teto = Math.max(...r.linhas.flatMap(l => [l.real, l.previsto, l.vendido || 0]), 1);
+    const barra = (rot, h, cor) => `<div class="an-pr-linha"><span>${rot}</span><span class="an-barra"><i style="width:${h > 0 ? Math.max(2, h / teto * 100) : 0}%;background:${cor}"></i></span><span class="an-val">${this.formatarHorasAnalise(h)}</span></div>`;
+    e.anPrevReal.innerHTML = r.linhas.map(l => `
+      <div class="an-pr" title="${escapeAttr(l.rotulo)}">
+        <div class="an-pr-rot"><span class="an-rot">${escapeHtml(l.rotulo)}</span>${l.pct === null ? '' : `<b class="${l.pct > 1 ? 'an-pr-acima' : ''}">${Math.round(l.pct * 100)}% do previsto</b>`}</div>
+        ${barra('Real', l.real, P[0])}${barra('Previsto', l.previsto, P[1])}${l.vendido ? barra('Vendido', l.vendido, P[2]) : ''}
+      </div>`).join('') + (r.restantes ? `<p class="hint" style="margin:6px 6px 0;">+ ${r.restantes} projeto(s) com menos horas.</p>` : '') +
+      `<p class="hint" style="margin:6px 6px 0;">Real = todas as horas registadas no projeto (não só as do período).</p>`;
+  },
+  renderCalorAnalise(itens, f) {
+    const e = this.els;
+    if (this.analiseGraficoOculto('calor') || !e.anCalor) return;
+    const m = AnaliseHoras.matrizPessoaSemana(itens, f.de, f.ate, f.gran, 15);
+    if (!m.linhas.length) { e.anCalor.innerHTML = '<p class="hint">Sem registos neste período/filtro.</p>'; return; }
+    const n = m.periodos.length, passo = Math.ceil(n / 12);
+    const cab = m.periodos.map((p, i) => `<span class="an-calor-cab">${i % passo === 0 ? AnaliseHoras.rotuloPeriodo(p, f.gran) : ''}</span>`).join('');
+    const COR = '42,110,166', TETO = f.gran === 'mes' ? 160 : 40;
+    const linhas = m.linhas.map(l => `<span class="an-rot an-calor-rot" title="${escapeAttr(l.pessoa)}">${escapeHtml(l.pessoa)}</span>` + l.valores.map((h, i) =>
+      `<span class="an-cel" style="${h ? `background:rgba(${COR},${(0.15 + Math.min(1, h / TETO) * 0.85).toFixed(2)})` : ''}" title="${escapeAttr(l.pessoa)} · ${AnaliseHoras.rotuloPeriodo(m.periodos[i], f.gran)}: ${this.formatarHorasAnalise(h)}"></span>`).join('')).join('');
+    e.anCalor.innerHTML = `<div class="an-calor" style="grid-template-columns:minmax(80px,18%) repeat(${n},minmax(8px,1fr));"><span></span>${cab}${linhas}</div>
+      <div class="an-legenda"><span><i style="background:rgba(${COR},.15)"></i>pouco</span><span><i style="background:rgba(${COR},1)"></i>${TETO}h ou mais por ${f.gran === 'mes' ? 'mês' : 'semana'}</span><span><i style="background:var(--cinza-100)"></i>sem registos</span></div>` +
+      (m.restantes ? `<p class="hint" style="margin:6px 6px 0;">+ ${m.restantes} pessoa(s) com menos horas.</p>` : '');
+  },
+  renderDiaSemanaAnalise(itens) {
+    const e = this.els;
+    if (this.analiseGraficoOculto('diaSemana') || !e.anDiaSemana) return;
+    const dias = AnaliseHoras.porDiaSemana(itens).filter(d => d.dia < 5 || d.horas > 0);
+    const teto = Math.max(...dias.map(d => d.horas), 1), total = dias.reduce((s, d) => s + d.horas, 0) || 1;
+    e.anDiaSemana.innerHTML = `<div class="an-evol">${dias.map(d => `<div class="an-col" title="${d.rotulo}: ${this.formatarHorasAnalise(d.horas)} (${Math.round(d.horas / total * 100)}%)"><div class="an-seg" style="height:${d.horas / teto * 100}%;background:${AnaliseHoras.PALETA[0]}"></div></div>`).join('')}</div>
+      <div class="an-eixo">${dias.map(d => `<span>${d.rotulo}<br>${this.formatarHorasAnalise(d.horas)}</span>`).join('')}</div>`;
+  },
+  renderAcumuladoAnalise(f, todosAcum, hoje) {
+    const e = this.els;
+    if (this.analiseGraficoOculto('acumulado') || !e.anAcumulado) return;
+    const p = f.projeto ? Object.values(this.state.projetos).find(x => x.id === f.projeto || x.idInterno === f.projeto) : null;
+    if (!p) { e.anAcumulado.innerHTML = '<p class="hint">Escolhe um projeto no filtro "Projeto" para ver as horas acumuladas contra o previsto (ignora o período).</p>'; return; }
+    const admin = this.souAdmin();
+    const idsEscopo = new Set(this.analiseRecursosEscopo().map(r => r.id));
+    const registos = todosAcum.filter(i => i.projetoKey === f.projeto).map(i => ({ data: i.data, horas: i.horas }));
+    const tarefas = (p.tarefas || []).filter(t => !this.temFilhos(p, t.id)).map(t => ({
+      inicio: t.inicio, fim: t.fim,
+      horas: Object.entries(t.alocacoesHoras || {}).reduce((s, [rid, h]) => s + (admin || idsEscopo.has(rid) ? Number(h) || 0 : 0), 0)
+    }));
+    const r = AnaliseHoras.acumuladoSemanal({ registos, tarefas, hojeISO: hoje });
+    if (!r.semanas.length) { e.anAcumulado.innerHTML = '<p class="hint">Este projeto ainda não tem horas registadas nem tarefas com horas previstas.</p>'; return; }
+    const W = 440, H = 200, L = 42, R = 12, T = 12, B = 26, n = r.semanas.length;
+    const teto = Math.max(...r.previsto, ...r.real.filter(v => v !== null), 1);
+    const x = i => L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1));
+    const y = v => T + (H - T - B) * (1 - v / teto);
+    const linha = (serie) => serie.map((v, i) => v === null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean).join(' ');
+    const iHoje = r.semanas.indexOf(r.semanaHoje);
+    const P = AnaliseHoras.PALETA;
+    const ticks = [0, teto / 2, teto];
+    const ultimoReal = r.real.filter(v => v !== null).pop() || 0;
+    e.anAcumulado.innerHTML = `<svg class="an-acum" viewBox="0 0 ${W} ${H}" role="img" aria-label="Horas acumuladas: real contra previsto">
+        ${ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="an-acum-grelha"/><text x="${L - 5}" y="${(y(t) + 3).toFixed(1)}" class="an-acum-eixo" text-anchor="end">${Math.round(t)}h</text>`).join('')}
+        ${iHoje >= 0 ? `<line x1="${x(iHoje).toFixed(1)}" x2="${x(iHoje).toFixed(1)}" y1="${T}" y2="${H - B}" class="an-acum-hoje"/><text x="${x(iHoje).toFixed(1)}" y="${H - B + 12}" class="an-acum-eixo" text-anchor="middle">hoje</text>` : ''}
+        <polyline points="${linha(r.previsto)}" fill="none" stroke="${P[1]}" stroke-width="2" stroke-dasharray="5 4"/>
+        <polyline points="${linha(r.real)}" fill="none" stroke="${P[0]}" stroke-width="2.5"/>
+        <text x="${L}" y="${H - 6}" class="an-acum-eixo" text-anchor="start">${AnaliseHoras.rotuloPeriodo(r.semanas[0], 'semana')}</text>
+        <text x="${W - R}" y="${H - 6}" class="an-acum-eixo" text-anchor="end">${AnaliseHoras.rotuloPeriodo(r.semanas[n - 1], 'semana')}</text>
+      </svg>
+      <div class="an-legenda"><span><i style="background:${P[0]}"></i>Real: ${this.formatarHorasAnalise(ultimoReal)}</span><span><i style="background:${P[1]}"></i>Previsto (total): ${this.formatarHorasAnalise(r.previsto[n - 1])}</span></div>`;
+  },
+
+
   // Clicar numa fatia/linha dos painéis extra filtra por esse tipo ou por essa pessoa.
   filtrarPainelExtra(ev) {
     if (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ') return;
@@ -10083,6 +10274,11 @@ const App = {
         const linha = ev.target.closest('[data-an-chave]');
         if (linha && (ev.type === 'click' || ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); this.filtrarPelaBarra(linha.dataset.anChave); }
       };
+      if (e.btnAnaliseGraficos) {
+        e.btnAnaliseGraficos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelGraficosAnalise(); });
+        e.painelAnaliseGraficos.addEventListener('click', (ev) => ev.stopPropagation());
+        document.addEventListener('click', () => e.painelAnaliseGraficos.classList.remove('aberto'));
+      }
       [e.anTipoDonut, e.anPessoasPV].forEach(el => { el.addEventListener('click', ev => this.filtrarPainelExtra(ev)); el.addEventListener('keydown', ev => this.filtrarPainelExtra(ev)); });
       e.anBarras.addEventListener('click', aoEscolherBarra);
       e.anBarras.addEventListener('keydown', aoEscolherBarra);

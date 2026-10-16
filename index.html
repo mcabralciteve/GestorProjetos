@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261016a">
+<link rel="stylesheet" href="css/style.css?v=20261016b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -898,7 +898,13 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>📊 Análise de horas</h2>
-      <button class="btn btn-primary btn-sm" id="btnAnaliseExportar">⬇ Exportar registos (Excel)…</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div class="conta-menu-wrap">
+          <button class="btn btn-sm" id="btnAnaliseGraficos" title="Escolhe os gráficos que queres ver">⚙ Gráficos</button>
+          <div class="conta-menu" id="painelAnaliseGraficos" style="min-width:320px;padding:6px 0;"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btnAnaliseExportar">⬇ Exportar registos (Excel)…</button>
+      </div>
     </div>
     <p class="pagina-sub">Onde as equipas registam horas — por equipa, pessoa, projeto ou tipo de trabalho. Clica numa barra para filtrar por ela. Só leitura; o Administrador vê tudo, um Team Leader/Diretor vê as suas equipas.</p>
     <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:6px;">
@@ -921,14 +927,17 @@
       <button class="btn btn-sm" id="btnAnaliseLimpar">Limpar filtros</button>
     </div>
     <div id="anKpis" class="an-kpis"></div>
-    <div class="an-grelha">
-      <div class="card"><h3 id="anTituloBarras" style="margin-top:0;">Horas por equipa</h3><div id="anBarras"></div></div>
-      <div class="card"><h3 style="margin-top:0;">Evolução</h3><div id="anEvolucao"></div><div id="anLegenda" class="an-legenda"></div></div>
-    </div>
-    <div class="an-grelha an-grelha3" style="margin-top:14px;">
-      <div class="card"><h3 style="margin-top:0;">Horas por tipo de atividade</h3><div id="anTipoDonut"></div></div>
-      <div class="card"><h3 style="margin-top:0;">Projeto vs. outras atividades, por pessoa</h3><div id="anPessoasPV"></div></div>
-      <div class="card"><h3 style="margin-top:0;">Horas por cliente</h3><div id="anClientes"></div></div>
+    <div class="an-grelha an-grelha3" id="anGraficos">
+      <div class="card" data-grafico="barras"><h3 id="anTituloBarras" style="margin-top:0;">Horas por equipa</h3><div id="anBarras"></div></div>
+      <div class="card an-span2" data-grafico="evolucao"><h3 style="margin-top:0;">Evolução</h3><div id="anEvolucao"></div><div id="anLegenda" class="an-legenda"></div></div>
+      <div class="card" data-grafico="tipo"><h3 style="margin-top:0;">Horas por tipo de atividade</h3><div id="anTipoDonut"></div></div>
+      <div class="card" data-grafico="pv"><h3 style="margin-top:0;">Projeto vs. outras atividades, por pessoa</h3><div id="anPessoasPV"></div></div>
+      <div class="card" data-grafico="clientes"><h3 style="margin-top:0;">Horas por cliente</h3><div id="anClientes"></div></div>
+      <div class="card" data-grafico="preenchimento"><h3 style="margin-top:0;">Preenchimento do registo, por pessoa</h3><div id="anPreench"></div></div>
+      <div class="card" data-grafico="previstoReal"><h3 style="margin-top:0;">Real vs. previsto, por projeto</h3><div id="anPrevReal"></div></div>
+      <div class="card" data-grafico="diaSemana"><h3 style="margin-top:0;">Horas por dia da semana</h3><div id="anDiaSemana"></div></div>
+      <div class="card an-span2" data-grafico="calor"><h3 style="margin-top:0;">Mapa de calor: horas por pessoa e período</h3><div id="anCalor"></div></div>
+      <div class="card" data-grafico="acumulado"><h3 style="margin-top:0;">Acumulado: real vs. previsto</h3><div id="anAcumulado"></div></div>
     </div>
     <h3 style="margin-top:20px;">Detalhe</h3>
     <div class="table-scroll" style="max-height:45vh;"><table class="tabela-crud" id="anTabela"></table></div>
@@ -1217,7 +1226,7 @@
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20261015a"></script>
-<script src="js/analise-horas.js?v=20261016a"></script>
+<script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009d"></script>
 <script src="js/crm.js?v=20261015b"></script>
@@ -1227,6 +1236,6 @@
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
-<script src="js/app.js?v=20261016c"></script>
+<script src="js/app.js?v=20261016d"></script>
 </body>
 </html>
