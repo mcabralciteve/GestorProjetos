@@ -165,6 +165,101 @@ const PessoasLogica = {
     return linhas;
   },
 
+  // ---------- Gestão e liderança (Fase 3) ----------
+  // Quem fica com um cargo (gestor de projeto, líder de equipa, diretor) tem de estar ativo, não ter saída marcada
+  // e TER CONTA na plataforma (os privilégios exercem-se pelo login ligado à pessoa).
+  candidatoACargo(estado, paraId, deId, hojeISO) {
+    const para = (estado.recursos || []).find(r => r.id === paraId);
+    if (!para) return 'Escolhe a pessoa que fica com o cargo.';
+    if (paraId === deId) return 'A pessoa que fica não pode ser a mesma que sai.';
+    if (this.estado(para, hojeISO || '9999-12-31') !== 'ativo') return `${para.nome} também sai da empresa — escolhe outra pessoa.`;
+    if (!(estado.utilizadores || []).some(u => u.recursoId === paraId)) return `${para.nome} ainda não tem conta na plataforma — só quem tem conta pode ter este cargo.`;
+    return '';
+  },
+  // escolhas: { [projetoId]: novoGestorId } — só projetos de que "deId" é gestor. Não altera nada.
+  planearNovosGestores(estado, deId, escolhas, opcoes) {
+    const o = opcoes || {};
+    const ops = [], erros = [];
+    Object.values(estado.projetos || {}).forEach(p => {
+      if (p.gestorId !== deId) return;
+      const paraId = (escolhas || {})[p.id];
+      if (!paraId) return;
+      const motivo = this.candidatoACargo(estado, paraId, deId, o.hojeISO);
+      if (motivo) { erros.push(`${p.nome}: ${motivo}`); return; }
+      ops.push({ projetoId: p.id, projetoNome: p.nome, paraId });
+    });
+    return { ops, erros };
+  },
+  aplicarNovosGestores(estado, plano, deId, quemFezId) {
+    const nome = id => ((estado.recursos || []).find(r => r.id === id) || {}).nome || '';
+    return plano.ops.map(op => {
+      estado.projetos[op.projetoId].gestorId = op.paraId;
+      return { tipo: 'gestor', projetoId: op.projetoId, projetoNome: op.projetoNome, tarefaId: null, tarefaNome: 'Gestor do projeto',
+        deId, deNome: nome(deId), paraId: op.paraId, paraNome: nome(op.paraId), horas: 0, observacoes: '', feitoPor: quemFezId || null };
+    });
+  },
+  // escolhas: { equipas: { [equipaId]: novoLiderId }, departamentos: { [departamentoId]: novoDiretorId } }
+  planearNovaLideranca(estado, deId, escolhas, opcoes) {
+    const o = opcoes || {};
+    const esc = escolhas || {};
+    const equipas = [], departamentos = [], erros = [];
+    (estado.equipas || []).forEach(e => {
+      const paraId = (esc.equipas || {})[e.id];
+      if (e.liderId !== deId || !paraId) return;
+      const m = this.candidatoACargo(estado, paraId, deId, o.hojeISO);
+      if (m) erros.push(`Equipa ${e.nome}: ${m}`); else equipas.push({ id: e.id, nome: e.nome, paraId });
+    });
+    (estado.departamentos || []).forEach(d => {
+      const paraId = (esc.departamentos || {})[d.id];
+      if (d.diretorId !== deId || !paraId) return;
+      const m = this.candidatoACargo(estado, paraId, deId, o.hojeISO);
+      if (m) erros.push(`Departamento ${d.nome}: ${m}`); else departamentos.push({ id: d.id, nome: d.nome, paraId });
+    });
+    return { equipas, departamentos, erros };
+  },
+  aplicarNovaLideranca(estado, plano, deId, quemFezId) {
+    const nome = id => ((estado.recursos || []).find(r => r.id === id) || {}).nome || '';
+    const base = { projetoId: null, projetoNome: '', tarefaId: null, deId, deNome: nome(deId), horas: 0, observacoes: '', feitoPor: quemFezId || null };
+    const linhas = [];
+    plano.equipas.forEach(x => {
+      estado.equipas.find(e => e.id === x.id).liderId = x.paraId;
+      linhas.push(Object.assign({}, base, { tipo: 'lider', tarefaNome: `Líder da equipa ${x.nome}`, paraId: x.paraId, paraNome: nome(x.paraId) }));
+    });
+    plano.departamentos.forEach(x => {
+      estado.departamentos.find(d => d.id === x.id).diretorId = x.paraId;
+      linhas.push(Object.assign({}, base, { tipo: 'diretor', tarefaNome: `Diretor do departamento ${x.nome}`, paraId: x.paraId, paraNome: nome(x.paraId) }));
+    });
+    return linhas;
+  },
+
+  // O que cada decisor tem por resolver (alimenta o cartão "Saídas por resolver" e o sino). "quem" injeta as
+  // permissões da app: { admin, podeEditarProjeto(pid), podeDecidirGestor(recurso) }. Só aparece o que ESTE
+  // utilizador pode resolver: trabalho nos projetos que pode editar; projetos geridos se decide o gestor;
+  // liderança só o Administrador.
+  saidasPorResolver(estado, quem, hojeISO) {
+    const q = quem || {};
+    const itens = [];
+    (estado.recursos || []).forEach(r => {
+      const est = this.estado(r, hojeISO);
+      if (est === 'ativo') return;
+      const pend = this.pendencias(estado, r.id, {});
+      const porProjeto = new Map();
+      const proj = x => {
+        if (!porProjeto.has(x.projetoId)) porProjeto.set(x.projetoId, { projetoId: x.projetoId, idInterno: x.idInterno, nome: x.projetoNome, cliente: x.cliente, tarefas: 0, nextSteps: 0 });
+        return porProjeto.get(x.projetoId);
+      };
+      pend.tarefas.forEach(t => { if (q.admin || (q.podeEditarProjeto && q.podeEditarProjeto(t.projetoId))) proj(t).tarefas++; });
+      pend.nextSteps.forEach(n => { if (q.admin || (q.podeEditarProjeto && q.podeEditarProjeto(n.projetoId))) proj(n).nextSteps++; });
+      const podeGestor = q.admin || (q.podeDecidirGestor && q.podeDecidirGestor(r));
+      const gestor = podeGestor ? pend.projetosGeridos : [];
+      const lideranca = q.admin ? { equipas: pend.equipasLideradas, departamentos: pend.departamentosDirigidos } : { equipas: [], departamentos: [] };
+      const trabalho = [...porProjeto.values()];
+      if (!trabalho.length && !gestor.length && !lideranca.equipas.length && !lideranca.departamentos.length) return;
+      itens.push({ pessoa: { id: r.id, nome: r.nome, estado: est, rotulo: this.rotuloEstado(r, hojeISO) }, trabalho, gestor, lideranca });
+    });
+    return itens;
+  },
+
   // Texto curto para a coluna "Estado" (dd/mm/aaaa a partir de aaaa-mm-dd).
   dataPT(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; },
   rotuloEstado(r, hojeISO) {

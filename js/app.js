@@ -2293,6 +2293,159 @@ const App = {
     this.persist();
     this.renderTudo();
   },
+  // ---------- Fase 3: gestão de projetos e liderança de quem sai ----------
+  // Quem decide o novo Gestor de Projeto de alguém que sai: o Administrador ou o superior direto (o Team Leader da equipa da
+  // pessoa, ou o Diretor do departamento) — nunca a própria pessoa. A liderança de equipa/departamento é só do Administrador.
+  podeDecidirGestorDe(r) {
+    if (!r) return false;
+    if (this.souAdmin()) return true;
+    if (this.perfilAtual()?.recursoId === r.id) return false;
+    return !!r.equipaId && this.souLiderDe(r.equipaId);
+  },
+  saidasPorResolverLista() {
+    return PessoasLogica.saidasPorResolver(this.state, {
+      admin: this.souAdmin(),
+      podeEditarProjeto: pid => this.possoEditarProjeto(pid),
+      podeDecidirGestor: r => this.podeDecidirGestorDe(r)
+    }, DateUtil.todayISO());
+  },
+  // <optgroup>s de pessoas candidatas a um cargo (ativas, sem saída marcada, com conta); a equipa de quem sai primeiro.
+  opcoesCandidatosCargo(deId) {
+    const hoje = DateUtil.todayISO();
+    const de = this.state.recursos.find(r => r.id === deId) || {};
+    const grupos = new Map();
+    this.state.recursos.filter(r => !PessoasLogica.candidatoACargo(this.state, r.id, deId, hoje))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).forEach(r => {
+        const eq = this.state.equipas.find(x => x.id === r.equipaId);
+        const chave = eq ? eq.nome : 'Sem equipa';
+        if (!grupos.has(chave)) grupos.set(chave, { primeiro: !!eq && eq.id === de.equipaId, itens: [] });
+        grupos.get(chave).itens.push(r);
+      });
+    const html = [...grupos.entries()].sort((a, b) => (b[1].primeiro - a[1].primeiro) || a[0].localeCompare(b[0], 'pt'))
+      .map(([nome, g]) => `<optgroup label="${escapeAttr(nome)}">${g.itens.map(r => `<option value="p:${escapeAttr(r.id)}">${escapeHtml(r.nome)}</option>`).join('')}</optgroup>`).join('');
+    return { html, total: [...grupos.values()].reduce((n, g) => n + g.itens.length, 0) };
+  },
+  // Regista no histórico (tabela pessoas_substituicoes) e avisa se a tabela ainda não existir.
+  async registarCargosNoHistorico(linhas) {
+    try { await Sync.registarSubstituicoes(linhas); return ''; }
+    catch (err) { return /pessoas_substituicoes|does not exist|schema cache/i.test(err.message || '') ? ' Atenção: o registo não ficou guardado (corre supabase/pessoas_substituicoes.sql).' : ` Atenção: o registo não ficou guardado (${err.message}).`; }
+  },
+  abrirModalNovoGestor(deId, aoConcluir) {
+    const de = this.state.recursos.find(r => r.id === deId);
+    if (!de) return;
+    if (!this.podeDecidirGestorDe(de)) { this.toast('Só o Administrador ou o superior desta pessoa (Team Leader/Diretor) indica o novo Gestor de Projeto.'); return; }
+    const projetos = Object.values(this.state.projetos).filter(p => p.gestorId === deId);
+    if (!projetos.length) { this.toast(`${de.nome} não é Gestor de nenhum projeto.`); return; }
+    const cand = this.opcoesCandidatosCargo(deId);
+    if (!cand.total) { this.toast('Não há outras pessoas ativas, com conta na plataforma, para ficar com os projetos.'); return; }
+    const linhas = projetos.map(p => `
+      <tr data-projeto="${escapeAttr(p.id)}">
+        <td>${escapeHtml(this.rotuloProjetoCompleto(p))}${p.ativo === false ? ' <span class="badge-suspenso">Suspenso</span>' : ''}</td>
+        <td><select data-escolha><option value="manter">Manter com ${escapeHtml(de.nome)}</option>${cand.html}</select></td>
+      </tr>`).join('');
+    this.abrirModal(`Novo Gestor — projetos de ${de.nome}`, `
+      <p class="pagina-sub" style="margin-top:0;"><b>${escapeHtml(de.nome)}</b> — ${escapeHtml(PessoasLogica.rotuloEstado(de, DateUtil.todayISO()))}. Quem fica Gestor passa a poder editar o projeto, as tarefas, os next steps e a faturação, como tinha ${escapeHtml(de.nome)}. Só aparecem pessoas ativas com conta na plataforma.</p>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:8px 0;">
+        <label style="margin:0;flex:1;min-width:200px;"><span class="rotulo-campo">Passar todos para</span>
+          <select id="gestorTodos"><option value="">Escolhe a pessoa…</option>${cand.html}</select></label>
+        <button class="btn btn-sm" id="btnGestorTodos">Aplicar a todos os projetos</button>
+      </div>
+      <div class="table-scroll" style="max-height:44vh;overflow:auto;">
+        <table class="tabela-crud" style="width:100%;"><thead><tr><th>Projeto</th><th>Novo Gestor</th></tr></thead><tbody>${linhas}</tbody></table>
+      </div>
+      <p id="gestorMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-primary" id="btnGestorAplicar">Aplicar</button>
+        <button class="btn" id="btnGestorCancelar">Cancelar</button>
+      </div>`);
+    const corpo = this.els.modalCorpo;
+    const msg = corpo.querySelector('#gestorMsg');
+    const erro = t => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
+    corpo.querySelector('#btnGestorTodos').addEventListener('click', () => {
+      const v = corpo.querySelector('#gestorTodos').value;
+      if (!v) return erro('Escolhe primeiro a pessoa que fica Gestor.');
+      corpo.querySelectorAll('select[data-escolha]').forEach(s => { s.value = v; });
+      msg.textContent = '';
+    });
+    corpo.querySelector('#btnGestorCancelar').addEventListener('click', () => { this.fecharModal(); if (aoConcluir) aoConcluir(); });
+    corpo.querySelector('#btnGestorAplicar').addEventListener('click', async () => {
+      const escolhas = {};
+      corpo.querySelectorAll('tr[data-projeto]').forEach(tr => {
+        const v = tr.querySelector('select[data-escolha]').value;
+        if (v !== 'manter') escolhas[tr.dataset.projeto] = v.slice(2);
+      });
+      const plano = PessoasLogica.planearNovosGestores(this.state, deId, escolhas, { hojeISO: DateUtil.todayISO() });
+      if (plano.erros.length) return erro(plano.erros.join(' '));
+      if (!plano.ops.length) return erro('Escolhe o novo Gestor em pelo menos um projeto.');
+      if (!confirm(`${plano.ops.length} projeto(s) mudam de Gestor. Confirmas?`)) return;
+      const registo = PessoasLogica.aplicarNovosGestores(this.state, plano, deId, this.perfilAtual()?.recursoId);
+      this.persist();
+      this.fecharModal();
+      this.renderTudo();
+      const aviso = await this.registarCargosNoHistorico(registo);
+      this.toast(`Feito: ${plano.ops.length} projeto(s) com novo Gestor.${aviso}`);
+      if (aoConcluir) aoConcluir();
+    });
+  },
+  abrirModalNovaLideranca(deId, aoConcluir) {
+    const de = this.state.recursos.find(r => r.id === deId);
+    if (!de) return;
+    if (!this.souAdmin()) { this.toast('Só o Administrador indica o novo líder de equipa ou diretor de departamento.'); return; }
+    const equipas = this.state.equipas.filter(e => e.liderId === deId);
+    const departamentos = this.state.departamentos.filter(d => d.diretorId === deId);
+    if (!equipas.length && !departamentos.length) { this.toast(`${de.nome} não lidera nenhuma equipa nem dirige nenhum departamento.`); return; }
+    const cand = this.opcoesCandidatosCargo(deId);
+    if (!cand.total) { this.toast('Não há outras pessoas ativas, com conta na plataforma, para ficar com o cargo.'); return; }
+    const sel = `<select data-escolha><option value="manter">Manter com ${escapeHtml(de.nome)}</option>${cand.html}</select>`;
+    this.abrirModal(`Nova liderança — ${de.nome}`, `
+      <p class="pagina-sub" style="margin-top:0;"><b>${escapeHtml(de.nome)}</b> — ${escapeHtml(PessoasLogica.rotuloEstado(de, DateUtil.todayISO()))}. Quem fica com o cargo herda os privilégios dele: gestão de horas, alocações, capacidade, férias e viaturas da equipa (Team Leader) ou do departamento (Diretor). Só aparecem pessoas ativas com conta.</p>
+      <table class="tabela-crud" style="width:100%;"><thead><tr><th>Cargo</th><th>Quem fica</th></tr></thead><tbody>
+        ${equipas.map(e => `<tr data-equipa="${escapeAttr(e.id)}"><td>Líder da equipa <b>${escapeHtml(e.nome)}</b></td><td>${sel}</td></tr>`).join('')}
+        ${departamentos.map(d => `<tr data-departamento="${escapeAttr(d.id)}"><td>Diretor do departamento <b>${escapeHtml(d.nome)}</b></td><td>${sel}</td></tr>`).join('')}
+      </tbody></table>
+      <p id="lidMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-primary" id="btnLidAplicar">Aplicar</button>
+        <button class="btn" id="btnLidCancelar">Cancelar</button>
+      </div>`);
+    const corpo = this.els.modalCorpo;
+    const msg = corpo.querySelector('#lidMsg');
+    const erro = t => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; };
+    corpo.querySelector('#btnLidCancelar').addEventListener('click', () => { this.fecharModal(); if (aoConcluir) aoConcluir(); });
+    corpo.querySelector('#btnLidAplicar').addEventListener('click', async () => {
+      const escolhas = { equipas: {}, departamentos: {} };
+      corpo.querySelectorAll('tr[data-equipa]').forEach(tr => { const v = tr.querySelector('select').value; if (v !== 'manter') escolhas.equipas[tr.dataset.equipa] = v.slice(2); });
+      corpo.querySelectorAll('tr[data-departamento]').forEach(tr => { const v = tr.querySelector('select').value; if (v !== 'manter') escolhas.departamentos[tr.dataset.departamento] = v.slice(2); });
+      const plano = PessoasLogica.planearNovaLideranca(this.state, deId, escolhas, { hojeISO: DateUtil.todayISO() });
+      if (plano.erros.length) return erro(plano.erros.join(' '));
+      const n = plano.equipas.length + plano.departamentos.length;
+      if (!n) return erro('Escolhe quem fica em pelo menos um cargo.');
+      if (!confirm(`${n} cargo(s) de liderança mudam de pessoa. Confirmas?`)) return;
+      const registo = PessoasLogica.aplicarNovaLideranca(this.state, plano, deId, this.perfilAtual()?.recursoId);
+      this.persist();
+      this.fecharModal();
+      this.renderTudo();
+      const aviso = await this.registarCargosNoHistorico(registo);
+      this.toast(`Feito: ${n} cargo(s) de liderança com nova pessoa.${aviso}`);
+      if (aoConcluir) aoConcluir();
+    });
+  },
+  // Cartão do Início e sino: saídas de pessoas (a sair ou já inativas) com algo que ESTE utilizador pode resolver.
+  htmlCartaoSaidas(itens) {
+    return itens.map(it => {
+      const linhas = [];
+      it.trabalho.forEach(t => linhas.push(`<div class="dash-linha dash-linha-link" data-saida="trabalho|${escapeAttr(it.pessoa.id)}|${escapeAttr(t.projetoId)}">
+        <span class="dash-linha-principal">${escapeHtml(t.idInterno ? t.idInterno + ' — ' : '')}${escapeHtml(t.nome)}</span>
+        <span class="dash-linha-sub">${t.tarefas} tarefa(s)${t.nextSteps ? `, ${t.nextSteps} next step(s)` : ''} por passar →</span></div>`));
+      if (it.gestor.length) linhas.push(`<div class="dash-linha dash-linha-link" data-saida="gestor|${escapeAttr(it.pessoa.id)}|">
+        <span class="dash-linha-principal">${it.gestor.length} projeto(s) que gere</span><span class="dash-linha-sub">escolher novo Gestor →</span></div>`);
+      const nl = it.lideranca.equipas.length + it.lideranca.departamentos.length;
+      if (nl) linhas.push(`<div class="dash-linha dash-linha-link" data-saida="lideranca|${escapeAttr(it.pessoa.id)}|">
+        <span class="dash-linha-principal">${[...it.lideranca.equipas.map(e => 'Líder da ' + e.nome), ...it.lideranca.departamentos.map(d => 'Diretor de ' + d.nome)].map(escapeHtml).join(', ')}</span><span class="dash-linha-sub">indicar quem fica →</span></div>`);
+      return `<div style="margin-bottom:10px;"><b>${escapeHtml(it.pessoa.nome)}</b> <span class="badge-estado-pessoa ${it.pessoa.estado}">${escapeHtml(it.pessoa.rotulo)}</span>${linhas.join('')}</div>`;
+    }).join('');
+  },
+
   // ---------- Substituição de uma pessoa num projeto (Administrador ou Gestor do projeto) ----------
   // Passa o trabalho POR FAZER de "deId" neste projeto para outra pessoa (ou deixa-o por atribuir) — em bloco
   // ("Passar tudo para…") ou linha a linha. Só passa o remanescente das horas previstas; o que a pessoa já
@@ -2422,7 +2575,12 @@ const App = {
         bloco('Next steps abertos', pend.nextSteps, n => `${escapeHtml(rotuloProj(n))} — ${escapeHtml(n.descricao || '(sem descrição)')}`) +
         bloco('Equipas que lidera', pend.equipasLideradas, e => escapeHtml(e.nome), '— altera o líder em Equipas') +
         bloco('Departamentos que dirige', pend.departamentosDirigidos, d => escapeHtml(d.nome), '— altera o diretor em Departamentos') +
-        '<p class="hint" style="margin-top:10px;">Nada disto é alterado automaticamente. Tarefas e next steps passam para outra pessoa projeto a projeto (botões abaixo); projetos que gere e liderança de equipa/departamento ficam para a fase seguinte.</p>';
+        '<p class="hint" style="margin-top:10px;">Nada disto é alterado automaticamente. Tarefas e next steps passam para outra pessoa projeto a projeto (botões abaixo); projetos que gere e liderança de equipa/departamento passam para outra pessoa com os botões abaixo.</p>';
+    const cargosHtml = (pend.projetosGeridos.length || pend.equipasLideradas.length || pend.departamentosDirigidos.length)
+      ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">
+          ${pend.projetosGeridos.length ? '<button class="btn btn-sm" id="btnSaidaGestor">↔ Escolher novo Gestor dos projetos…</button>' : ''}
+          ${pend.equipasLideradas.length || pend.departamentosDirigidos.length ? '<button class="btn btn-sm" id="btnSaidaLideranca">↔ Indicar novo líder / diretor…</button>' : ''}
+        </div>` : '';
     const projsComTrabalho = [...new Map([...pend.tarefas, ...pend.nextSteps].map(x => [x.projetoId, x])).values()];
     const substHtml = projsComTrabalho.length
       ? `<div style="margin:10px 0;"><b>Passar o trabalho por fazer para outra pessoa</b> <span class="hint">(só o que falta; o já registado fica com ${escapeHtml(r.nome)})</span>
@@ -2436,6 +2594,7 @@ const App = {
       </label>
       ${pendHtml}
       ${substHtml}
+      ${cargosHtml}
       <div id="saidaHistorico"></div>
       <p id="saidaMsg" class="hint" style="margin:10px 0 0;min-height:16px;"></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
@@ -2451,12 +2610,16 @@ const App = {
     const botoes = [...corpo.querySelectorAll('button')];
     corpo.querySelectorAll('[data-subst-proj]').forEach(b => b.addEventListener('click', () =>
       this.abrirModalSubstituirPessoa(b.dataset.substProj, id, () => this.abrirModalSaidaPessoa(id))));
+    const btnGestor = corpo.querySelector('#btnSaidaGestor');
+    if (btnGestor) btnGestor.addEventListener('click', () => this.abrirModalNovoGestor(id, () => this.abrirModalSaidaPessoa(id)));
+    const btnLid = corpo.querySelector('#btnSaidaLideranca');
+    if (btnLid) btnLid.addEventListener('click', () => this.abrirModalNovaLideranca(id, () => this.abrirModalSaidaPessoa(id)));
     // Histórico de substituições já feitas (tabela pessoas_substituicoes; se ainda não existir, não mostra nada).
     Sync.lerSubstituicoes(id, 15).then(linhas => {
       const el = corpo.querySelector('#saidaHistorico');
       if (!el || !el.isConnected || !linhas.length) return;
       el.innerHTML = `<div style="margin:10px 0;"><b>Substituições já feitas</b> (${linhas.length})<ul style="margin:4px 0 0;padding-left:18px;">${linhas.map(l =>
-        `<li>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(String(l.feito_em).slice(0, 10))))} — ${escapeHtml(l.projeto_nome)}: ${escapeHtml(l.tarefa_nome || '')} → ${escapeHtml(l.para_nome || 'por atribuir')}${Number(l.horas) ? ` (${Number(l.horas)} h)` : ''}</li>`).join('')}</ul></div>`;
+        `<li>${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(String(l.feito_em).slice(0, 10))))} — ${l.projeto_nome ? escapeHtml(l.projeto_nome) + ': ' : ''}${escapeHtml(l.tarefa_nome || '')} → ${escapeHtml(l.para_nome || 'por atribuir')}${Number(l.horas) ? ` (${Number(l.horas)} h)` : ''}</li>`).join('')}</ul></div>`;
     }).catch(() => { /* tabela ainda não existe */ });
     const executar = async (acao) => {
       const data = inpData.value;
@@ -3895,8 +4058,11 @@ const App = {
     { key: 'ausenciasEquipa', label: 'Ausências da equipa (Gestor/Admin)' },
     { key: 'equipaDiasIncompletos', label: 'Registos incompletos da equipa (Team Leader/Diretor/Admin)' },
     { key: 'consultoresRisco', label: 'Consultores em risco de sobre-alocação (Gestor/Admin)' },
-    { key: 'crmComercial', label: 'Comercial: as minhas oportunidades e follow-ups (Team Leader/Diretor/Admin)' }
+    { key: 'crmComercial', label: 'Comercial: as minhas oportunidades e follow-ups (Team Leader/Diretor/Admin)' },
+    { key: 'saidasPorResolver', label: 'Saídas por resolver: pessoas que saem e o que tens de passar (Gestor/Team Leader/Diretor/Admin)' }
   ],
+  // Visível para quem gere projetos OU lidera equipas (ou é Administrador) — ao contrário dos dois grupos acima, que são só de um deles.
+  WIDGETS_RESPONSAVEL: ['saidasPorResolver'],
   WIDGETS_GESTOR_ADMIN: ['faturacaoAVencer', 'ausenciasEquipa', 'consultoresRisco'],
   WIDGETS_LIDER_ADMIN: ['ausenciasParaAprovar', 'equipaDiasIncompletos', 'crmComercial'],
   // Preferência só do lado do cliente (localStorage, tal como colunasEscondidasProjetosSet) — cada
@@ -3917,7 +4083,8 @@ const App = {
     const liderOuAdmin = this.souAdmin() || this.souLiderDeAlgumaEquipa();
     const widgets = this.DASHBOARD_WIDGETS.filter(w =>
       (gestorOuAdmin || !this.WIDGETS_GESTOR_ADMIN.includes(w.key)) &&
-      (liderOuAdmin || !this.WIDGETS_LIDER_ADMIN.includes(w.key)));
+      (liderOuAdmin || !this.WIDGETS_LIDER_ADMIN.includes(w.key)) &&
+      (gestorOuAdmin || liderOuAdmin || !this.WIDGETS_RESPONSAVEL.includes(w.key)));
     this.els.painelPersonalizarDashboard.innerHTML = widgets.map(w => `
       <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" data-widget="${w.key}" ${ocultos.has(w.key) ? '' : 'checked'}> ${escapeHtml(w.label)}
@@ -3989,6 +4156,7 @@ const App = {
       n += this.ausenciasParaAprovarCount();
       n += this.equipaDiasIncompletosCount();
     }
+    if (this.souAdmin() || this.souGestorDeAlgumProjeto() || this.souLiderDeAlgumaEquipa()) n += this.saidasPorResolverLista().length;
     return n;
   },
   // Quantos pedidos de ausência (das pessoas que posso decidir) estão pendentes — mesmo critério do
@@ -4029,6 +4197,10 @@ const App = {
       if (aus) itens.push({ key: 'ausenciasParaAprovar', texto: `${aus} pedido(s) de ausência`, sub: 'Para aprovar' });
       const eq = this.equipaDiasIncompletosCount();
       if (eq) itens.push({ key: 'equipaDiasIncompletos', texto: `${eq} pessoa(s) da equipa`, sub: 'Com registos incompletos' });
+    }
+    if (this.souAdmin() || this.souGestorDeAlgumProjeto() || this.souLiderDeAlgumaEquipa()) {
+      const sai = this.saidasPorResolverLista().length;
+      if (sai) itens.push({ key: 'saidasPorResolver', texto: `${sai} saída(s) por resolver`, sub: 'Pessoas que saem: trabalho, projetos e liderança' });
     }
     return itens;
   },
@@ -4186,6 +4358,11 @@ const App = {
       html += this.cartaoDashboard('🌴 As minhas ausências', corpo);
     }
 
+    if ((gestorOuAdmin || liderOuAdmin) && !ocultos.has('saidasPorResolver')) {
+      const saidas = this.saidasPorResolverLista();
+      if (saidas.length) html += this.cartaoDashboard('🚪 Saídas por resolver', this.htmlCartaoSaidas(saidas), null, 'saidasPorResolver');
+    }
+
     if (liderOuAdmin && !ocultos.has('ausenciasParaAprovar')) {
       const pendentes = this.state.ausencias
         .filter(a => a.estado === 'pendente' && this.podeDecidirAusencia(a))
@@ -4333,6 +4510,15 @@ const App = {
       if (elCrm) { const [tipo, id] = elCrm.dataset.dashCrm.split('|'); Crm.irPara(tipo, id); return; }
       const elPessoaRisco = ev.target.closest('[data-dash-pessoa-risco]');
       if (elPessoaRisco) { this.irParaCapacidadeDoRecurso(elPessoaRisco.dataset.dashPessoaRisco); return; }
+      const elSaida = ev.target.closest('[data-saida]');
+      if (elSaida) {
+        const [acao, pessoaId, projetoId] = elSaida.dataset.saida.split('|');
+        const volta = () => this.renderDashboard();
+        if (acao === 'trabalho') this.abrirModalSubstituirPessoa(projetoId, pessoaId, volta);
+        else if (acao === 'gestor') this.abrirModalNovoGestor(pessoaId, volta);
+        else if (acao === 'lideranca') this.abrirModalNovaLideranca(pessoaId, volta);
+        return;
+      }
     };
   },
   // ---------- Dashboard: navegação a partir dos cartões (ver data-dash-* em renderDashboard) ----------

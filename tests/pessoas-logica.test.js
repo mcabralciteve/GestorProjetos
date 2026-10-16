@@ -157,3 +157,65 @@ test('substituir: horas ultrapassadas (registado > previsto) → remanescente 0,
   const t1 = e.projetos.p1.tarefas[0];
   assert.equal(t1.alocacoesHoras.a, 20); assert.equal(t1.alocacoesHoras.c, 0);
 });
+
+// ---------- Gestão e liderança (Fase 3) ----------
+const cen3 = () => {
+  const e = cenario();
+  e.recursos.push({ id: 'semconta', nome: 'Sem Conta' });
+  e.utilizadores.push({ id: 'u9', recursoId: 'b', papel: 'user' }, { id: 'u10', recursoId: 'n', papel: 'user' }, { id: 'u11', recursoId: 'sai2', papel: 'user' });
+  e.projetos.p3 = { id: 'p3', nome: 'Gama', gestorId: 'a', tarefas: [], proximosPassos: [] };
+  return e;
+};
+
+test('novo gestor: só quem está ativo, sem saída marcada e com conta; nada muda no planeamento', () => {
+  const e = cen3();
+  const antes = JSON.stringify(e);
+  assert.equal(P.planearNovosGestores(e, 'a', { p1: 'b', p3: 'n' }, { hojeISO: HOJE }).erros.length, 0);
+  for (const paraId of ['a', 'zzz', 'semconta', 'sai2', 'adm2']) {
+    const r = P.planearNovosGestores(e, 'a', { p1: paraId }, { hojeISO: HOJE });
+    assert.equal(r.erros.length, 1, paraId); assert.equal(r.ops.length, 0);
+  }
+  assert.equal(JSON.stringify(e), antes);
+});
+
+test('novo gestor: aplica e devolve o registo; ignora projetos que a pessoa não gere', () => {
+  const e = cen3();
+  const plano = P.planearNovosGestores(e, 'a', { p1: 'b', p3: 'n', p2: 'n' }, { hojeISO: HOJE });   // p2 é do Bruno
+  assert.deepEqual(plano.ops.map(o => o.projetoId).sort(), ['p1', 'p3']);
+  const linhas = P.aplicarNovosGestores(e, plano, 'a', 'adm1');
+  assert.equal(e.projetos.p1.gestorId, 'b'); assert.equal(e.projetos.p3.gestorId, 'n'); assert.equal(e.projetos.p2.gestorId, 'b');
+  assert.equal(linhas.length, 2); assert.equal(linhas[0].tipo, 'gestor'); assert.equal(linhas[0].deNome, 'Ana'); assert.equal(linhas[0].feitoPor, 'adm1');
+});
+
+test('nova liderança: líder de equipa e diretor passam para quem tem conta; histórico de tipo lider/diretor', () => {
+  const e = cen3();
+  const plano = P.planearNovaLideranca(e, 'a', { equipas: { e1: 'b' }, departamentos: { d1: 'n' } }, { hojeISO: HOJE });
+  assert.deepEqual(plano.erros, []); assert.equal(plano.equipas.length, 1); assert.equal(plano.departamentos.length, 0);   // d1 é do Bruno, não da Ana
+  const linhas = P.aplicarNovaLideranca(e, plano, 'a', 'adm1');
+  assert.equal(e.equipas[0].liderId, 'b');
+  assert.equal(linhas[0].tipo, 'lider'); assert.match(linhas[0].tarefaNome, /equipa DCS/);
+  const dir = P.planearNovaLideranca(e, 'b', { departamentos: { d1: 'n' } }, { hojeISO: HOJE });
+  const l2 = P.aplicarNovaLideranca(e, dir, 'b');
+  assert.equal(e.departamentos[0].diretorId, 'n'); assert.equal(l2[0].tipo, 'diretor');
+  assert.equal(P.planearNovaLideranca(cen3(), 'a', { equipas: { e1: 'semconta' } }, { hojeISO: HOJE }).erros.length, 1);
+});
+
+test('saídas por resolver: cada decisor só vê o que pode resolver', () => {
+  const e = cen3();
+  e.recursos.find(r => r.id === 'a').dataSaida = '2026-11-30';        // Ana sai (a-sair): é TL da DCS, gestora de p1/p3, tem tarefas em p1
+  const l = P.saidasPorResolver(e, { admin: true }, HOJE);
+  const ana = l.find(x => x.pessoa.id === 'a');
+  assert.ok(ana); assert.equal(ana.pessoa.estado, 'a-sair');
+  assert.equal(ana.trabalho.length, 1); assert.equal(ana.trabalho[0].tarefas, 3); assert.equal(ana.trabalho[0].nextSteps, 1);
+  assert.equal(ana.gestor.length, 2); assert.equal(ana.lideranca.equipas.length, 1);
+  // gestor do projeto (não admin, não decide gestores): só o trabalho do seu projeto
+  const g = P.saidasPorResolver(e, { admin: false, podeEditarProjeto: pid => pid === 'p1', podeDecidirGestor: () => false }, HOJE).find(x => x.pessoa.id === 'a');
+  assert.equal(g.trabalho.length, 1); assert.equal(g.gestor.length, 0); assert.equal(g.lideranca.equipas.length, 0);
+  // Team Leader da pessoa: decide o gestor dos projetos dela, sem poder editar os projetos nem a liderança
+  const tl = P.saidasPorResolver(e, { admin: false, podeEditarProjeto: () => false, podeDecidirGestor: () => true }, HOJE).find(x => x.pessoa.id === 'a');
+  assert.equal(tl.trabalho.length, 0); assert.equal(tl.gestor.length, 2);
+  // ninguém com poder → nada
+  assert.equal(P.saidasPorResolver(e, { admin: false, podeEditarProjeto: () => false, podeDecidirGestor: () => false }, HOJE).some(x => x.pessoa.id === 'a'), false);
+  // pessoas ativas nunca aparecem
+  assert.equal(l.some(x => x.pessoa.id === 'b'), false);
+});
