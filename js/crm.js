@@ -998,7 +998,9 @@ const Crm = {
     const mostraProjeto = op.projeto_id || CrmLogica.categoriaDe(op, this.idx.etapa) === 'ganha';
     raiz.innerHTML = `${mostraProjeto ? '<h4 class="crm-h">Projeto</h4><div id="opSecProj"></div>' : ''}<h4 class="crm-h">Propostas</h4><div id="opSecProp"></div>
       <h4 class="crm-h">Interações</h4><div id="opSecInt"></div>
-      <h4 class="crm-h">Follow-ups</h4><div id="opSecTar"></div>`;
+      <h4 class="crm-h">Follow-ups</h4><div id="opSecTar"></div>
+      <h4 class="crm-h">Horas comerciais</h4><div id="opSecHoras"></div>`;
+    this.secHorasComerciais(raiz.querySelector('#opSecHoras'), { opId });
     if (mostraProjeto) this.secProjetoDaOp(raiz.querySelector('#opSecProj'), opId);
     this.secPropostas(raiz.querySelector('#opSecProp'), opId);
     this.secInteracoes(raiz.querySelector('#opSecInt'), { opId, contaId: op.conta_id });
@@ -1102,12 +1104,23 @@ const Crm = {
       <h4 class="crm-h">Oportunidades</h4><div id="ctSecOp"></div>
       <h4 class="crm-h">Projetos</h4><div id="ctSecProj"></div>
       <h4 class="crm-h">Interações</h4><div id="ctSecInt"></div>
-      <h4 class="crm-h">Follow-ups</h4><div id="ctSecTar"></div>`;
+      <h4 class="crm-h">Follow-ups</h4><div id="ctSecTar"></div>
+      <h4 class="crm-h">Horas comerciais</h4><div id="ctSecHoras"></div>`;
+    this.secHorasComerciais(raiz.querySelector('#ctSecHoras'), { contaId });
     this.secContactos(raiz.querySelector('#ctSecCont'), contaId);
     this.secOportunidadesDaConta(raiz.querySelector('#ctSecOp'), contaId);
     this.secProjetosDaConta(raiz.querySelector('#ctSecProj'), contaId);
     this.secInteracoes(raiz.querySelector('#ctSecInt'), { contaId });
     this.secTarefas(raiz.querySelector('#ctSecTar'), { contaId });
+  },
+  // Horas registadas em atividades comerciais associadas a esta oportunidade (ou a esta conta, incluindo as só com o cliente).
+  secHorasComerciais(raiz, ctx) {
+    if (!raiz) return;
+    const r = RegistoComercial.horasAssociadas(App.state.registos, { oportunidadeId: ctx.opId, contaId: ctx.opId ? null : ctx.contaId });
+    const fmt = h => (Math.round(h * 10) / 10).toLocaleString('pt-PT');
+    raiz.innerHTML = r.horas
+      ? `<p style="margin:0;"><b>${fmt(r.horas)} h</b> registadas por ${r.pessoas.length} pessoa(s): ${r.pessoas.map(p => `${escapeHtml(p.pessoa)} (${fmt(p.horas)} h)`).join(', ')}.</p>`
+      : this.vazioHtml('Ainda sem horas comerciais registadas' + (ctx.opId ? ' nesta oportunidade.' : ' neste cliente.'));
   },
   secOportunidadesDaConta(raiz, contaId) {
     const ops = this.d.oportunidades.filter(o => o.conta_id === contaId);

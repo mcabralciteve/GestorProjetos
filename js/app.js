@@ -322,6 +322,7 @@ const App = {
       regProjeto: document.getElementById('regProjeto'),
       regTipo: document.getElementById('regTipo'),
       regProjetoWrap: document.getElementById('regProjetoWrap'),
+      regComercialWrap: document.getElementById('regComercialWrap'),
       regTarefa: document.getElementById('regTarefa'),
       regModoLoteWrap: document.getElementById('regModoLoteWrap'),
       regModoLote: document.getElementById('regModoLote'),
@@ -697,7 +698,12 @@ const App = {
     });
     this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; if (r.ativo === undefined) r.ativo = true; if (r.dataSaida === undefined) r.dataSaida = null; });
     if (!this.state.registos) this.state.registos = [];
-    this.state.registos.forEach(r => { if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null; });
+    this.state.registos.forEach(r => {
+      if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null;
+      if (r.crmContaId === undefined) r.crmContaId = null;
+      if (r.crmOportunidadeId === undefined) r.crmOportunidadeId = null;
+      if (r.oportunidadeTexto === undefined) r.oportunidadeTexto = '';
+    });
     if (!this.state.ausencias) this.state.ausencias = [];
     // Compatibilidade com ausências guardadas antes da aprovação — já contavam como
     // indisponibilidade sem pedido nenhum, por isso entram diretamente como "aprovada".
@@ -709,7 +715,7 @@ const App = {
       if (a.motivoRejeicao === undefined) a.motivoRejeicao = '';
     });
     if (!this.state.tiposTrabalho) this.state.tiposTrabalho = [];
-    this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; });
+    this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; if (tt.comercial === undefined) tt.comercial = false; });
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
     if (!this.state.historicoEquipas) this.state.historicoEquipas = [];
@@ -3137,7 +3143,7 @@ const App = {
   // "Projeto" não é uma linha desta lista — é um pseudo-tipo fixo (id null), sempre disponível e
   // sempre a exigir projeto/tarefa; ver tipoTrabalhoPorId/tiposTrabalhoAtivos. Esta tabela só guarda
   // as outras categorias (Ausência justificada, Formação interna, etc.), geridas pelo Administrador.
-  TIPO_TRABALHO_PROJETO: { id: null, nome: 'Projeto', cor: '#2563eb', requerProjeto: true, ativo: true, criaAusencia: false },
+  TIPO_TRABALHO_PROJETO: { id: null, nome: 'Projeto', cor: '#2563eb', requerProjeto: true, ativo: true, criaAusencia: false, comercial: false },
   tipoTrabalhoPorId(id) {
     if (!id) return this.TIPO_TRABALHO_PROJETO;
     return this.state.tiposTrabalho.find(tt => tt.id === id) || this.TIPO_TRABALHO_PROJETO;
@@ -3149,7 +3155,7 @@ const App = {
     return [this.TIPO_TRABALHO_PROJETO, ...this.state.tiposTrabalho.filter(tt => tt.ativo).sort((a, b) => (a.ordem || 0) - (b.ordem || 0))];
   },
   novoTipoTrabalhoObj(nome) {
-    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, criaAusencia: false, ordem: this.state.tiposTrabalho.length };
+    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, criaAusencia: false, comercial: false, ordem: this.state.tiposTrabalho.length };
   },
   adicionarTipoTrabalho() {
     this.state.tiposTrabalho.push(this.novoTipoTrabalhoObj('Novo tipo'));
@@ -3167,7 +3173,7 @@ const App = {
   atualizarTipoTrabalho(id, campo, valor) {
     const tt = this.state.tiposTrabalho.find(x => x.id === id);
     if (!tt) return;
-    tt[campo] = (campo === 'ativo' || campo === 'criaAusencia') ? !!valor : valor;
+    tt[campo] = (campo === 'ativo' || campo === 'criaAusencia' || campo === 'comercial') ? !!valor : valor;
     this.persist();
     this.renderTabelaTiposTrabalho();
     this.renderRegistoDia();
@@ -3490,6 +3496,64 @@ const App = {
 
   // ---------- Registo de Horas ----------
   ULTIMA_PESSOA_KEY: 'gp_ultima_pessoa',
+  // ---------- Registo de horas comercial: associar a cliente e oportunidade do CRM ----------
+  // Para os tipos de trabalho marcados como "comerciais" (Tipos de Trabalho → Comercial). Mostra a lista de clientes do CRM e, ao
+  // escolher um, as suas oportunidades em curso; "Outro/Outra…" deixa escrever à mão quando não existe. Sem acesso ao CRM (só
+  // Administrador, Diretores e Team Leaders têm) ficam só os dois campos de texto. Opcional: sem escolha, o registo fica como sempre.
+  // Devolve { ler() } com { crmContaId, crmOportunidadeId, cliente, oportunidadeTexto }.
+  montarAssociacaoComercial(raiz, inicial) {
+    const ini = inicial || {};
+    const RC = RegistoComercial;
+    const crmAcesso = Crm.podeVer();
+    let estado = 'a-carregar';        // 'a-carregar' | 'crm' | 'texto'
+    let sel = { conta: '', op: '', clienteTxt: ini.cliente || '', opTxt: ini.oportunidadeTexto || '' };
+    const etapas = () => Crm.idx.etapa || new Map();
+    const campoTexto = (rot, chave, valor, dica) => `<label><span class="rotulo-campo">${rot}${dica ? ` <span class="nota">${dica}</span>` : ''}</span><input type="text" data-rc="${chave}" value="${escapeAttr(valor)}" autocomplete="off"></label>`;
+    const desenhar = () => {
+      let corpo;
+      if (estado === 'a-carregar') {
+        corpo = '<p class="hint" style="margin:0;">A carregar os clientes e oportunidades do CRM…</p>';
+      } else if (estado === 'texto') {
+        corpo = `<div class="row-2">${campoTexto('Cliente', 'clienteTxt', sel.clienteTxt)}${campoTexto('Oportunidade', 'opTxt', sel.opTxt)}</div>
+          ${crmAcesso ? '<p class="hint" style="margin:0;">Não consegui ler o CRM — escreve o cliente e a oportunidade à mão.</p>' : '<p class="hint" style="margin:0;">Escreve o cliente e a oportunidade (o CRM só está disponível para Administradores, Diretores e Team Leaders).</p>'}`;
+      } else {
+        const contas = RC.contasOrdenadas(Crm.d.contas);
+        const opcoesConta = '<option value="">— Sem associação —</option>' +
+          contas.map(c => `<option value="${escapeAttr(c.id)}" ${sel.conta === c.id ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('') +
+          `<option value="${RC.OUTRO}" ${sel.conta === RC.OUTRO ? 'selected' : ''}>Outro cliente (não existe na lista)…</option>`;
+        const abertas = sel.conta && sel.conta !== RC.OUTRO ? RC.oportunidadesAbertas(sel.conta, Crm.d.oportunidades, etapas()) : [];
+        const opcoesOp = '<option value="">— Só o cliente (sem oportunidade) —</option>' +
+          abertas.map(o => `<option value="${escapeAttr(o.id)}" ${sel.op === o.id ? 'selected' : ''}>${escapeHtml(o.titulo)}${(etapas().get(o.etapa_id) || {}).nome ? ' · ' + escapeHtml(etapas().get(o.etapa_id).nome) : ''}</option>`).join('') +
+          `<option value="${RC.OUTRA}" ${sel.op === RC.OUTRA ? 'selected' : ''}>Outra oportunidade (não existe na lista)…</option>`;
+        const mostraCliente = sel.conta === RC.OUTRO, mostraOp = sel.conta === RC.OUTRO || sel.op === RC.OUTRA;
+        corpo = `<div class="row-2">
+            <label><span class="rotulo-campo">Cliente</span><select data-rc="conta">${opcoesConta}</select></label>
+            <label><span class="rotulo-campo">Oportunidade em curso</span><select data-rc="op" ${!sel.conta || sel.conta === RC.OUTRO ? 'disabled' : ''}>${opcoesOp}</select></label>
+          </div>
+          ${mostraCliente || mostraOp ? `<div class="row-2">${mostraCliente ? campoTexto('Nome do cliente', 'clienteTxt', sel.clienteTxt) : '<span></span>'}${mostraOp ? campoTexto('Oportunidade', 'opTxt', sel.opTxt) : '<span></span>'}</div>` : ''}`;
+      }
+      raiz.innerHTML = `<div class="rc-bloco"><p class="hint" style="margin:0 0 6px;"><b>Atividade comercial</b> — associa-a a uma oportunidade (opcional).</p>${corpo}</div>`;
+      raiz.querySelectorAll('select[data-rc]').forEach(s => s.addEventListener('change', () => {
+        sel[s.dataset.rc === 'conta' ? 'conta' : 'op'] = s.value;
+        if (s.dataset.rc === 'conta') sel.op = '';
+        desenhar();
+      }));
+      raiz.querySelectorAll('input[data-rc]').forEach(i => i.addEventListener('input', () => { sel[i.dataset.rc] = i.value; }));
+    };
+    const iniciar = () => {
+      sel = Object.assign(sel, RC.estadoInicial(ini, Crm.d.contas, Crm.d.oportunidades));
+      estado = 'crm';
+      desenhar();
+    };
+    desenhar();
+    if (!crmAcesso) { estado = 'texto'; desenhar(); }
+    else if (Crm.carregado) iniciar();
+    else Crm.carregar().then(iniciar).catch(() => { estado = 'texto'; desenhar(); });
+    return {
+      ler: () => estado === 'crm' ? RC.resolver(sel, Crm.d.contas, Crm.d.oportunidades) : RC.resolverTexto(sel.clienteTxt, sel.opTxt, ini)
+    };
+  },
+
   novoRegistoObj(dados) {
     // Um registo que só traga o NOME da tarefa (importações, texto livre) liga-se já à tarefa se esse
     // nome identificar uma só tarefa do projeto — assim renomeá-la depois não lhe tira as horas.
@@ -3512,6 +3576,9 @@ const App = {
       tarefaNome: dados.tarefaNome || '',
       tarefaId,
       tipoTrabalhoId: dados.tipoTrabalhoId || null,
+      crmContaId: dados.crmContaId || null,
+      crmOportunidadeId: dados.crmOportunidadeId || null,
+      oportunidadeTexto: dados.oportunidadeTexto || '',
       horas: dados.horas,
       notas: dados.notas || '',
       origem: dados.origem || 'app',
@@ -5013,7 +5080,9 @@ const App = {
         <td><input type="color" value="${escapeAttr(tt.cor || '#64748b')}" data-campo="cor" style="width:44px;padding:2px;"></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.ativo ? 'checked' : ''} data-campo="ativo"></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.criaAusencia ? 'checked' : ''} data-campo="criaAusencia" title="No Registo do Dia, este tipo pode ser registado por DIAS (período início/fim; cria uma Ausência, a mesma coisa que Feriados &amp; Ausências, que a Capacidade já usa) ou só por HORAS de um dia (fica um registo normal, sem projeto)."></td>
+        <td style="text-align:center;"><input type="checkbox" ${tt.comercial ? 'checked' : ''} data-campo="comercial" ${Sync.temComercial === false ? 'disabled' : ''} title="${Sync.temComercial === false ? 'Corre primeiro supabase/registo_comercial.sql no Supabase.' : 'No registo de horas, este tipo oferece a associação a um cliente e a uma oportunidade do CRM.'}"></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="comercial"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'comercial', e.target.checked));
       tr.querySelector('[data-campo="nome"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'nome', e.target.value));
       tr.querySelector('[data-campo="cor"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'cor', e.target.value));
       tr.querySelector('[data-campo="ativo"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'ativo', e.target.checked));
@@ -5966,6 +6035,12 @@ const App = {
     const e = this.els;
     const tipo = this.tipoTrabalhoPorId(e.regTipo.value || null);
     e.regProjetoWrap.style.display = tipo.requerProjeto ? '' : 'none';
+    // Tipos comerciais: associação opcional a cliente/oportunidade do CRM (montada uma vez; volta a limpar-se ao guardar).
+    if (e.regComercialWrap) {
+      const comercial = !!tipo.comercial && !tipo.criaAusencia;
+      e.regComercialWrap.style.display = comercial ? '' : 'none';
+      if (comercial && !this._rcRegisto) this._rcRegisto = this.montarAssociacaoComercial(e.regComercialWrap, {});
+    }
     if (e.regModoLoteWrap) e.regModoLoteWrap.style.display = tipo.requerProjeto ? '' : 'none';
     if (!tipo.requerProjeto && e.regModoLote) e.regModoLote.checked = false;
     this.aplicarModoLoteRegisto();
@@ -6138,6 +6213,14 @@ const App = {
       campos.projeto_id = r.projetoId;
       campos.cliente = r.cliente;
     }
+    // Atividade comercial: cliente/oportunidade do CRM (ou texto livre). Aplica-se depois do projeto, para prevalecer.
+    if ('crmContaId' in alteracoes || 'crmOportunidadeId' in alteracoes || 'oportunidadeTexto' in alteracoes) {
+      r.crmContaId = alteracoes.crmContaId || null;
+      r.crmOportunidadeId = alteracoes.crmOportunidadeId || null;
+      r.oportunidadeTexto = alteracoes.oportunidadeTexto || '';
+      if ('cliente' in alteracoes && !r.projetoIdInterno) { r.cliente = alteracoes.cliente || ''; campos.cliente = r.cliente; }
+      if (Sync.temComercial !== false) { campos.crm_conta_id = r.crmContaId; campos.crm_oportunidade_id = r.crmOportunidadeId; campos.oportunidade_texto = r.oportunidadeTexto; }
+    }
     // "tarefaId" (escolha num <select>) identifica a tarefa sem ambiguidade — o nome vem dela. Só
     // depois de pessoa/projeto já aplicados acima, porque a tarefa tem de pertencer a essa combinação.
     let tarefaIdEscolhida;
@@ -6208,8 +6291,10 @@ const App = {
           return;
         }
       }
+      const rc = tipo.comercial && !tipo.criaAusencia && this._rcRegisto ? this._rcRegisto.ler() : null;
       this.submeterRegisto({
-        data, pessoa, tipoTrabalhoId: tipo.id, projetoIdInterno: '', projetoNome: '', projetoId: null, cliente: '',
+        data, pessoa, tipoTrabalhoId: tipo.id, projetoIdInterno: '', projetoNome: '', projetoId: null, cliente: rc ? rc.cliente : '',
+        crmContaId: rc ? rc.crmContaId : null, crmOportunidadeId: rc ? rc.crmOportunidadeId : null, oportunidadeTexto: rc ? rc.oportunidadeTexto : '',
         tarefaNome: '', tarefaId: null, horas, notas,
         origem: 'app-gestor-projetos', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
       });
@@ -6217,6 +6302,7 @@ const App = {
       e.regMsg.style.color = 'var(--verde)';
       e.regHoras.value = '';
       e.regNotas.value = '';
+      if (rc) { this._rcRegisto = null; e.regComercialWrap.innerHTML = ''; this.aplicarTipoRegisto(); }   // bloco novo para o próximo registo
       return;
     }
 
@@ -6537,7 +6623,7 @@ const App = {
         <td>${tipoHtml}</td>
         <td>${semProjeto ? '<span style="color:var(--cinza-500)">—</span>' : '<select data-campo="projetoIdInterno" style="min-width:200px"></select>'}</td>
         <td class="cel-cliente">${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
-        <td>${semProjeto ? '<span style="color:var(--cinza-500)">—</span>' : '<select data-campo="tarefaNome" style="min-width:160px"></select>'}</td>
+        <td>${semProjeto ? (r.oportunidadeTexto ? `<span title="Oportunidade associada (atividade comercial)">${escapeHtml(r.oportunidadeTexto)}</span>` : '<span style="color:var(--cinza-500)">—</span>') : '<select data-campo="tarefaNome" style="min-width:160px"></select>'}</td>
         <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
@@ -6752,12 +6838,12 @@ const App = {
         const cor = this.corPessoaCalendario(r.pessoa);
         // Um registo sem projeto (Ausência justificada, Formação, etc.) não tem "projetoNome" — usa
         // o nome do Tipo de Trabalho no lugar, para nunca mostrar uma barra em branco.
-        const rotulo = r.projetoNome || this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome;
+        const rotulo = r.projetoNome || (r.cliente ? `${this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome} — ${r.cliente}` : this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome);
         const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(rotulo)}` : escapeHtml(rotulo);
         const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${this.nomeTarefaRegisto(r) ? ' · ' + escapeAttr(this.nomeTarefaRegisto(r)) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
         return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
           <span class="cal-bloco-linha1">${linha1}</span>
-          <span class="cal-bloco-linha2">${escapeHtml(this.nomeTarefaRegisto(r))} · ${horas}h</span>
+          <span class="cal-bloco-linha2">${escapeHtml(this.nomeTarefaRegisto(r) || r.oportunidadeTexto || '')} · ${horas}h</span>
         </div>`;
       }).join('');
       html += `<div class="cal-dia${foraDoMes ? ' fora-mes' : ''}${iso === hojeISO ? ' hoje' : ''}">
@@ -6977,6 +7063,8 @@ const App = {
         <p><b>Data:</b> ${DateUtil.formatShort(DateUtil.parseISO(registoExistente.data))}</p>
         <p><b>Tipo:</b> ${escapeHtml(tipoRO.nome)}</p>
         ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(this.rotuloTarefaRegisto(registoExistente) || '—')}</p>` : ''}
+        ${!registoExistente.projetoNome && registoExistente.cliente ? `<p><b>Cliente:</b> ${escapeHtml(registoExistente.cliente)}</p>` : ''}
+        ${registoExistente.oportunidadeTexto ? `<p><b>Oportunidade:</b> ${escapeHtml(registoExistente.oportunidadeTexto)}</p>` : ''}
         <p><b>Horas:</b> ${registoExistente.horas}h</p>
         ${registoExistente.notas ? `<p><b>Notas:</b> ${escapeHtml(registoExistente.notas)}</p>` : ''}
         <p class="hint">Só o Administrador (ou o Gestor do projeto, quando aplicável) pode editar este registo.</p>`);
@@ -7041,6 +7129,7 @@ const App = {
         <label>Projeto <select id="blocoProjeto"><option value="">Seleciona…</option></select></label>
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
       </div>
+      <div id="blocoComercialWrap" style="display:none;"></div>
       <div id="blocoHorasWrap"><label>Horas <input type="number" id="blocoHoras" min="0.25" step="0.25" value="${horasDefeito}"></label></div>
       <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
         <textarea id="blocoNotas" rows="2">${escapeHtml(registoExistente ? registoExistente.notas : '')}</textarea>
@@ -7058,6 +7147,8 @@ const App = {
     const inpDataFim = m.querySelector('#blocoDataFim');
     const selTipo = m.querySelector('#blocoTipo');
     const wrapProjeto = m.querySelector('#blocoProjetoWrap');
+    const wrapComercial = m.querySelector('#blocoComercialWrap');
+    let rcModal = null;
     const wrapHoras = m.querySelector('#blocoHorasWrap');
     const selProjeto = m.querySelector('#blocoProjeto');
     const selTarefa = m.querySelector('#blocoTarefa');
@@ -7104,6 +7195,9 @@ const App = {
       const porDias = escolheDuracao && modoDias();
       wrapProjeto.style.display = tipo.requerProjeto ? '' : 'none';
       if (tipo.requerProjeto) preencherProjetos();
+      const comercial = !!tipo.comercial && !tipo.criaAusencia;
+      wrapComercial.style.display = comercial ? '' : 'none';
+      if (comercial && !rcModal) rcModal = this.montarAssociacaoComercial(wrapComercial, registoExistente || {});
       wrapDuracao.style.display = escolheDuracao ? '' : 'none';
       hintDuracao.textContent = !escolheDuracao ? '' : (porDias
         ? 'Cria uma ausência para esses dias (as tuas passam por aprovação do Team Leader/Diretor).'
@@ -7164,15 +7258,19 @@ const App = {
       const tarefaNome = tarefaReal ? tarefaReal.nome : '';
       if (tarefaReal && tarefaReal.progresso >= 100 && !confirm(`A tarefa "${tarefaReal.nome}" já está marcada como concluída (100%). Registar horas nela na mesma?`)) return;
 
+      // Atividade comercial: cliente/oportunidade escolhidos (ou escritos); noutros tipos, a associação limpa-se.
+      const rc = tipo.comercial && !tipo.criaAusencia && rcModal ? rcModal.ler() : { crmContaId: null, crmOportunidadeId: null, cliente: '', oportunidadeTexto: '' };
       if (registoExistente) {
         this.gravarLinhaRegisto(registoExistente.id, {
-          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' })
+          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' }),
+          cliente: rc.cliente, crmContaId: rc.crmContaId, crmOportunidadeId: rc.crmOportunidadeId, oportunidadeTexto: rc.oportunidadeTexto
         });
       } else {
         this.submeterRegisto({
           data, pessoa, tipoTrabalhoId: tipo.id,
           projetoIdInterno, projetoNome: proj ? proj.nome : '', projetoId: proj ? proj.id : null,
-          cliente: proj ? (proj.cliente || '') : '', tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null,
+          crmContaId: rc.crmContaId, crmOportunidadeId: rc.crmOportunidadeId, oportunidadeTexto: rc.oportunidadeTexto,
+          cliente: proj ? (proj.cliente || '') : rc.cliente, tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null,
           horas, notas, origem: 'app-gestor-projetos-dia', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
         });
       }
@@ -8532,13 +8630,13 @@ const App = {
   exportarRegistosCsv() {
     const filtrados = this.registosFiltradosOrdenados();
     if (!filtrados.length) { this.toast('Sem registos para exportar — revê os filtros.'); return; }
-    const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem', 'Ligação à tarefa', 'Texto guardado no registo']];
+    const linhas = [['Data', 'Pessoa', 'Tipo de Trabalho', 'Projeto', 'Cliente', 'Tarefa', 'Horas', 'Notas', 'Origem', 'Ligação à tarefa', 'Texto guardado no registo', 'Oportunidade (comercial)']];
     filtrados.forEach(r => {
       const a = this.auditarLigacaoRegisto(r);
       linhas.push([
         r.data, r.pessoa, this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome, [r.projetoIdInterno, r.projetoNome].filter(Boolean).join(' — '), r.cliente || '',
         this.nomeTarefaRegisto(r), parseFloat(r.horas) || 0, r.notas || '', r.origem || '',
-        !a ? 'n/a (sem projeto)' : (a.ok ? 'OK' : a.motivo), r.tarefaNome || ''
+        !a ? 'n/a (sem projeto)' : (a.ok ? 'OK' : a.motivo), r.tarefaNome || '', r.oportunidadeTexto || ''
       ]);
     });
     this.descarregarBlob(this.csvParaBlob(linhas), `Registos_${DateUtil.todayISO()}.csv`);

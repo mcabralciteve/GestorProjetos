@@ -40,7 +40,9 @@ const Sync = {
     await this.sincronizarListaSimples('equipas', antes.equipas, depois.equipas,
       eq => ({ id: eq.id, nome: eq.nome, lider_id: eq.liderId || null, departamento_id: eq.departamentoId || null }));
     await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
-      tt => ({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia }));
+      tt => Object.assign({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia },
+        // "comercial" só existe depois de supabase/registo_comercial.sql — sem a coluna, não se envia.
+        this.temComercial ? { comercial: !!tt.comercial } : {}));
 
     await Promise.all([
       this.sincronizarListaSimples('feriados', antes.feriados, depois.feriados,
@@ -101,7 +103,8 @@ const Sync = {
         id: r.id, data: r.data, pessoa: r.pessoa, projeto_id: r.projetoId || null,
         projeto_id_interno: r.projetoIdInterno, projeto_nome: r.projetoNome, cliente: r.cliente || '', tarefa_nome: r.tarefaNome,
         tarefa_id: r.tarefaId || null, tipo_trabalho_id: r.tipoTrabalhoId || null,
-        horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm
+        horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm,
+        ...(this.temComercial ? { crm_conta_id: r.crmContaId || null, crm_oportunidade_id: r.crmOportunidadeId || null, oportunidade_texto: r.oportunidadeTexto || '' } : {})
       }));
       const { error } = await supabaseClient.from('registos').insert(linhas);
       if (error) throw error;
@@ -262,7 +265,9 @@ const Sync = {
 
     const departamentos = dep.data.map(r => ({ id: r.id, nome: r.nome, diretorId: r.diretor_id || null }));
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, liderId: r.lider_id || null, departamentoId: r.departamento_id || null }));
-    const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia }));
+    const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia, comercial: !!r.comercial }));
+    // Associação de horas comerciais ao CRM (supabase/registo_comercial.sql): sem as colunas, não se envia nada disso.
+    this.temComercial = tt.data.length === 0 || 'comercial' in tt.data[0];
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
@@ -288,7 +293,8 @@ const Sync = {
       id: r.id, data: r.data, pessoa: r.pessoa, projetoIdInterno: r.projeto_id_interno, projetoId: r.projeto_id,
       projetoNome: r.projeto_nome, cliente: r.cliente || '', tarefaNome: r.tarefa_nome, tarefaId: r.tarefa_id || null,
       tipoTrabalhoId: r.tipo_trabalho_id || null,
-      horas: Number(r.horas) || 0, notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em
+      horas: Number(r.horas) || 0, notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em,
+      crmContaId: r.crm_conta_id || null, crmOportunidadeId: r.crm_oportunidade_id || null, oportunidadeTexto: r.oportunidade_texto || ''
     }));
 
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];

@@ -586,6 +586,8 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .an-legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 /* Painéis extra da Análise: tipo de atividade (circular), projeto vs. outras por pessoa, por cliente */
 .an-grelha.an-grelha3{grid-template-columns:repeat(auto-fit,minmax(330px,1fr));}
+/* Registo de horas comercial: bloco de associação a cliente/oportunidade */
+.rc-bloco{border:1px dashed var(--cinza-300);border-radius:var(--radius);padding:10px 12px;margin:4px 0 8px;background:var(--cinza-50, transparent);}
 .an-span2{grid-column:span 2;}
 @media (max-width:760px){.an-span2{grid-column:auto;}}
 .an-grelha3 > .card[hidden]{display:none;}
