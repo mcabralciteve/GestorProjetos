@@ -1,0 +1,79 @@
+// Integração orcprev (lado do Gestor) — correr com: node --test tests/orcprev-logica.test.js
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const L = require('../js/orcprev-logica.js');
+
+const tipos = {
+  reun: { id: 'reun', nome: 'Reuniões', orcprevAtividade: 'INTERNAL_MEETINGS' },
+  form: { id: 'form', nome: 'Formação interna', orcprevAtividade: '' }
+};
+const projetos = { p1: { id: 'p1', idInterno: '2026/1', nome: 'TEXP@CT', orcprevRef: '005323' }, p2: { id: 'p2', idInterno: '2026/2', nome: 'Outro', orcprevRef: '' } };
+const reg = (extra) => Object.assign({ data: '2026-10-19', horas: 1, projetoId: 'p1', projetoNome: 'TEXP@CT', projetoIdInterno: '2026/1', tipoTrabalhoId: null, tarefaNome: 'T1' }, extra);
+const ctx = (registos, inicioISO) => ({ registos, inicioISO: inicioISO || '2026-10-21', tipoPorId: id => tipos[id], projetoPorId: id => projetos[id], nomeTarefa: r => r.tarefaNome });
+
+test('segundaDaSemana: qualquer dia → segunda-feira (domingo pertence à semana que acabou)', () => {
+  assert.equal(L.segundaDaSemana('2026-10-19'), '2026-10-19');
+  assert.equal(L.segundaDaSemana('2026-10-21'), '2026-10-19');
+  assert.equal(L.segundaDaSemana('2026-10-25'), '2026-10-19');
+  assert.equal(L.segundaDaSemana('2026-10-26'), '2026-10-26');
+  assert.equal(L.segundaDaSemana('2026-03-30'), '2026-03-30'); // mudança de hora não interfere
+});
+
+test('arredondarDia: múltiplos de 0,25, soma preservada, maior resto primeiro', () => {
+  assert.deepEqual(L.arredondarDia([2, 3, 3]), [2, 3, 3]);
+  assert.deepEqual(L.arredondarDia([1.1, 1.1, 1.1]), [1.25, 1, 1]); // 3,3 → 3,25
+  const r = L.arredondarDia([2.6, 2.6, 2.8]);
+  assert.equal(r.reduce((a, b) => a + b, 0), 8);
+  r.forEach(x => assert.equal((x * 4) % 1, 0));
+  assert.deepEqual(L.arredondarDia([0.1, 0.1]), [0.25, 0]); // 0,2 h → 0,25 h, numa linha só
+  assert.deepEqual(L.arredondarDia([0.05, 0.05]), [0, 0]);
+  assert.deepEqual(L.arredondarDia([]), []);
+});
+
+test('várias tarefas do mesmo projeto no mesmo dia somam-se; nomes das tarefas vão para a nota', () => {
+  const s = L.linhasDaSemana(ctx([reg({ horas: 2, tarefaNome: 'Análise' }), reg({ horas: 1.5, tarefaNome: 'Relatório' }), reg({ horas: 1, tarefaNome: 'Análise' })]));
+  assert.equal(s.linhas.length, 1);
+  assert.equal(s.linhas[0].horas, 4.5);
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório');
+  assert.deepEqual(s.linhas[0].projeto, { ref: '005323', nome: 'TEXP@CT', idInterno: '2026/1' });
+  assert.equal(s.inicio, '2026-10-19'); assert.equal(s.fim, '2026-10-25');
+});
+
+test('dias e projetos diferentes ficam em linhas separadas; fora da semana ignora-se', () => {
+  const s = L.linhasDaSemana(ctx([reg({ data: '2026-10-19' }), reg({ data: '2026-10-20' }), reg({ data: '2026-10-19', projetoId: 'p2', projetoNome: 'Outro', projetoIdInterno: '2026/2' }),
+    reg({ data: '2026-10-26' }), reg({ data: '2026-10-18' })]));
+  assert.equal(s.linhas.length, 3);
+  assert.deepEqual(s.linhas.map(l => l.data), ['2026-10-19', '2026-10-19', '2026-10-20']);
+  assert.equal(s.totalGestor, 3);
+});
+
+test('tipo com atividade vai como atividade; tipo sem atividade não é enviado e gera aviso', () => {
+  const s = L.linhasDaSemana(ctx([reg({ tipoTrabalhoId: 'reun', projetoId: null, projetoNome: '', projetoIdInterno: '', horas: 1, tarefaNome: '' }),
+    reg({ tipoTrabalhoId: 'form', projetoId: null, projetoNome: '', horas: 2, tarefaNome: '' })]));
+  assert.equal(s.linhas.length, 1);
+  assert.equal(s.linhas[0].tipo, 'ACTIVITY'); assert.equal(s.linhas[0].atividade, 'INTERNAL_MEETINGS'); assert.equal(s.linhas[0].projeto, null);
+  assert.equal(s.linhas[0].nota, '[Gestor]');
+  assert.equal(s.totalGestor, 3); assert.equal(s.totalEnvio, 1);
+  assert.match(s.avisos[0], /Formação interna.*2 h não serão enviadas/);
+});
+
+test('horas a zero ou negativas ignoram-se; notas longas são cortadas', () => {
+  const s = L.linhasDaSemana(ctx([reg({ horas: 0 }), reg({ horas: 3, tarefaNome: 'x'.repeat(500) })]));
+  assert.equal(s.linhas.length, 1);
+  assert.equal(s.linhas[0].nota.length, 200);
+  assert.ok(s.linhas[0].nota.startsWith('[Gestor] x'));
+});
+
+test('arredondamento por dia mantém o total do dia (0,25 h)', () => {
+  const s = L.linhasDaSemana(ctx([reg({ horas: 3.4 }), reg({ projetoId: 'p2', projetoNome: 'Outro', projetoIdInterno: '2026/2', horas: 4.3 })]));
+  assert.equal(s.linhas.reduce((a, l) => a + l.horas, 0), 7.75); // 7,7 → 7,75
+  s.linhas.forEach(l => assert.equal((l.horas * 4) % 1, 0));
+});
+
+test('pacote: formato, email em minúsculas, semana', () => {
+  const s = L.linhasDaSemana(ctx([reg({ horas: 2 })]));
+  const p = L.pacote({ email: ' Ana@CITEVE.pt ', pessoa: 'Ana', semana: s, geradoEm: 'x' });
+  assert.equal(p.formato, 'gestor-orcprev'); assert.equal(p.versao, 1); assert.equal(p.email, 'ana@citeve.pt');
+  assert.deepEqual(p.semana, { inicio: '2026-10-19', fim: '2026-10-25' });
+  assert.deepEqual(JSON.parse(L.textoDoPacote(p)), p);
+});

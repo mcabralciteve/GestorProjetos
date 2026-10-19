@@ -204,6 +204,7 @@ const App = {
       projSuspensoAviso: document.getElementById('projSuspensoAviso'),
       projNome: document.getElementById('projNome'),
       projCliente: document.getElementById('projCliente'),
+      projOrcprev: document.getElementById('projOrcprev'),
       projDescricao: document.getElementById('projDescricao'),
       projInicio: document.getElementById('projInicio'),
       projFim: document.getElementById('projFim'),
@@ -715,7 +716,7 @@ const App = {
       if (a.motivoRejeicao === undefined) a.motivoRejeicao = '';
     });
     if (!this.state.tiposTrabalho) this.state.tiposTrabalho = [];
-    this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; if (tt.comercial === undefined) tt.comercial = false; });
+    this.state.tiposTrabalho.forEach(tt => { if (tt.criaAusencia === undefined) tt.criaAusencia = false; if (tt.comercial === undefined) tt.comercial = false; if (tt.orcprevAtividade === undefined) tt.orcprevAtividade = ''; });
     if (!this.state.utilizadores) this.state.utilizadores = [];
     if (!this.state.reservasViatura) this.state.reservasViatura = [];
     if (!this.state.historicoEquipas) this.state.historicoEquipas = [];
@@ -739,6 +740,7 @@ const App = {
       if (p.equipaId === undefined) p.equipaId = null;
       if (p.tipoReferencia !== 'interno') p.tipoReferencia = 'giaf';
       if (p.ativo === undefined) p.ativo = true;
+      if (p.orcprevRef === undefined) p.orcprevRef = '';
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
       if (!p.pontosSituacao) p.pontosSituacao = [];
       if (!p.proximosPassos) p.proximosPassos = [];
@@ -3155,7 +3157,7 @@ const App = {
     return [this.TIPO_TRABALHO_PROJETO, ...this.state.tiposTrabalho.filter(tt => tt.ativo).sort((a, b) => (a.ordem || 0) - (b.ordem || 0))];
   },
   novoTipoTrabalhoObj(nome) {
-    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, criaAusencia: false, comercial: false, ordem: this.state.tiposTrabalho.length };
+    return { id: crypto.randomUUID(), nome: nome || 'Novo tipo', cor: '#64748b', ativo: true, criaAusencia: false, comercial: false, orcprevAtividade: '', ordem: this.state.tiposTrabalho.length };
   },
   adicionarTipoTrabalho() {
     this.state.tiposTrabalho.push(this.novoTipoTrabalhoObj('Novo tipo'));
@@ -4662,7 +4664,7 @@ const App = {
   renderInfoProjeto() {
     const p = this.projetoAtivo();
     const e = this.els;
-    const campos = [e.projIdInterno, e.projEstado, e.projNome, e.projCliente, e.projDescricao, e.projInicio, e.projFim, e.projHorasVendidas, e.projValorVendido];
+    const campos = [e.projIdInterno, e.projEstado, e.projNome, e.projCliente, e.projOrcprev, e.projDescricao, e.projInicio, e.projFim, e.projHorasVendidas, e.projValorVendido];
     this.renderGestorConsultores(p);
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
@@ -4694,6 +4696,8 @@ const App = {
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
     e.projCliente.value = p.cliente || '';
+    e.projOrcprev.value = p.orcprevRef || '';
+    if (Sync.temOrcprevProjetos === false) { e.projOrcprev.disabled = true; e.projOrcprev.title = 'Corre primeiro supabase/orcprev_integracao.sql no Supabase.'; } else e.projOrcprev.title = '';
     e.projDescricao.value = p.descricao;
     e.projInicio.value = p.dataInicio;
     e.projFim.value = p.dataFim;
@@ -5081,7 +5085,9 @@ const App = {
         <td style="text-align:center;"><input type="checkbox" ${tt.ativo ? 'checked' : ''} data-campo="ativo"></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.criaAusencia ? 'checked' : ''} data-campo="criaAusencia" title="No Registo do Dia, este tipo pode ser registado por DIAS (período início/fim; cria uma Ausência, a mesma coisa que Feriados &amp; Ausências, que a Capacidade já usa) ou só por HORAS de um dia (fica um registo normal, sem projeto)."></td>
         <td style="text-align:center;"><input type="checkbox" ${tt.comercial ? 'checked' : ''} data-campo="comercial" ${Sync.temComercial === false ? 'disabled' : ''} title="${Sync.temComercial === false ? 'Corre primeiro supabase/registo_comercial.sql no Supabase.' : 'No registo de horas, este tipo oferece a associação a um cliente e a uma oportunidade do CRM.'}"></td>
+        <td><select data-campo="orcprevAtividade" ${Sync.temOrcprevTipos === false ? 'disabled' : ''} title="${Sync.temOrcprevTipos === false ? 'Corre primeiro supabase/orcprev_integracao.sql no Supabase.' : 'Atividade do orcprev para onde vão as horas deste tipo. Em branco = não são enviadas ao orcprev.'}"><option value="">— não enviar —</option>${OrcprevLogica.ATIVIDADES.map(([cod, nome]) => `<option value="${cod}" ${tt.orcprevAtividade === cod ? 'selected' : ''}>${escapeHtml(nome)}</option>`).join('')}</select></td>
         <td class="col-acoes"><button class="btn-icon" title="Eliminar">🗑</button></td>`;
+      tr.querySelector('[data-campo="orcprevAtividade"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'orcprevAtividade', e.target.value));
       tr.querySelector('[data-campo="comercial"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'comercial', e.target.checked));
       tr.querySelector('[data-campo="nome"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'nome', e.target.value));
       tr.querySelector('[data-campo="cor"]').addEventListener('change', (e) => this.atualizarTipoTrabalho(tt.id, 'cor', e.target.value));
@@ -9113,6 +9119,100 @@ const App = {
     const s = String(v === undefined || v === null ? '' : v);
     return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
   },
+  // ---------- Horas → orcprev (Via A) ----------
+  // O orcprev (ferramenta do CITEVE) também pede as horas da semana. Em vez de as preencher duas vezes, copia-se
+  // daqui a semana e importa-se lá com um marcador do browser (js/orcprev-importar.js), que usa a sessão da própria
+  // pessoa — o Gestor não consegue falar diretamente com o orcprev (ele não aceita pedidos de outros sites).
+  // As regras de soma/arredondamento/nota estão em OrcprevLogica (testadas); aqui só há o ecrã.
+  abrirModalOrcprev() {
+    const pessoa = this.diaRegistoPessoa;
+    const recurso = pessoa ? this.state.recursos.find(r => r.nome === pessoa) : null;
+    if (!recurso) { this.toast('Escolhe primeiro uma pessoa no Registo do Dia.'); return; }
+    // Semana inicial: a de hoje se o mês mostrado for o atual, senão a do dia 1 do mês mostrado.
+    const hoje = DateUtil.todayISO();
+    const { ano, mes } = this.mesRegistoDiaAtual || { ano: new Date().getFullYear(), mes: new Date().getMonth() };
+    const mesMostrado = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+    let inicio = OrcprevLogica.segundaDaSemana(hoje.startsWith(mesMostrado) ? hoje : `${mesMostrado}-01`);
+
+    const baseSite = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
+    const codigoMarcador = "javascript:(function(){if(location.hostname!=='orcprev.citeve.pt'){alert('Abre primeiro o orcprev (orcprev.citeve.pt) e só depois clica neste marcador.');return}var s=document.createElement('script');s.src='" + baseSite + "js/orcprev-importar.js?t='+Date.now();document.head.appendChild(s)})();";
+
+    this.abrirModal('Horas → orcprev', `
+      <p class="hint" style="margin-top:0;">Copia a semana daqui e importa-a no orcprev com um clique — sem preencher duas vezes. Só enviamos o que está no Gestor; o que lançaste à mão no orcprev não é tocado.</p>
+      <div class="cal-topbar" style="margin-bottom:6px;">
+        <button type="button" class="btn btn-sm" id="orcSemAnt">‹</button>
+        <strong id="orcSemLabel"></strong>
+        <button type="button" class="btn btn-sm" id="orcSemSeg">›</button>
+        <span style="margin-left:auto;font-size:12.5px;" id="orcSemPessoa"></span>
+      </div>
+      <div id="orcSemCorpo"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin:10px 0 4px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btnOrcCopiar">Copiar semana</button>
+        <span class="hint" id="orcCopiarMsg"></span>
+      </div>
+      <details style="margin-top:10px;">
+        <summary><b>Primeira vez? Instalar o marcador no browser</b></summary>
+        <ol style="margin:8px 0 0 18px;padding:0;line-height:1.5;">
+          <li>Mostra a barra de favoritos (Ctrl+Shift+B).</li>
+          <li>Arrasta este botão para lá: <a id="orcMarcador" href="${escapeAttr(codigoMarcador)}" class="btn btn-sm" style="text-decoration:none;display:inline-block;" draggable="true">Importar do Gestor</a></li>
+          <li>Abre o orcprev, entra com a tua conta, e clica no marcador. Ele lê o que copiaste aqui, mostra o que vai enviar e só grava quando confirmares.</li>
+        </ol>
+        <p class="hint" style="margin-bottom:0;">Sem barra de favoritos? <button type="button" class="btn btn-sm" id="btnOrcCopiarMarcador">Copiar o código do marcador</button> e cola-o como endereço de um favorito novo.</p>
+      </details>`);
+
+    const m = this.els.modalCorpo;
+    const NOMES_DIA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const fmtH = n => String(Math.round(n * 100) / 100).replace('.', ',');
+    const fmtDia = iso => { const [, mm, dd] = iso.split('-'); return `${dd}/${mm}`; };
+    const semanaAtual = () => {
+      const registos = this.state.registos.filter(r => r.pessoa === pessoa && this.possoVerRegisto(r));
+      return OrcprevLogica.linhasDaSemana({
+        registos, inicioISO: inicio,
+        tipoPorId: id => this.state.tiposTrabalho.find(tt => tt.id === id),
+        projetoPorId: id => this.state.projetos[id],
+        nomeTarefa: r => this.nomeTarefaRegisto(r)
+      });
+    };
+    const render = () => {
+      const sem = semanaAtual();
+      m.querySelector('#orcSemLabel').textContent = `${fmtDia(sem.inicio)} a ${fmtDia(sem.fim)}/${sem.fim.slice(0, 4)}`;
+      m.querySelector('#orcSemPessoa').textContent = pessoa;
+      const semEmail = !String(recurso.email || '').trim();
+      const linhasHtml = sem.linhas.map(l => {
+        const destino = l.tipo === 'PROJECT' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
+          : `${escapeHtml(OrcprevLogica.nomeAtividade(l.atividade))} <span class="hint">(atividade)</span>`;
+        return `<tr><td>${NOMES_DIA[new Date(l.data + 'T00:00:00Z').getUTCDay()]} ${fmtDia(l.data)}</td><td>${destino}</td><td style="text-align:right;">${fmtH(l.horas)} h</td></tr>`;
+      }).join('');
+      m.querySelector('#orcSemCorpo').innerHTML =
+        (semEmail ? `<p class="hint" style="color:var(--vermelho);">${escapeHtml(pessoa)} não tem email no Gestor — o importador usa o email para garantir que as horas vão para a conta certa. Define-o em Pessoas.</p>` : '')
+        + (sem.linhas.length ? `<table class="tabela-crud" style="width:100%;"><thead><tr><th>Dia</th><th>Vai para (no orcprev)</th><th style="text-align:right;">Horas</th></tr></thead><tbody>${linhasHtml}</tbody></table>`
+          : '<p class="hint">Sem horas para enviar nesta semana.</p>')
+        + `<p style="margin:8px 0 0;"><b>${fmtH(sem.totalEnvio)} h</b> a enviar${Math.abs(sem.totalGestor - sem.totalEnvio) > 0.001 ? ` <span class="hint">(registaste ${fmtH(sem.totalGestor)} h; o orcprev trabalha em quartos de hora)</span>` : ''}</p>`
+        + sem.avisos.map(a => `<p class="hint" style="color:#b45309;margin:4px 0 0;">⚠ ${escapeHtml(a)}</p>`).join('');
+      m.querySelector('#btnOrcCopiar').disabled = !sem.linhas.length || semEmail;
+      m.querySelector('#orcCopiarMsg').textContent = '';
+    };
+    m.querySelector('#orcSemAnt').addEventListener('click', () => { inicio = OrcprevLogica.somarDias(inicio, -7); render(); });
+    m.querySelector('#orcSemSeg').addEventListener('click', () => { inicio = OrcprevLogica.somarDias(inicio, 7); render(); });
+    m.querySelector('#btnOrcCopiar').addEventListener('click', async () => {
+      const sem = semanaAtual();
+      const texto = OrcprevLogica.textoDoPacote(OrcprevLogica.pacote({ email: recurso.email, pessoa, semana: sem }));
+      const msg = m.querySelector('#orcCopiarMsg');
+      try { await navigator.clipboard.writeText(texto); msg.textContent = '✓ Copiado. Agora clica no marcador no orcprev.'; }
+      catch (e) {
+        // Sem permissão para a área de transferência: mostra o texto selecionado para copiar à mão.
+        msg.innerHTML = 'Não consegui copiar sozinho — copia isto (Ctrl+C): <textarea readonly rows="3" style="width:100%;font:11px monospace;"></textarea>';
+        const ta = msg.querySelector('textarea'); ta.value = texto; ta.focus(); ta.select();
+      }
+    });
+    // O marcador é para arrastar para os favoritos — clicar nele aqui não deve fazer nada.
+    m.querySelector('#orcMarcador').addEventListener('click', ev => { ev.preventDefault(); this.toast('Arrasta este botão para a barra de favoritos — não o cliques aqui.'); });
+    m.querySelector('#btnOrcCopiarMarcador').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(codigoMarcador); this.toast('Código do marcador copiado.'); } catch (e) { this.toast('Não consegui copiar.'); }
+    });
+    render();
+  },
+
   // Exportação para Excel (não CSV — pedido explícito) dos registos de horas de um período e
   // critérios à escolha, dentro do que o papel deixa ver (ver podeVerAnalise/analiseRecursosEscopo).
   // Os mesmos cinco filtros do ecrã de Análise (Direção/Área/Pessoa/Tipo/Projeto), só que numa cópia
@@ -10248,6 +10348,7 @@ const App = {
     if (e.projAtivo) e.projAtivo.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.atualizarProjetoAtivo(this.projetoAtivo().id, e.projAtivo.checked); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projCliente.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().cliente = e.projCliente.value; this.persist(); this.renderTabelaProjetos(); });
+    e.projOrcprev.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().orcprevRef = e.projOrcprev.value.trim(); this.persist(); });
     e.projDescricao.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().descricao = e.projDescricao.value; this.persist(); });
     e.projInicio.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projInicio.value)) return; this.projetoAtivo().dataInicio = e.projInicio.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
     e.projFim.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projFim.value)) return; this.projetoAtivo().dataFim = e.projFim.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
@@ -10340,6 +10441,8 @@ const App = {
     if (btnDiaAnt) btnDiaAnt.addEventListener('click', () => this.navegarMesRegistoDia(-1));
     if (btnDiaSeg) btnDiaSeg.addEventListener('click', () => this.navegarMesRegistoDia(1));
     if (btnDiaHoje) btnDiaHoje.addEventListener('click', () => this.irParaHojeDiaRegisto());
+    const btnDiaOrcprev = document.getElementById('btnDiaOrcprev');
+    if (btnDiaOrcprev) btnDiaOrcprev.addEventListener('click', () => this.abrirModalOrcprev());
     const btnAddTipoTrabalho = document.getElementById('btnAddTipoTrabalho');
     if (btnAddTipoTrabalho) btnAddTipoTrabalho.addEventListener('click', () => this.adicionarTipoTrabalho());
 

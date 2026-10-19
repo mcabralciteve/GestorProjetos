@@ -185,6 +185,9 @@
         <label>Cliente
           <input type="text" id="projCliente" placeholder="Nome do cliente">
         </label>
+        <label>Projeto no orcprev <span class="nota">(opcional — código ou nome; vazio = procura pelo nome deste projeto)</span>
+          <input type="text" id="projOrcprev" placeholder="ex.: 005323 ou TEXP@CT" autocomplete="off" spellcheck="false">
+        </label>
         <label>Descrição
           <textarea id="projDescricao" rows="2" placeholder="Descrição / objetivo"></textarea>
         </label>
@@ -775,6 +778,7 @@
           <th>Ativo</th>
           <th title="Em vez de pedir horas/projeto, o Registo do Dia passa a pedir um período (início/fim) e cria uma Ausência">Cria Ausência</th>
           <th title="No registo de horas, este tipo passa a oferecer a associação a um cliente e a uma oportunidade do CRM">Comercial</th>
+          <th title="Atividade do orcprev que corresponde a este tipo, para enviar as horas ao orcprev (Registo do Dia → orcprev). Em branco = estas horas não são enviadas.">Atividade no orcprev</th>
           <th></th>
         </tr></thead>
         <tbody id="corpoTabelaTiposTrabalho"></tbody>
@@ -871,6 +875,7 @@
         <button type="button" class="btn btn-sm" id="btnDiaHoje">Hoje</button>
         <button type="button" class="btn btn-sm" id="btnDiaSeg">›</button>
         <strong id="diaDataLabel"></strong>
+        <button type="button" class="btn btn-sm" id="btnDiaOrcprev" title="Copiar as horas de uma semana para as importar no orcprev, sem as preencher duas vezes">⇄ orcprev</button>
         <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
       </div>
       <div id="diaGrelha" class="calendario-registos"></div>
@@ -1222,7 +1227,7 @@
 <script src="lib/jszip.min.js"></script>
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
-<script src="js/sync.js?v=20261019a"></script>
+<script src="js/sync.js?v=20261019b"></script>
 <script src="js/gantt.js?v=20260928c"></script>
 <script src="js/capacidade.js?v=20261002b"></script>
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
@@ -1239,6 +1244,7 @@
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
-<script src="js/app.js?v=20261019a"></script>
+<script src="js/orcprev-logica.js?v=20261019b"></script>
+<script src="js/app.js?v=20261019b"></script>
 </body>
 </html>

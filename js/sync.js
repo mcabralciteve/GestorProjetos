@@ -42,7 +42,9 @@ const Sync = {
     await this.sincronizarListaSimples('tipos_trabalho', antes.tiposTrabalho, depois.tiposTrabalho,
       tt => Object.assign({ id: tt.id, nome: tt.nome, cor: tt.cor || '#64748b', ativo: !!tt.ativo, ordem: tt.ordem || 0, cria_ausencia: !!tt.criaAusencia },
         // "comercial" só existe depois de supabase/registo_comercial.sql — sem a coluna, não se envia.
-        this.temComercial ? { comercial: !!tt.comercial } : {}));
+        this.temComercial ? { comercial: !!tt.comercial } : {},
+        // "orcprev_atividade" só existe depois de supabase/orcprev_integracao.sql — sem a coluna, não se envia.
+        this.temOrcprevTipos ? { orcprev_atividade: tt.orcprevAtividade || '' } : {}));
 
     await Promise.all([
       this.sincronizarListaSimples('feriados', antes.feriados, depois.feriados,
@@ -167,6 +169,8 @@ const Sync = {
     // Só se envia se a coluna já existir na base de dados (detetado ao carregar — ver
     // carregarDeSupabase); sem isto, publicar esta versão antes de correr o SQL impedia gravar
     // QUALQUER projeto ("could not find the column").
+    // Referência do projeto no orcprev (supabase/orcprev_integracao.sql) — só se a coluna já existir.
+    if (this.temOrcprevProjetos) linhaProjeto.orcprev_ref = projeto.orcprevRef || '';
     if (this.temTipoReferencia !== false) linhaProjeto.tipo_referencia = projeto.tipoReferencia === 'interno' ? 'interno' : 'giaf';
     // Cópia do orçamento validado (Orçamentação, Fase 2) — só se as colunas já existirem (supabase/orcamentos_fase2.sql).
     if (this.temOrcamentoBase !== false) {
@@ -265,9 +269,11 @@ const Sync = {
 
     const departamentos = dep.data.map(r => ({ id: r.id, nome: r.nome, diretorId: r.diretor_id || null }));
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, liderId: r.lider_id || null, departamentoId: r.departamento_id || null }));
-    const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia, comercial: !!r.comercial }));
+    const tiposTrabalho = tt.data.map(r => ({ id: r.id, nome: r.nome, cor: r.cor || '#64748b', ativo: !!r.ativo, ordem: r.ordem || 0, criaAusencia: !!r.cria_ausencia, comercial: !!r.comercial, orcprevAtividade: r.orcprev_atividade || '' }));
     // Associação de horas comerciais ao CRM (supabase/registo_comercial.sql): sem as colunas, não se envia nada disso.
     this.temComercial = tt.data.length === 0 || 'comercial' in tt.data[0];
+    // Integração de horas com o orcprev (supabase/orcprev_integracao.sql): sem as colunas, não se envia nada disso.
+    this.temOrcprevTipos = tt.data.length === 0 || 'orcprev_atividade' in tt.data[0];
     const recursos = rec.data.map(r => ({
       id: r.id, nome: r.nome, email: r.email || '', papel: r.papel, equipaId: r.equipa_id,
       precoCusto: Number(r.preco_custo) || 0, precoVenda: Number(r.preco_venda) || 0,
@@ -299,6 +305,7 @@ const Sync = {
 
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
     this.temOrcamentoBase = proj.data.length === 0 || 'orcamento_base' in proj.data[0];
+    this.temOrcprevProjetos = proj.data.length === 0 || 'orcprev_ref' in proj.data[0];
     const projetos = {};
     proj.data.forEach(p => {
       projetos[p.id] = {
@@ -306,7 +313,7 @@ const Sync = {
         id: p.id, idInterno: p.id_interno, nome: p.nome, cliente: p.cliente, descricao: p.descricao,
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,
-        orcamentoBase: p.orcamento_base || null,
+        orcamentoBase: p.orcamento_base || null, orcprevRef: p.orcprev_ref || '',
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],
         pontosSituacao: [], proximosPassos: []
       };
