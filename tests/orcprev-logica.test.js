@@ -120,3 +120,15 @@ test('cada linha leva tarefas, projetos e clientes — para o importador poder r
   assert.equal(L.montarNota('  '), '[Gestor]');
   delete projetos.p1.cliente;
 });
+
+test('candidatura: projeto do Gestor que corresponde a "Preparação de candidaturas" do orcprev', () => {
+  assert.deepEqual(L.alvoDe('Candidatura: 005400'), { tipo: 'candidatura', atividade: 'APPLICATION_PREP', valor: '005400' });
+  assert.equal(L.codificarAlvo('candidatura', ' AI FACTORY '), 'candidatura:AI FACTORY');
+  assert.equal(L.tipoDoAlvo('candidatura:X'), 'candidatura');
+  projetos.k1 = { id: 'k1', idInterno: '2026/60', nome: 'Candidatura AI Factory', orcprevRef: 'candidatura:AI FACTORY' };
+  const s = L.linhasDaSemana(ctx([reg({ projetoId: 'k1', projetoNome: 'Candidatura AI Factory', projetoIdInterno: '2026/60', horas: 3, tarefaNome: 'Formulário' }), reg({ horas: 1 })]));
+  assert.deepEqual(s.linhas.map(l => l.tipo), ['PROJECT', 'APPLICATION']);
+  assert.equal(s.linhas[1].atividade, 'APPLICATION_PREP');
+  assert.deepEqual(s.linhas[1].projeto, { ref: 'AI FACTORY', nome: 'Candidatura AI Factory', idInterno: '2026/60' });
+  assert.equal(s.linhas[1].nota, '[Gestor] Formulário'); // o projeto identifica-se no orcprev: basta o que foi feito
+});

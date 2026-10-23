@@ -13,7 +13,8 @@
 //  - QUALQUER linha pode ser reajustada na pré-visualização: enviar como projeto de I&D, serviço (consultoria/
 //    prototipagem) ou atividade (ex.: "Outras atividades"), e editar a nota. A mudança vale só para este envio, a
 //    não ser que se marque "lembrar" (guarda-se neste browser, por projeto do Gestor);
-//  - sem serviços no orcprev, a consultoria vai como atividade (ex.: "Outras atividades") com o projeto e o cliente na nota.
+//  - sem serviços no orcprev, a consultoria vai como atividade (ex.: "Outras atividades") com o projeto e o cliente na nota;
+//  - "Preparação de candidaturas" é uma atividade que leva também um projeto do orcprev (linha do tipo APPLICATION).
 // A lógica pura (sem DOM) está testada em tests/orcprev-importar.test.js.
 (function (raiz) {
   'use strict';
@@ -110,7 +111,7 @@
     textoNota(l, tipoFinal) {
       if (!Array.isArray(l.tarefas)) return String(l.nota || '').replace(/^\[Gestor\]\s*/, '');
       const tarefas = l.tarefas.join('; ');
-      if (tipoFinal === 'PROJECT') return tarefas;
+      if (tipoFinal === 'PROJECT' || tipoFinal === 'APPLICATION') return tarefas;
       const projetos = l.projetos || [], clientes = l.clientes || [];
       const ctx = [];
       if (projetos.length) ctx.push(projetos.join('; '));
@@ -126,6 +127,11 @@
     atividadesLivres(dados) {
       const comServico = new Set(dados.service_activity_codes || []);
       return (dados.activities || []).filter(a => !comServico.has(a.code) && !ATIVIDADES_COM_PROJETO.includes(a.code));
+    },
+    // "Preparação de candidaturas": atividade que leva um projeto do orcprev.
+    atividadesComProjeto(dados) {
+      const atividades = new Set((dados.activities || []).map(a => a.code));
+      return ATIVIDADES_COM_PROJETO.filter(c => atividades.has(c));
     },
     // Atividades que levam serviço (consultoria, prototipagem), as que o orcprev indicar.
     atividadesDeServico(dados) {
@@ -143,6 +149,12 @@
         const p = ov.id ? (dados.projects || []).find(x => Number(x.id) === Number(ov.id)) : null;
         return p ? { tipo: 'PROJECT', atividade: null, projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
           : { tipo: 'PROJECT', atividade: null, projetoId: null, projetoNomeOrcprev: '', estado: 'escolher' };
+      }
+      if (ov.destino === 'candidatura') {
+        const p = ov.id ? (dados.projects || []).find(x => Number(x.id) === Number(ov.id)) : null;
+        const disponivel = atividades.has('APPLICATION_PREP');
+        return p && disponivel ? { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
+          : { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projetoId: null, projetoNomeOrcprev: '', estado: 'escolher' };
       }
       if (ov.destino === 'servico') {
         const codigo = ov.atividade || 'CONSULTING';
@@ -173,11 +185,13 @@
       const manuais = entradas.filter(e => !String(e.note || '').startsWith(MARCA));
 
       const automatico = (l, base) => {
-        if (l.tipo === 'PROJECT') {
+        if (l.tipo === 'PROJECT' || l.tipo === 'APPLICATION') {
           const chave = this.chaveProjeto(l.projeto);
           const m = this.casarProjeto(l.projeto, projetos, memoria, escolhas && escolhas[chave]);
           const proj = m.id ? projetos.find(p => Number(p.id) === Number(m.id)) : null;
-          return Object.assign(base, { chave, projetoId: m.id, projetoNomeOrcprev: proj ? proj.name : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
+          const semAtividade = l.tipo === 'APPLICATION' && !atividades.has('APPLICATION_PREP');
+          return Object.assign(base, { chave, projetoId: m.id, projetoNomeOrcprev: proj ? proj.name : '', como: m.como, candidatos: m.candidatos,
+            estado: semAtividade ? 'manual' : (m.id ? 'ok' : 'escolher'), motivo: semAtividade ? 'O orcprev não tem a atividade "Preparação de candidaturas".' : undefined });
         }
         if (!atividades.has(l.atividade)) return Object.assign(base, { estado: 'manual', motivo: 'Atividade desconhecida no orcprev.' });
         if (l.tipo === 'SERVICE') {
@@ -188,8 +202,12 @@
           const sv = m.id ? servicos.find(x => Number(x.id) === Number(m.id)) : null;
           return Object.assign(base, { chave, chaveEscolha: 's:' + chave, servicoId: m.id, servicoNomeOrcprev: sv ? `${sv.client_name || ''} · ${sv.name || ''}` : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
         }
-        if (comServico.has(l.atividade) || ATIVIDADES_COM_PROJETO.includes(l.atividade)) {
-          return Object.assign(base, { estado: 'manual', motivo: 'O orcprev pede um serviço/projeto nesta atividade — escolhe o destino em "Alterar" ou preenche-a à mão.' });
+        if (ATIVIDADES_COM_PROJETO.includes(l.atividade)) {
+          // ex.: tipo de trabalho "Candidaturas" → o orcprev pede o projeto da candidatura: escolhe-se em "Alterar".
+          return Object.assign(base, { tipo: 'APPLICATION', projetoId: null, projetoNomeOrcprev: '', candidatos: [], estado: 'escolher' });
+        }
+        if (comServico.has(l.atividade)) {
+          return Object.assign(base, { estado: 'manual', motivo: 'O orcprev pede um serviço nesta atividade — escolhe o destino em "Alterar" ou preenche-a à mão.' });
         }
         return Object.assign(base, { estado: 'ok' });
       };
@@ -238,7 +256,7 @@
         week_start: pacote.semana.inicio,
         entries: plano.linhas.filter(l => l.estado === 'ok').map(l => ({
           id: null, work_date: l.data,
-          project_id: l.tipo === 'PROJECT' ? Number(l.projetoId) : null,
+          project_id: l.tipo === 'PROJECT' || l.tipo === 'APPLICATION' ? Number(l.projetoId) : null,
           service_id: l.tipo === 'SERVICE' ? Number(l.servicoId) : null,
           activity_code: l.tipo === 'PROJECT' ? null : l.atividade,
           hours: l.horas, note: l.nota
@@ -253,7 +271,7 @@
       plano.linhas.forEach(l => {
         const ov = edicoes && edicoes[l.indice];
         if (!ov || ov.soAberto || !ov.lembrar || l.estado !== 'ok' || !l.chave) return;
-        mem['d:' + l.chave] = l.tipo === 'PROJECT' ? { t: 'projeto', id: l.projetoId } : l.tipo === 'SERVICE' ? { t: 'servico', id: l.servicoId, atividade: l.atividade } : { t: 'atividade', atividade: l.atividade };
+        mem['d:' + l.chave] = l.tipo === 'PROJECT' ? { t: 'projeto', id: l.projetoId } : l.tipo === 'APPLICATION' ? { t: 'candidatura', id: l.projetoId } : l.tipo === 'SERVICE' ? { t: 'servico', id: l.servicoId, atividade: l.atividade } : { t: 'atividade', atividade: l.atividade };
       });
       return mem;
     }
@@ -364,6 +382,7 @@
     const servicosAtivos = (dados.services || []).filter(x => Number(x.active) !== 0);
     const atividadesLivres = Imp.atividadesLivres(dados);
     const atividadesServico = Imp.atividadesDeServico(dados);
+    const atividadesComProjeto = Imp.atividadesComProjeto(dados);
     const nomeAtividade = cod => ((dados.activities || []).find(a => a.code === cod) || {}).name || cod;
 
     const estilo = { td: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top;', sel: 'padding:4px;max-width:100%;font:inherit;' };
@@ -371,6 +390,7 @@
     // O destino atual de uma linha, em texto.
     const destinoTexto = l => {
       if (l.tipo === 'PROJECT') return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Projeto'), h('b', {}, l.projetoNomeOrcprev || 'por escolher')];
+      if (l.tipo === 'APPLICATION') return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Preparação de candidaturas · projeto'), h('b', {}, l.projetoNomeOrcprev || 'por escolher')];
       if (l.tipo === 'SERVICE') return [h('div', { style: 'color:#64748b;font-size:12px;' }, l.atividade === 'PROTOTYPING' ? 'Serviço · Prototipagem' : 'Serviço · Consultoria'), h('b', {}, l.servicoNomeOrcprev || 'por escolher')];
       return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Atividade'), h('b', {}, l.atividade ? nomeAtividade(l.atividade) : 'por escolher')];
     };
@@ -379,8 +399,8 @@
     // Editor de uma linha: destino (projeto / serviço / atividade), alvo, nota e "lembrar".
     const editor = l => {
       const i = l.indice;
-      const ov = est.edicoes[i] || (est.edicoes[i] = { destino: l.tipo === 'PROJECT' ? 'projeto' : l.tipo === 'SERVICE' ? 'servico' : 'atividade',
-        id: l.tipo === 'PROJECT' ? l.projetoId : l.tipo === 'SERVICE' ? l.servicoId : null, atividade: l.atividade, lembrar: l.estado !== 'ok' && !!l.chave, soAberto: true });
+      const ov = est.edicoes[i] || (est.edicoes[i] = { destino: l.tipo === 'PROJECT' ? 'projeto' : l.tipo === 'APPLICATION' ? 'candidatura' : l.tipo === 'SERVICE' ? 'servico' : 'atividade',
+        id: l.tipo === 'PROJECT' || l.tipo === 'APPLICATION' ? l.projetoId : l.tipo === 'SERVICE' ? l.servicoId : null, atividade: l.atividade, lembrar: l.estado !== 'ok' && !!l.chave, soAberto: true });
       // Depois de mexer, o editor fica aberto até a pessoa o fechar (mesmo que a linha já fique "pronta").
       const mudou = () => { delete ov.soAberto; est.abertos.add(i); redesenhar(); };
       const selDestino = h('select', { style: estilo.sel, onchange: ev => {
@@ -388,12 +408,14 @@
         ov.atividade = ov.destino === 'servico' ? ((atividadesServico[0] || {}).code || 'CONSULTING') : ov.destino === 'atividade' ? (atividadesLivres.some(a => a.code === 'OTHER') ? 'OTHER' : '') : null;
         mudou();
       } },
-        h('option', { value: 'projeto' }, 'Projeto de I&D'), h('option', { value: 'servico' }, 'Serviço (consultoria / prototipagem)'), h('option', { value: 'atividade' }, 'Atividade (ex.: Outras atividades)'));
+        h('option', { value: 'projeto' }, 'Projeto de I&D'),
+        atividadesComProjeto.length ? h('option', { value: 'candidatura' }, `${nomeAtividade('APPLICATION_PREP')} (com projeto)`) : null,
+        h('option', { value: 'servico' }, 'Serviço (consultoria / prototipagem)'), h('option', { value: 'atividade' }, 'Atividade (ex.: Outras atividades)'));
       selDestino.value = ov.destino;
       let alvo;
-      if (ov.destino === 'projeto') {
+      if (ov.destino === 'projeto' || ov.destino === 'candidatura') {
         alvo = h('select', { style: estilo.sel, onchange: ev => { ov.id = ev.target.value ? Number(ev.target.value) : null; mudou(); } },
-          h('option', { value: '' }, 'Escolhe o projeto…'),
+          h('option', { value: '' }, ov.destino === 'candidatura' ? 'Escolhe o projeto da candidatura…' : 'Escolhe o projeto…'),
           projetosOrdenados.map(p => h('option', { value: String(p.id) }, `${p.name}${p.project_code ? ' (' + p.project_code + ')' : ''} — ${p.status_name || ''}`)));
         alvo.value = ov.id ? String(ov.id) : '';
       } else if (ov.destino === 'servico') {

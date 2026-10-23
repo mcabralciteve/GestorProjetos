@@ -5253,7 +5253,7 @@ const App = {
     const porDefinir = todos.filter(p => !String(p.orcprevRef || '').trim()).length;
     const resumo = document.getElementById('orcResumo');
     if (resumo) resumo.textContent = `${todos.length - porDefinir} definidos · ${porDefinir} por definir (procuram pelo nome)`;
-    const PLACEHOLDER = { projeto: 'vazio = mesmo nome que no Gestor; ou código, ex.: 005323', consultoria: 'Cliente · Serviço, como no orcprev', prototipagem: 'Cliente · Serviço, como no orcprev', outras: '' };
+    const PLACEHOLDER = { projeto: 'vazio = mesmo nome que no Gestor; ou código, ex.: 005323', candidatura: 'projeto do orcprev da candidatura (nome ou código)', consultoria: 'Cliente · Serviço, como no orcprev', prototipagem: 'Cliente · Serviço, como no orcprev', outras: '' };
     tbody.innerHTML = '';
     visiveis.forEach(p => {
       const tipo = OrcprevLogica.tipoDoAlvo(p.orcprevRef);
@@ -5266,7 +5266,7 @@ const App = {
         <td>${rotulo}</td>
         <td><select data-campo="tipo" ${semColuna ? 'disabled' : ''}>
           <option value="projeto">Projeto de I&amp;D</option><option value="consultoria">Serviço de consultoria</option>
-          <option value="prototipagem">Serviço de prototipagem</option><option value="outras">Outras atividades</option></select></td>
+          <option value="candidatura">Preparação de candidaturas</option><option value="prototipagem">Serviço de prototipagem</option><option value="outras">Outras atividades</option></select></td>
         <td><input type="text" data-campo="valor" value="${escapeAttr(valor)}" placeholder="${escapeAttr(PLACEHOLDER[tipo])}" autocomplete="off" spellcheck="false" style="width:100%;min-width:220px;" ${semColuna || tipo === 'outras' ? 'disabled' : ''}></td>
         <td class="hint">${definido ? '✓ definido' : 'pelo nome'}</td>`;
       tr.querySelector('[data-campo="tipo"]').value = tipo;
@@ -9365,6 +9365,7 @@ const App = {
       const semEmail = !String(recurso.email || '').trim();
       const linhasHtml = sem.linhas.map(l => {
         const destino = l.tipo === 'PROJECT' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
+          : l.tipo === 'APPLICATION' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + ` <span class="hint">→ Preparação de candidaturas${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
           : l.tipo === 'SERVICE' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + ` <span class="hint">→ ${l.atividade === 'PROTOTYPING' ? 'Prototipagem' : 'Consultoria'}${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
             : `${escapeHtml(OrcprevLogica.nomeAtividade(l.atividade))} <span class="hint">(atividade)</span>`;
         return `<tr><td>${NOMES_DIA[new Date(l.data + 'T00:00:00Z').getUTCDay()]} ${fmtDia(l.data)}</td><td>${destino}</td><td style="text-align:right;">${fmtH(l.horas)} h</td></tr>`;
