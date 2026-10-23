@@ -282,9 +282,12 @@ const Sync = {
       authUserId: r.auth_user_id, acesso: r.acesso, lembretesEmail: r.lembretes_email !== false, resumoSecoes: r.resumo_secoes || {},
       pilotoLembretes: !!r.piloto_lembretes,
       // Pessoas inativas (supabase/pessoas_inativas.sql): sem as colunas, toda a gente é "ativa".
-      ativo: r.ativo !== false, dataSaida: r.data_saida || null
+      ativo: r.ativo !== false, dataSaida: r.data_saida || null,
+      // Acesso ao CRM atribuído a esta pessoa (supabase/crm_acesso_pessoas.sql); sem a coluna, ninguém tem a marca.
+      crmAcesso: !!r.crm_acesso
     }));
     this.temInativos = rec.data.length === 0 || 'ativo' in rec.data[0];
+    this.temCrmAcesso = rec.data.length === 0 || 'crm_acesso' in rec.data[0];
     // "Utilizadores" não é uma tabela à parte — é só os recursos que já têm conta na plataforma
     // (auth_user_id preenchido), vistos com a forma que o resto da app já espera (perfilAtual,
     // seletor de Gestor, etc.).
@@ -414,6 +417,17 @@ const Sync = {
     if (!this.temInativos) throw new Error('A base de dados ainda não tem as colunas de pessoas inativas — corre primeiro supabase/pessoas_inativas.sql no Supabase.');
     const { data, error } = await supabaseClient.from('recursos')
       .update({ ativo: ativo !== false, data_saida: dataSaida || null }).eq('id', recursoId).select('id');
+    if (error) throw error;
+    if (!data || data.length !== 1) throw new Error('Não foi possível gravar (sem permissão ou pessoa já não existe).');
+  },
+
+  // ---------- Acesso ao CRM por pessoa ----------
+  // Como "ativo"/"data_saida": NÃO faz parte do envio em bloco de "recursos" (um browser desatualizado não pode repor a
+  // marca de ninguém) — escreve-se aqui, uma pessoa de cada vez, por um Administrador. A base de dados é que decide
+  // realmente quem entra no CRM (crm_tem_acesso); isto só diz a quem acrescentar acesso, para além do cargo.
+  async definirAcessoCrm(recursoId, valor) {
+    if (!this.temCrmAcesso) throw new Error('A base de dados ainda não tem a coluna de acesso ao CRM — corre primeiro supabase/crm_acesso_pessoas.sql no Supabase.');
+    const { data, error } = await supabaseClient.from('recursos').update({ crm_acesso: !!valor }).eq('id', recursoId).select('id');
     if (error) throw error;
     if (!data || data.length !== 1) throw new Error('Não foi possível gravar (sem permissão ou pessoa já não existe).');
   },

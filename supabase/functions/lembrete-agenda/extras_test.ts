@@ -42,6 +42,9 @@ Deno.test('acesso ao Comercial: admin, diretor, líder; consultor não', () => {
   assertEquals(['adm', 'dina', 'leo', 'ivo'].map(acesso), [true, true, true, true]);
   assertEquals(['ana', 'rui', 'sem'].map(acesso), [false, false, false]);
   assert(eLiderOuDiretor('dina', equipas, departamentos));
+  // a marca "Acesso ao CRM" só acrescenta
+  assert(temAcessoCrm({ ...pessoa('ana'), crm_acesso: true }, equipas, departamentos));
+  assert(!temAcessoCrm({ ...pessoa('ana'), crm_acesso: false }, equipas, departamentos));
 });
 
 const comercial = {

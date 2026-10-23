@@ -267,6 +267,31 @@ const PessoasLogica = {
     if (e === 'a-sair') return `Sai a ${this.dataPT(r.dataSaida)}`;
     if (e === 'inativo') return r.dataSaida ? `Inativa desde ${this.dataPT(r.dataSaida)}` : 'Inativa';
     return 'Ativa';
+  },
+
+  // ---------- Acesso ao CRM ----------
+  // Espelha crm_tem_acesso() na base de dados (supabase/crm_acesso_pessoas.sql): Administrador, diretor de algum
+  // departamento, líder de alguma equipa, OU a pessoa marcada com "Acesso ao CRM" (recursos.crm_acesso). A marca só
+  // ACRESCENTA — quem já tinha acesso pelo cargo mantém-no. Devolve 'admin' | 'cargo' | 'atribuido' | null.
+  acessoCrm(r, estado) {
+    if (!r) return null;
+    const perfil = (estado.utilizadores || []).find(u => u.recursoId === r.id);
+    if (((perfil && perfil.papel) || r.acesso) === 'admin') return 'admin';
+    if ((estado.departamentos || []).some(d => d.diretorId === r.id) || (estado.equipas || []).some(e => e.liderId === r.id)) return 'cargo';
+    return r.crmAcesso ? 'atribuido' : null;
+  },
+  rotuloAcessoCrm(r, estado) {
+    return { admin: 'Sim (Administrador)', cargo: 'Sim (por cargo)', atribuido: 'Sim (atribuído)' }[this.acessoCrm(r, estado)] || 'Não';
+  },
+  // Quem pode ser responsável por uma oportunidade/conta/tarefa: pessoas com conta, ativas e com acesso ao CRM.
+  // "manter" = ids que já estão escolhidos num registo — continuam na lista mesmo que a pessoa tenha entretanto saído
+  // ou perdido o acesso, para a escolha existente não desaparecer em silêncio. Ordenada por nome.
+  responsaveisCrm(estado, hojeISO, manter) {
+    const ficam = new Set((Array.isArray(manter) ? manter : [manter]).filter(Boolean));
+    return (estado.recursos || [])
+      .filter(r => r.authUserId && (ficam.has(r.id) || (!this.estaInativo(r, hojeISO) && this.acessoCrm(r, estado))))
+      .map(r => ({ id: r.id, nome: r.nome || r.email || '' }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   }
 };
 if (typeof module !== 'undefined') module.exports = PessoasLogica;

@@ -699,7 +699,7 @@ const App = {
       if (eq.liderId === undefined) eq.liderId = null;
       if (eq.departamentoId === undefined) eq.departamentoId = null;
     });
-    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; if (r.ativo === undefined) r.ativo = true; if (r.dataSaida === undefined) r.dataSaida = null; });
+    this.state.recursos.forEach(r => { if (r.equipaId === undefined) r.equipaId = null; if (r.email === undefined) r.email = ''; if (r.pilotoLembretes === undefined) r.pilotoLembretes = false; if (r.ativo === undefined) r.ativo = true; if (r.dataSaida === undefined) r.dataSaida = null; if (r.crmAcesso === undefined) r.crmAcesso = false; });
     if (!this.state.registos) this.state.registos = [];
     this.state.registos.forEach(r => {
       if (r.tipoTrabalhoId === undefined) r.tipoTrabalhoId = null;
@@ -5060,6 +5060,16 @@ const App = {
   // schema); aqui só resta, para quem já tem conta, ajustar o papel de acesso (Administrador vs
   // Utilizador). Quem ainda não criou conta aparece como "Sem conta" — continua a poder ser usado
   // em tarefas/capacidade normalmente, só não pode ser Gestor/Consultor de projeto nem entrar na app.
+  // Coluna "CRM": o Administrador marca quem tem acesso ao módulo Comercial para além do que o cargo já dá (Administrador,
+  // diretor, líder de equipa). Para os outros, só mostra se a pessoa tem acesso e porquê.
+  htmlAcessoCrm(r) {
+    const tem = PessoasLogica.acessoCrm(r, this.state);
+    const rotulo = escapeAttr(PessoasLogica.rotuloAcessoCrm(r, this.state));
+    if (tem === 'admin' || tem === 'cargo') return `<span class="badge-crm" title="${rotulo}: já tem acesso pelo cargo">✔ cargo</span>`;
+    if (!this.souAdmin()) return tem ? `<span class="badge-crm" title="${rotulo}">✔</span>` : '<span class="hint">—</span>';
+    const semSql = typeof Sync !== 'undefined' && Sync.temCrmAcesso === false;
+    return `<input type="checkbox" data-crm-acesso ${r.crmAcesso ? 'checked' : ''}${semSql ? ' disabled' : ''} title="${semSql ? 'Corre primeiro supabase/crm_acesso_pessoas.sql no Supabase.' : 'Dá acesso ao módulo Comercial (CRM) a esta pessoa, e permite escolhê-la como responsável por oportunidades, contas e tarefas.'}">`;
+  },
   renderTabelaRecursosCentral() {
     const tbody = this.els.corpoTabelaRecursosCentral;
     tbody.innerHTML = '';
@@ -5075,6 +5085,7 @@ const App = {
         case 'margem': return r.precoVenda ? ((r.precoVenda - r.precoCusto) / r.precoVenda) : 0;
         case 'acesso': return (this.state.utilizadores.find(u => u.recursoId === r.id) || {}).papel || '';
         case 'piloto': return r.pilotoLembretes ? 1 : 0;
+        case 'crm': return PessoasLogica.acessoCrm(r, this.state) ? 1 : 0;
         case 'estado': return PessoasLogica.estado(r, DateUtil.todayISO());
         default: return r.nome.toLowerCase();
       }
@@ -5095,6 +5106,7 @@ const App = {
         <td>${margem.toFixed(1)}%</td>
         <td>${perfil ? `<select data-acesso style="min-width:110px"><option value="user" ${perfil.papel === 'user' ? 'selected' : ''}>Utilizador</option><option value="admin" ${perfil.papel === 'admin' ? 'selected' : ''}>Administrador</option></select>` : '<span class="hint">Sem conta</span>'}</td>
         <td style="text-align:center;"><input type="checkbox" data-campo="pilotoLembretes" ${r.pilotoLembretes ? 'checked' : ''} title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições"></td>
+        <td style="text-align:center;">${this.htmlAcessoCrm(r)}</td>
         <td><span class="badge-estado-pessoa ${estadoPessoa}">${escapeHtml(PessoasLogica.rotuloEstado(r, DateUtil.todayISO()))}</span></td>
         <td class="col-acoes">
           <button class="btn btn-sm" data-acao="alocacoes" title="Ver projetos, atividades e datas em que este consultor está alocado">📅 Alocações</button>
@@ -5128,6 +5140,19 @@ const App = {
           }
         });
       }
+      const chkCrm = tr.querySelector('[data-crm-acesso]');
+      if (chkCrm) chkCrm.addEventListener('change', async () => {
+        const novo = chkCrm.checked;
+        try {
+          await Sync.definirAcessoCrm(r.id, novo);
+          r.crmAcesso = novo;
+          this.toast(novo ? `${r.nome} passa a ter acesso ao CRM.` : `${r.nome} deixa de ter acesso atribuído ao CRM.`);
+        } catch (err) {
+          chkCrm.checked = !novo;
+          this.toast('Erro ao atualizar acesso ao CRM: ' + err.message);
+        }
+        this.renderTudo();
+      });
       tr.querySelector('[data-acao="alocacoes"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
       tr.querySelector('[data-acao="saida"]').addEventListener('click', () => this.abrirModalSaidaPessoa(r.id));
       tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarRecurso(r.id));

@@ -161,7 +161,13 @@ const Crm = {
   recursoNome(id) { const r = App.state.recursos.find(x => x.id === id); return r ? r.nome : '—'; },
   _primeiroNome(id) { return this.recursoNome(id).split(' ')[0]; },
   // Responsáveis possíveis: pessoas com conta na app.
-  responsaveis() {
+  // Quem pode ser responsável: pessoas ativas com conta E com acesso ao CRM (por cargo, ou atribuído em Configurações →
+  // Pessoas). "manter" = a escolha já gravada no registo, que fica na lista mesmo que a pessoa tenha saído ou perdido o acesso.
+  responsaveis(manter) {
+    return PessoasLogica.responsaveisCrm(App.state, this.hoje(), manter);
+  },
+  // Qualquer pessoa com conta — para filtros, onde tem de dar para escolher também responsáveis antigos.
+  todosComConta() {
     return App.state.utilizadores.filter(u => u.recursoId).map(u => ({ id: u.recursoId, nome: u.nome || u.email }))
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   },
@@ -169,7 +175,7 @@ const Crm = {
     return (vazio !== undefined ? `<option value="">${escapeHtml(vazio)}</option>` : '') +
       lista.map(x => `<option value="${escapeAttr(x.id)}"${x.id === valor ? ' selected' : ''}>${escapeHtml(rotulo(x))}</option>`).join('');
   },
-  optResponsaveis(valor, vazio) { return this.opcoes(this.responsaveis(), valor, r => r.nome, vazio); },
+  optResponsaveis(valor, vazio, todos) { return this.opcoes(todos ? this.todosComConta() : this.responsaveis(valor), valor, r => r.nome, vazio); },
   contasOrdenadas() { return this.d.contas.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt')); },
   tiposAtivos() { return this.d.tipos.filter(t => t.ativo !== false).sort(CrmLogica._porOrdem); },
   euro(v) { return CrmLogica.euro(v); },
@@ -1145,7 +1151,7 @@ const Crm = {
     });
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">Estado <select data-crm-filtro="contas.estado"><option value="">Todos</option>${Object.entries(this.ESTADOS_CONTA).map(([k, v]) => `<option value="${k}"${f.estado === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-        <label class="zoom-label">Responsável <select data-crm-filtro="contas.resp">${this.optResponsaveis(f.resp, 'Todos')}</select></label>
+        <label class="zoom-label">Responsável <select data-crm-filtro="contas.resp">${this.optResponsaveis(f.resp, 'Todos', true)}</select></label>
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contas.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, NIF ou setor…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contas.length} contas</span>
           ${nDup ? `<button type="button" class="btn" data-crm-acao="duplicados" title="Contas com o mesmo NIF ou nome">⚠ Duplicados (${nDup})</button>` : ''}

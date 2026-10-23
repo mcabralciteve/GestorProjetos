@@ -2,10 +2,10 @@
 // Comercial (CRM). Lógica pura. As regras ESPELHAM a app e a base de dados — se mudarem lá, mudam aqui:
 //  - quem decide uma ausência: App.podeDecidirAusencia (js/app.js) — o Administrador (qualquer uma) ou o
 //    líder da equipa da pessoa / diretor do departamento dessa equipa; nunca a própria pessoa (exceto Admin);
-//  - quem vê o Comercial: crm_tem_acesso() em supabase/crm_fase1.sql — Admin, diretor de algum departamento
-//    ou líder de alguma equipa.
+//  - quem vê o Comercial: crm_tem_acesso() em supabase/crm_acesso_pessoas.sql — Admin, diretor de algum departamento,
+//    líder de alguma equipa, ou pessoa com a marca "Acesso ao CRM" (recursos.crm_acesso).
 
-export interface Pessoa { id: string; nome: string; acesso?: string | null; equipa_id?: string | null }
+export interface Pessoa { id: string; nome: string; acesso?: string | null; equipa_id?: string | null; crm_acesso?: boolean | null }
 export interface Equipa { id: string; lider_id: string | null; departamento_id: string | null }
 export interface Departamento { id: string; diretor_id: string | null }
 export interface AusenciaPedido { id?: string; recurso_id: string; data_inicio: string; data_fim: string; estado: string; tipo?: string | null }
@@ -26,7 +26,7 @@ export function eLiderOuDiretor(recId: string, equipas: Equipa[], deps: Departam
 }
 
 export function temAcessoCrm(rec: Pessoa, equipas: Equipa[], deps: Departamento[]): boolean {
-  return eAdmin(rec) || eLiderOuDiretor(rec.id, equipas, deps);
+  return eAdmin(rec) || rec.crm_acesso === true || eLiderOuDiretor(rec.id, equipas, deps);
 }
 
 // Pedidos "pendentes" que esta pessoa pode decidir, os mais próximos primeiro.

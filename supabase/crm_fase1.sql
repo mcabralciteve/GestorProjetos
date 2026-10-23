@@ -11,6 +11,9 @@
 -- O módulo fala diretamente com estas tabelas (js/crm.js), fora do estado/Ctrl+Z do resto da app.
 -- Tudo idempotente — pode voltar a correr-se este ficheiro sem repor nada do que já lá estiver.
 -- ============================================================================
+-- Marca "Acesso ao CRM" por pessoa (supabase/crm_acesso_pessoas.sql): a coluna tem de existir antes da função.
+alter table public.recursos add column if not exists crm_acesso boolean not null default false;
+
 create or replace function public.crm_tem_acesso()
 returns boolean
 language sql stable security definer set search_path = public
@@ -20,6 +23,7 @@ as $$
     where r.auth_user_id = auth.uid()
       and (
         r.acesso = 'admin'
+        or r.crm_acesso
         or exists (select 1 from public.departamentos d where d.diretor_id = r.id)
         or exists (select 1 from public.equipas e where e.lider_id = r.id)
       )

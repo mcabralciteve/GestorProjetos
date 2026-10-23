@@ -46,7 +46,9 @@ Deno.serve(async (req) => {
     // resumo_secoes (escolhas de cada pessoa) só existe depois de correr supabase/resumo_preferencias.sql —
     // sem a coluna, lê-se sem ela e todos recebem tudo, como antes.
     // ativo/data_saida (supabase/pessoas_inativas.sql) idem: sem as colunas lê-se como antes.
-    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id,resumo_secoes,ativo,data_saida').range(de, ate))
+    // crm_acesso (supabase/crm_acesso_pessoas.sql) idem.
+    lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id,resumo_secoes,ativo,data_saida,crm_acesso').range(de, ate))
+      .catch(() => lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id,resumo_secoes,ativo,data_saida').range(de, ate)))
       .catch(() => lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id,resumo_secoes').range(de, ate)))
       .catch(() => lerTudo<Recurso>((de, ate) => db.from('recursos').select('id,nome,email,auth_user_id,lembretes_email,piloto_lembretes,acesso,equipa_id').range(de, ate))),
     lerTudo<Projeto>((de, ate) => db.from('projetos').select('id,id_interno,nome,cliente,ativo').range(de, ate)),

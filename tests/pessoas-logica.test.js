@@ -219,3 +219,30 @@ test('saídas por resolver: cada decisor só vê o que pode resolver', () => {
   // pessoas ativas nunca aparecem
   assert.equal(l.some(x => x.pessoa.id === 'b'), false);
 });
+
+test('acesso ao CRM: admin, cargo (diretor/líder) ou atribuído; a marca só acrescenta', () => {
+  const e = {
+    recursos: [
+      { id: 'adm', nome: 'Admin', authUserId: 'u1', acesso: 'admin' },
+      { id: 'dir', nome: 'Diretor', authUserId: 'u2', acesso: 'user' },
+      { id: 'lid', nome: 'Líder', authUserId: 'u3', acesso: 'user' },
+      { id: 'com', nome: 'Comercial', authUserId: 'u4', acesso: 'user', crmAcesso: true },
+      { id: 'con', nome: 'Consultor', authUserId: 'u5', acesso: 'user' },
+      { id: 'sem', nome: 'Sem conta', crmAcesso: true },
+      { id: 'sai', nome: 'Saiu', authUserId: 'u6', acesso: 'user', crmAcesso: true, ativo: false },
+      { id: 'pro', nome: 'Promovido', authUserId: 'u7', acesso: 'user' }
+    ],
+    utilizadores: [{ id: 'u7', recursoId: 'pro', papel: 'admin' }],
+    departamentos: [{ id: 'd', diretorId: 'dir' }], equipas: [{ id: 'e', liderId: 'lid' }]
+  };
+  const a = id => P.acessoCrm(e.recursos.find(r => r.id === id), e);
+  assert.deepEqual(['adm', 'dir', 'lid', 'com', 'con', 'pro'].map(a), ['admin', 'cargo', 'cargo', 'atribuido', null, 'admin']);
+  assert.equal(P.rotuloAcessoCrm(e.recursos[3], e), 'Sim (atribuído)');
+  assert.equal(P.rotuloAcessoCrm(e.recursos[4], e), 'Não');
+  // lista de responsáveis: só com conta, ativos e com acesso; ordem alfabética
+  const nomes = m => P.responsaveisCrm(e, HOJE, m).map(r => r.nome);
+  assert.deepEqual(nomes(), ['Admin', 'Comercial', 'Diretor', 'Líder', 'Promovido']);
+  // quem já é o responsável escolhido fica na lista, mesmo sem acesso ou inativo
+  assert.deepEqual(nomes('con'), ['Admin', 'Comercial', 'Consultor', 'Diretor', 'Líder', 'Promovido']);
+  assert.deepEqual(nomes(['sai', null]), ['Admin', 'Comercial', 'Diretor', 'Líder', 'Promovido', 'Saiu']);
+});

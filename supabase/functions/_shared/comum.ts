@@ -20,6 +20,8 @@ export interface Recurso {
   resumo_secoes?: Record<string, boolean> | null;
   // Pessoas inativas (supabase/pessoas_inativas.sql): sem estas colunas, toda a gente conta como ativa.
   ativo?: boolean | null; data_saida?: string | null;
+  // Acesso ao CRM atribuído (supabase/crm_acesso_pessoas.sql): sem a coluna, ninguém tem a marca.
+  crm_acesso?: boolean | null;
 }
 
 // Data de hoje em Lisboa (aaaa-mm-dd).
