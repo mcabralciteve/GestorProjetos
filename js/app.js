@@ -299,6 +299,7 @@ const App = {
       anTituloBarras: document.getElementById('anTituloBarras'), anTabela: document.getElementById('anTabela'),
       btnAnaliseExportar: document.getElementById('btnAnaliseExportar'), btnAnaliseLimpar: document.getElementById('btnAnaliseLimpar'),
       tabBtnFinanceiro: document.getElementById('tabBtnFinanceiro'),
+      tabBtnPrevisao: document.getElementById('tabBtnPrevisao'),
       finKpis: document.getElementById('finKpis'), finPeriodo: document.getElementById('finPeriodo'), finDe: document.getElementById('finDe'), finAte: document.getElementById('finAte'),
       finAgrupar: document.getElementById('finAgrupar'), finDept: document.getElementById('finDept'), finEquipa: document.getElementById('finEquipa'), finProjeto: document.getElementById('finProjeto'),
       finGrafico: document.getElementById('finGrafico'), finLegenda: document.getElementById('finLegenda'),
@@ -2841,8 +2842,10 @@ const App = {
       this.state.registos.forEach(r => {
         const horas = parseFloat(r.horas) || 0;
         if (r.tarefaId) {
-          porTarefa.set(r.tarefaId, (porTarefa.get(r.tarefaId) || 0) + horas);
-          const chaveDiaTarefa = r.tarefaId + '|' + r.data;
+          // Por tarefa E por pessoa: uma tarefa com vários consultores não pode atribuir a cada um as horas de todos.
+          const chaveTarefaPessoa = r.tarefaId + '|' + r.pessoa;
+          porTarefa.set(chaveTarefaPessoa, (porTarefa.get(chaveTarefaPessoa) || 0) + horas);
+          const chaveDiaTarefa = chaveTarefaPessoa + '|' + r.data;
           porTarefaDia.set(chaveDiaTarefa, (porTarefaDia.get(chaveDiaTarefa) || 0) + horas);
         } else {
           const chaveProjeto = r.projetoId || r.projetoIdInterno;
@@ -2882,7 +2885,7 @@ const App = {
     const recurso = this.state.recursos.find(r => r.id === recursoId);
     if (!recurso) return 0;
     const { porTarefaDia, legadoDia } = this.indiceRegistosPorTarefa();
-    const viaId = porTarefaDia.get(tarefa.id + '|' + iso) || 0;
+    const viaId = porTarefaDia.get(tarefa.id + '|' + recurso.nome + '|' + iso) || 0;
     const chaveBase = '|' + recurso.nome + '|' + tarefa.nome + '|' + iso;
     const viaLegadoId = legadoDia.get(projeto.id + chaveBase) || 0;
     const viaLegadoInterno = legadoDia.get(projeto.idInterno + chaveBase) || 0;
@@ -2948,7 +2951,7 @@ const App = {
     const recurso = this.state.recursos.find(r => r.id === recursoId);
     if (!recurso) return 0;
     const { porTarefa, legado } = this.indiceRegistosPorTarefa();
-    const viaId = porTarefa.get(tarefa.id) || 0;
+    const viaId = porTarefa.get(tarefa.id + '|' + recurso.nome) || 0;
     // O projeto pode ter sido casado por "projetoId" ou por "projetoIdInterno" (ver o índice
     // acima) — um registo antigo só bate contra UMA das duas formas, nunca as duas ao mesmo tempo,
     // por isso somar as duas chaves não arrisca contar nada em duplicado.
@@ -4052,6 +4055,7 @@ const App = {
     this.renderAcompanhamento();
     if (this.abaAtiva === 'analise') this.renderAnalise();
     if (this.abaAtiva === 'financeiro') this.renderFinanceiro();
+    if (this.abaAtiva === 'previsao') Previsao.render();
   },
 
   // Esconde/mostra grupos de navegação, separadores e botões consoante o papel do utilizador
@@ -4090,6 +4094,9 @@ const App = {
     // desenho no histórico; fácil de alargar a Diretores mais tarde se fizer falta).
     if (e.tabBtnFinanceiro) e.tabBtnFinanceiro.style.display = this.podeVerFinanceiro() ? '' : 'none';
     if (!this.podeVerFinanceiro() && this.abaAtiva === 'financeiro') this.irParaAba('dashboard');
+    // Previsão (reconhecimento e faturação futuros): mesma restrição do Acompanhamento Financeiro.
+    if (e.tabBtnPrevisao) e.tabBtnPrevisao.style.display = Previsao.podeVer() ? '' : 'none';
+    if (!Previsao.podeVer() && this.abaAtiva === 'previsao') this.irParaAba('dashboard');
     if (e.btnAddFeriado) e.btnAddFeriado.style.display = admin ? '' : 'none';
     // "Vista de Equipa" (calendário de ausências por dia, colorido por pessoa) só para quem lidera/
     // dirige alguma coisa, ou Admin — para os outros não há aqui equipa nenhuma para ver.
@@ -9654,7 +9661,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -9670,6 +9677,7 @@ const App = {
     if (nome === 'ausencias') this.aplicarModoAusencias();
     if (nome === 'analise') this.renderAnalise();
     if (nome === 'financeiro') this.renderFinanceiro();
+    if (nome === 'previsao') Previsao.aoAbrir();
     if (nome.startsWith('crm')) Crm.aoAbrirAba(nome);
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje

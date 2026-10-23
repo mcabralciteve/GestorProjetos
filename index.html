@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261023a">
+<link rel="stylesheet" href="css/style.css?v=20261023b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -108,6 +108,7 @@
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Faturação</button>
     <button class="tab-btn" data-tab="financeiro" id="tabBtnFinanceiro">Acompanhamento</button>
+    <button class="tab-btn" data-tab="previsao" id="tabBtnPrevisao">Previsão</button>
   </div>
   <div class="tabs-grupo" data-grupo="viaturas">
     <button class="tab-btn" data-tab="viaturas">Pedido</button>
@@ -1135,6 +1136,44 @@
   </div>
 </section>
 
+<!-- ===================== TAB: PREVISÃO ===================== -->
+<section class="tab-panel" id="tab-previsao">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>🔮 Previsão: reconhecimento e faturação</h2>
+    </div>
+    <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b>. O reconhecimento reparte o valor que falta reconhecer (valor vendido menos o que as horas já feitas reconheceram) pelas horas que faltam no plano de cada projeto; a faturação são as faturas por emitir. Só leitura; só o Administrador.</p>
+    <div id="previsaoCorpo">
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Tipo <select id="prevTipo"><option value="">Todos</option></select></label>
+        <label class="zoom-label">Direção <select id="prevDept"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Área <select id="prevEquipa"><option value="">Todas</option></select></label>
+        <label class="zoom-label">Horizonte <select id="prevHorizonte"></select></label>
+        <button class="btn btn-sm" id="btnPrevLimpar">Limpar filtros</button>
+      </div>
+      <div id="prevKpis" class="an-kpis"></div>
+      <div id="prevAvisos"></div>
+      <div class="an-grelha an-grelha3" style="margin-bottom:14px;">
+        <div class="card"><h3 style="margin-top:0;">Reconhecimento previsto por mês (k€)</h3><div id="prevGrafRec"></div></div>
+        <div class="card"><h3 style="margin-top:0;">Faturação prevista por mês (k€)</h3><div id="prevGrafFat"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
+        <h3 style="margin-top:0;">Mapa mensal (k€) <span class="prev-sub">· o mês atual está assinalado</span></h3>
+        <div class="table-scroll"><table class="prev-mapa" id="prevMapa"></table></div>
+        <p class="prev-sub" style="margin:8px 0 0;">Reconhecimento = valor por reconhecer repartido pelas horas que faltam no Gantt (€/h = valor vendido ÷ horas vendidas), nunca acima do que falta. Faturação = faturas por emitir; as já atrasadas contam no mês atual.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <h3 style="margin:0;">Detalhe por projeto (k€)</h3>
+          <span class="prev-seg"><button type="button" id="prevSerieRec" data-prev-serie="rec" aria-pressed="true">Reconhecimento</button><button type="button" id="prevSerieFat" data-prev-serie="fat" aria-pressed="false">Faturação</button></span>
+        </div>
+        <div class="table-scroll" style="margin-top:8px;"><table class="prev-det" id="prevDet"></table></div>
+        <p class="prev-sub" style="margin:8px 0 0;">Clica numa linha para ver os pressupostos usados.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ===================== TAB: VIATURAS ===================== -->
 <section class="tab-panel" id="tab-viaturas">
   <div class="pagina">
@@ -1270,9 +1309,11 @@
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
+<script src="js/previsao-logica.js?v=20261023a"></script>
+<script src="js/previsao.js?v=20261023a"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261020a"></script>
-<script src="js/app.js?v=20261023a"></script>
+<script src="js/app.js?v=20261023b"></script>
 </body>
 </html>
