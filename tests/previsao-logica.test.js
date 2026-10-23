@@ -90,3 +90,49 @@ test('tipo do projeto: o definido no projeto manda; senão o do CRM pelo nome; s
   assert.deepEqual(P.tipoDeProjeto({ tipoProjeto: 'xpto' }), { codigo: '', rotulo: 'Sem tipo', origem: 'nenhuma' });
   assert.deepEqual(P.tipoDeProjeto({}), { codigo: '', rotulo: 'Sem tipo', origem: 'nenhuma' });
 });
+
+// ---------- Fase B: oportunidades ----------
+const arr2 = (o, ms) => ms.map(m => arred(o[m]));
+
+test('meses: somar e diferença', () => {
+  assert.equal(P.addMeses('2026-11', 3), '2027-02'); assert.equal(P.addMeses('2026-01', -1), '2025-12'); assert.equal(P.addMeses('2026-12', 1), '2027-01');
+  assert.equal(P.diffMeses('2026-10', '2027-02'), 4); assert.equal(P.diffMeses('2027-02', '2026-10'), -4);
+});
+
+test('início da oportunidade: o previsto; senão fecho + N meses; senão mês seguinte ao atual', () => {
+  assert.deepEqual(P.inicioDaOportunidade({ inicioPrevisto: '2026-12-01', dataFecho: '2026-10-30', aposFecho: 1, hojeISO: HOJE }), { mes: '2026-12', origem: 'definido' });
+  assert.deepEqual(P.inicioDaOportunidade({ dataFecho: '2026-10-30', aposFecho: 2, hojeISO: HOJE }), { mes: '2026-12', origem: 'defeito' });
+  assert.deepEqual(P.inicioDaOportunidade({ dataFecho: '2026-12-15', hojeISO: HOJE }), { mes: '2027-01', origem: 'defeito' });
+  assert.deepEqual(P.inicioDaOportunidade({ hojeISO: HOJE }), { mes: '2026-11', origem: 'sem-fecho' });
+});
+
+test('oportunidade: valor × peso repartido em partes iguais pela duração; faturação acompanha o trabalho com 1 mês de atraso', () => {
+  const ms = P.mesesHorizonte(HOJE, 6);                       // out … mar
+  const r = P.oportunidadeNoMapa({ valor: 20000, peso: .5, inicioMes: '2026-11', duracao: 4, plano: [], atrasoFat: 1, hojeISO: HOJE, meses: ms });
+  assert.deepEqual(arr2(r.rec, ms), [0, 2500, 2500, 2500, 2500, 0]);
+  assert.deepEqual(arr2(r.fat, ms), [0, 0, 2500, 2500, 2500, 2500]);
+  assert.equal(r.total, 10000); assert.equal(r.temPlano, false);
+});
+
+test('oportunidade: com plano de faturas usa os meses e percentagens; plano que não soma 100% fica assinalado', () => {
+  const ms = P.mesesHorizonte(HOJE, 6);
+  const r = P.oportunidadeNoMapa({ valor: 18000, peso: 1, inicioMes: '2026-12', duracao: 4, plano: [{ mes: '2027-01', pct: 50 }, { mes: '2027-04', pct: 50 }], atrasoFat: 1, hojeISO: HOJE, meses: ms });
+  assert.deepEqual(arr2(r.fat, ms), [0, 0, 0, 9000, 0, 0]);   // abril (2027-04) está fora das 6 mensalidades? out..mar → fica fora
+  assert.equal(arred(r.fatFora), 9000);
+  const r2 = P.oportunidadeNoMapa({ valor: 1000, peso: 1, inicioMes: '2026-11', duracao: 1, plano: [{ mes: '2026-11', pct: 60 }], hojeISO: HOJE, meses: ms });
+  assert.equal(r2.planoSoma, 60);
+});
+
+test('oportunidade: início no passado conta só os meses que faltam; trabalho que já devia ter acabado fica no mês atual; plano no passado → mês atual', () => {
+  const ms = P.mesesHorizonte(HOJE, 4);
+  const a = P.oportunidadeNoMapa({ valor: 12000, peso: 1, inicioMes: '2026-08', duracao: 5, plano: [], hojeISO: HOJE, meses: ms });       // ago..dez: faltam out, nov, dez
+  assert.deepEqual(arr2(a.rec, ms), [4000, 4000, 4000, 0]);
+  const b = P.oportunidadeNoMapa({ valor: 3000, peso: 1, inicioMes: '2026-05', duracao: 2, plano: [{ mes: '2026-08', pct: 100 }], hojeISO: HOJE, meses: ms });
+  assert.deepEqual(arr2(b.rec, ms), [3000, 0, 0, 0]); assert.deepEqual(arr2(b.fat, ms), [3000, 0, 0, 0]);
+});
+
+test('oportunidade: o que cai depois do horizonte não entra, mas fica contabilizado', () => {
+  const ms = P.mesesHorizonte(HOJE, 3);                       // out, nov, dez
+  const r = P.oportunidadeNoMapa({ valor: 12000, peso: 1, inicioMes: '2026-12', duracao: 4, plano: [], hojeISO: HOJE, meses: ms });
+  assert.deepEqual(arr2(r.rec, ms), [0, 0, 3000]); assert.equal(arred(r.recFora), 9000);
+});

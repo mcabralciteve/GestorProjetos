@@ -99,6 +99,56 @@ const PrevisaoLogica = {
     return r;
   },
 
+  // ---------- Fase B: oportunidades ponderadas ----------
+  // Meses 'AAAA-MM': somar/diferença.
+  addMeses(mes, n) {
+    const [a, m] = mes.split('-').map(Number);
+    const t = a * 12 + (m - 1) + n;
+    return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+  },
+  diffMeses(de, ate) {
+    const [a1, m1] = de.split('-').map(Number), [a2, m2] = ate.split('-').map(Number);
+    return (a2 * 12 + m2) - (a1 * 12 + m1);
+  },
+
+  // Início do trabalho de uma oportunidade: o previsto (se definido), senão "N meses depois da data prevista de fecho" (N do
+  // tipo), senão o mês seguinte ao atual. origem: 'definido' | 'defeito' | 'sem-fecho'.
+  inicioDaOportunidade({ inicioPrevisto, dataFecho, aposFecho, hojeISO }) {
+    if (inicioPrevisto) return { mes: inicioPrevisto.slice(0, 7), origem: 'definido' };
+    if (dataFecho) return { mes: this.addMeses(dataFecho.slice(0, 7), aposFecho === undefined || aposFecho === null ? 1 : aposFecho), origem: 'defeito' };
+    return { mes: this.addMeses(hojeISO.slice(0, 7), 1), origem: 'sem-fecho' };
+  },
+
+  // Reconhecimento e faturação de UMA oportunidade, já com o peso (probabilidade, ou 1) aplicado.
+  //   inicioMes: 'AAAA-MM'; duracao: meses; plano: [{ mes: 'AAAA-MM', pct }] (vazio = a faturação acompanha o trabalho, com
+  //   "atrasoFat" meses de atraso). Um trabalho cujo início já passou conta só os meses que faltam a partir do mês atual; um que já
+  //   devia ter acabado fica no mês atual. O que cai fora dos "meses" do horizonte não entra (devolve-se em "foraDoHorizonte").
+  oportunidadeNoMapa({ valor, peso, inicioMes, duracao, plano, atrasoFat, hojeISO, meses }) {
+    const total = (valor || 0) * (peso === undefined ? 1 : peso);
+    const mesHoje = hojeISO.slice(0, 7);
+    const dur = Math.max(1, Math.round(duracao || 1));
+    const fimMes = this.addMeses(inicioMes, dur - 1);
+    const ini = inicioMes < mesHoje ? mesHoje : inicioMes;
+    const n = fimMes < mesHoje ? 1 : this.diffMeses(ini, fimMes) + 1;
+    const calendario = [];                                   // [{ mes, valor }] de todo o trabalho (mesmo fora do horizonte)
+    for (let i = 0; i < n; i++) calendario.push({ mes: this.addMeses(ini, i), valor: total / n });
+    const rec = this.vazio(meses), fat = this.vazio(meses);
+    let recFora = 0, fatFora = 0;
+    calendario.forEach(c => { if (c.mes in rec) rec[c.mes] += c.valor; else recFora += c.valor; });
+    const temPlano = !!(plano && plano.length);
+    const planoSoma = temPlano ? plano.reduce((s, p) => s + (Number(p.pct) || 0), 0) : 100;
+    if (temPlano) {
+      plano.forEach(p => {
+        const m = p.mes < mesHoje ? mesHoje : p.mes;
+        const v = total * (Number(p.pct) || 0) / 100;
+        if (m in fat) fat[m] += v; else fatFora += v;
+      });
+    } else {
+      calendario.forEach(c => { const m = this.addMeses(c.mes, atrasoFat === undefined ? 1 : atrasoFat); if (m in fat) fat[m] += c.valor; else fatFora += c.valor; });
+    }
+    return { rec, fat, total, inicio: ini, meses: n, temPlano, planoSoma, recFora, fatFora };
+  },
+
   // Soma séries mensais ({ 'AAAA-MM': valor }) de várias linhas.
   somar(series, meses) {
     const out = this.vazio(meses);

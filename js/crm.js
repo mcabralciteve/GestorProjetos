@@ -13,7 +13,9 @@ const Crm = {
   },
   // Tabelas com coluna "atualizado_em" (a app preenche-a em cada gravação).
   COM_ATUALIZADO_EM: ['contas', 'contactos', 'oportunidades', 'propostas'],
-  d: { tipos: [], etapas: [], motivos: [], contas: [], contactos: [], oportunidades: [], propostas: [], interacoes: [], tarefas: [] },
+  d: { tipos: [], etapas: [], motivos: [], contas: [], contactos: [], oportunidades: [], propostas: [], interacoes: [], tarefas: [], oportunidadeFaturas: [] },
+  // Previsão na oportunidade (supabase/previsao_oportunidades.sql): undefined = ainda não se sabe; false = SQL por correr.
+  temPrevisao: undefined,
   idx: {},
   carregado: false,
   followupsAtrasados: 0,
@@ -51,6 +53,7 @@ const Crm = {
     Object.keys(this.d).forEach(k => { this.d[k] = []; });
     this.idx = {};
     this.carregado = false;
+    this.temPrevisao = undefined;
     this.erroCarga = null;
     this.followupsAtrasados = 0;
     if (typeof Orc !== 'undefined') Orc.limpar();
@@ -75,6 +78,11 @@ const Crm = {
       const resultados = await Promise.all(chaves.map(k => this._lerTudo(this.TABELAS[k])));
       chaves.forEach((k, i) => { this.d[k] = resultados[i]; });
       if (typeof Orc !== 'undefined') await Orc.carregarResumos(true);   // o valor das propostas vem dos orçamentos
+      // Plano de faturas das oportunidades: tabela à parte, opcional (só existe depois de supabase/previsao_oportunidades.sql).
+      try {
+        this.d.oportunidadeFaturas = await this._lerTudo(this.TABELA_FATURAS_OP);
+        this.temPrevisao = this.d.oportunidades.length === 0 || 'inicio_previsto' in this.d.oportunidades[0];
+      } catch (e) { this.d.oportunidadeFaturas = []; this.temPrevisao = false; }
       this.carregado = true;
       this.reindexar();
       this.recalcularFollowups();
@@ -523,6 +531,79 @@ const Crm = {
     return p ? `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}` : null;
   },
 
+  // ---------- Previsão na oportunidade (início, duração, área e plano de faturas) ----------
+  // Alimentam Financeiro → Previsão. Precisam de supabase/previsao_oportunidades.sql (temPrevisao). Sem início/duração, a Previsão
+  // usa os defeitos do tipo (prev_inicio_apos_fecho_meses / prev_duracao_meses; sem as colunas: 1 mês e 4 — 12 para I&D).
+  TABELA_FATURAS_OP: 'crm_oportunidade_faturas',
+  defeitosDoTipo(tipoId) {
+    const t = this.idx.tipo.get(tipoId) || {};
+    const ehId = /i\s*&\s*d|investiga/i.test(t.nome || '');
+    return {
+      apos: t.prev_inicio_apos_fecho_meses === undefined || t.prev_inicio_apos_fecho_meses === null ? 1 : Number(t.prev_inicio_apos_fecho_meses),
+      duracao: t.prev_duracao_meses === undefined || t.prev_duracao_meses === null ? (ehId ? 12 : 4) : Number(t.prev_duracao_meses)
+    };
+  },
+  planoFaturasDaOp(opId) {
+    return (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
+      .map(f => ({ mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0 })).sort((a, b) => a.mes.localeCompare(b.mes));
+  },
+  htmlPrevisaoOp(o) {
+    if (this.temPrevisao === false) return '<p class="hint" style="margin:8px 0;">Previsão de execução e faturação: corre primeiro <b>supabase/previsao_oportunidades.sql</b> no Supabase para ativar.</p>';
+    const equipas = App.state.equipas.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const def = this.defeitosDoTipo(o.tipo_id);
+    return `<h4 class="crm-h">Previsão de execução e faturação <span class="hint" style="font-weight:400;">(alimenta Financeiro → Previsão)</span></h4>
+      <div class="row-2">
+        <label>Início previsto do trabalho <input type="month" id="opInicioPrev" value="${escapeAttr(o.inicio_previsto ? String(o.inicio_previsto).slice(0, 7) : '')}"></label>
+        <label>Duração (meses) <input type="number" id="opDuracaoPrev" min="1" max="120" step="1" value="${o.duracao_meses || ''}" placeholder="por defeito: ${def.duracao}"></label>
+      </div>
+      <p class="hint" id="opDefeitoPrev" style="margin:0 0 6px;">Em branco, o trabalho começa ${def.apos} mês(es) depois da data prevista de fecho e dura ${def.duracao} meses.</p>
+      <label>Área responsável <select id="opEquipaPrev"><option value="">Por atribuir</option>${equipas.map(e => `<option value="${escapeAttr(e.id)}"${o.equipa_id === e.id ? ' selected' : ''}>${escapeHtml(e.nome)}</option>`).join('')}</select></label>
+      <div id="opPlanoFat" style="margin-top:6px;"></div>`;
+  },
+  // Editor do plano de faturas (mês + % do valor). Sem plano, a Previsão fatura ao ritmo do trabalho, com 1 mês de atraso.
+  ligarPrevisaoOp(m, o, op) {
+    const raiz = m.querySelector('#opPlanoFat');
+    if (!raiz || this.temPrevisao === false) return;
+    const inicial = op ? this.planoFaturasDaOp(op.id) : [];
+    const plano = inicial.map(p => ({ mes: p.mes, pct: p.pct }));
+    const desenhar = () => {
+      const soma = plano.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+      raiz.innerHTML = `<div style="font-weight:600;margin-bottom:4px;">Plano de faturas <span class="hint" style="font-weight:400;">(opcional)</span></div>
+        ${plano.length ? `<table class="crm-plano"><thead><tr><th>Mês previsto</th><th>% do valor</th><th></th></tr></thead><tbody>${plano.map((p, i) =>
+          `<tr><td><input type="month" data-pf="mes" data-i="${i}" value="${escapeAttr(p.mes)}"></td><td><input type="number" data-pf="pct" data-i="${i}" min="0" max="100" step="1" value="${p.pct}" style="width:80px"></td>
+          <td><button type="button" class="btn btn-sm" data-pf-del="${i}" title="Remover">✕</button></td></tr>`).join('')}</tbody></table>` : ''}
+        <button type="button" class="btn btn-sm" id="opPlanoAdd">+ Fatura</button>
+        <span class="hint" id="opPlanoNota" style="margin-left:8px;color:${soma > 100 ? 'var(--vermelho)' : ''}">${!plano.length ? 'Sem plano: a faturação acompanha o trabalho, com 1 mês de atraso.' : (soma === 100 ? 'Soma 100% ✓' : `A soma é ${soma}% (devia dar 100%).`)}</span>`;
+      raiz.querySelectorAll('input[data-pf]').forEach(inp => inp.addEventListener('input', () => {
+        plano[Number(inp.dataset.i)][inp.dataset.pf] = inp.dataset.pf === 'pct' ? Number(inp.value) : inp.value;
+        const s2 = plano.reduce((s, p) => s + (Number(p.pct) || 0), 0), nota = raiz.querySelector('#opPlanoNota');
+        nota.textContent = s2 === 100 ? 'Soma 100% ✓' : `A soma é ${s2}% (devia dar 100%).`; nota.style.color = s2 > 100 ? 'var(--vermelho)' : '';
+      }));
+      raiz.querySelectorAll('[data-pf-del]').forEach(b => b.addEventListener('click', () => { plano.splice(Number(b.dataset.pfDel), 1); desenhar(); }));
+      raiz.querySelector('#opPlanoAdd').addEventListener('click', () => {
+        const ultimo = plano.length ? plano[plano.length - 1].mes : (m.querySelector('#opInicioPrev').value || this.hoje().slice(0, 7));
+        plano.push({ mes: PrevisaoLogica.addMeses(ultimo || this.hoje().slice(0, 7), plano.length ? 1 : 0), pct: Math.max(0, 100 - soma) }); desenhar();
+      });
+    };
+    desenhar();
+    m._planoOp = { ler: () => plano, inicial };
+    const selTipo = m.querySelector('#opTipo'), dica = m.querySelector('#opDefeitoPrev');
+    if (selTipo && dica) selTipo.addEventListener('change', () => { const d = this.defeitosDoTipo(selTipo.value); dica.textContent = `Em branco, o trabalho começa ${d.apos} mês(es) depois da data prevista de fecho e dura ${d.duracao} meses.`; });
+  },
+  // Substitui o plano de faturas da oportunidade (apaga e volta a inserir; são poucas linhas).
+  async gravarPlanoFaturasOp(opId, plano) {
+    const { error: e1 } = await supabaseClient.from(this.TABELA_FATURAS_OP).delete().eq('oportunidade_id', opId);
+    if (e1) throw e1;
+    const linhas = plano.map(p => ({ oportunidade_id: opId, mes: p.mes + '-01', percentagem: Number(p.pct) || 0 }));
+    let novas = [];
+    if (linhas.length) {
+      const { data, error } = await supabaseClient.from(this.TABELA_FATURAS_OP).insert(linhas).select();
+      if (error) throw error;
+      novas = data || [];
+    }
+    this.d.oportunidadeFaturas = (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id !== opId).concat(novas);
+  },
+
   // ---------- Ficha da oportunidade ----------
   abrirOportunidade(id, contaPre) {
     const tipos = this.tiposAtivos();
@@ -569,6 +650,7 @@ const Crm = {
           title="As propostas desta oportunidade herdam esta referência e acrescentam um número sequencial (2026/829-01, 2026/829-02…)"></label>
       </div>
       <label>Descrição <textarea id="opDescricao" rows="3">${escapeHtml(o.descricao || '')}</textarea></label>
+      ${this.htmlPrevisaoOp(o)}
       ${projNome ? `<p class="hint" style="margin:6px 0;">🔗 Projeto associado: <b>${escapeHtml(projNome)}</b></p>` : ''}
       <span id="opMsg" class="calc-line" style="border:none;display:block;margin-top:4px;color:var(--vermelho);"></span>
       <div class="crm-acoes-form">
@@ -605,6 +687,7 @@ const Crm = {
     selEtapa.addEventListener('change', () => { o.etapa_id = selEtapa.value; mostrarPerda(); });
     preencherContactos();
     preencherEtapas();
+    this.ligarPrevisaoOp(m, o, op);
     m.querySelector('#opGuardar').addEventListener('click', () => this.guardarOportunidadeDoForm(op, m));
     const bProj = m.querySelector('#opCriarProjeto');
     if (bProj) bProj.addEventListener('click', () => { App.fecharModal(); this.criarProjetoDaOportunidade(op.id); });
@@ -638,6 +721,19 @@ const Crm = {
       motivo_perda_id: etapa.categoria === 'perdida' ? motivoId : null,
       motivo_perda_notas: etapa.categoria === 'perdida' ? m.querySelector('#opMotivoNotas').value.trim() : ''
     });
+    // Previsão (início, duração, área) e plano de faturas — só se o SQL já foi corrido.
+    let planoNovo = null;
+    if (this.temPrevisao !== false && m.querySelector('#opInicioPrev')) {
+      const ini = m.querySelector('#opInicioPrev').value, dur = m.querySelector('#opDuracaoPrev').value;
+      novo.inicio_previsto = ini ? ini + '-01' : null;
+      novo.duracao_meses = dur ? Math.max(1, Math.min(120, Math.round(Number(dur)))) : null;
+      novo.equipa_id = m.querySelector('#opEquipaPrev').value || null;
+      if (m._planoOp) {
+        planoNovo = m._planoOp.ler().filter(p => p.mes);
+        const soma = planoNovo.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+        if (soma > 100.0001) { msg.textContent = `O plano de faturas soma ${soma}% — não pode passar de 100%.`; return; }
+      }
+    }
     const v = CrmLogica.validarMudancaEtapa(novo, etapa, novo.motivo_perda_id, CrmLogica.motivosDoTipo(this.d.motivos, tipoId, false).map(x => x.id));
     if (!v.ok) { msg.textContent = v.erro; return; }
     // data_fecho acompanha a categoria: preenchida ao fechar (se ainda não estava), limpa se reabrir.
@@ -646,6 +742,7 @@ const Crm = {
     else if (!eraFechada || op.etapa_id !== etapaId || !op.data_fecho) novo.data_fecho = this.hoje();
     try {
       const gravada = await this.gravar('oportunidades', novo);
+      if (planoNovo && JSON.stringify(planoNovo) !== JSON.stringify(m._planoOp.inicial.map(p => ({ mes: p.mes, pct: p.pct })))) await this.gravarPlanoFaturasOp(gravada.id, planoNovo);
       // Propostas desta oportunidade que ainda não têm referência: herdam a nova (com o seu nº sequencial).
       if (refGiaf && refGiaf !== (op && op.referencia_giaf)) {
         const semRef = this.d.propostas.filter(p => p.oportunidade_id === gravada.id && !String(p.referencia_giaf || '').trim());

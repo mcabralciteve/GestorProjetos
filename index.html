@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261023b">
+<link rel="stylesheet" href="css/style.css?v=20261026b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -1150,9 +1150,15 @@
     <div class="pagina-head">
       <h2>🔮 Previsão: reconhecimento e faturação</h2>
     </div>
-    <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b>. O reconhecimento reparte o valor que falta reconhecer (valor vendido menos o que as horas já feitas reconheceram) pelas horas que faltam no plano de cada projeto; a faturação são as faturas por emitir. Só leitura; só o Administrador.</p>
+    <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b> e, conforme o cenário, das <b>oportunidades</b> do CRM ponderadas pela probabilidade da etapa. O reconhecimento do contratado reparte o valor que falta reconhecer pelas horas que faltam no plano de cada projeto; o das oportunidades, o valor ponderado pela duração prevista. Só leitura; só o Administrador.</p>
     <div id="previsaoCorpo">
       <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+        <label class="zoom-label">Cenário
+          <span class="prev-seg" id="prevCenario">
+            <button type="button" data-prev-cenario="contratado" aria-pressed="false">Só contratado</button>
+            <button type="button" data-prev-cenario="pond" aria-pressed="true">Contratado + ponderado</button>
+            <button type="button" data-prev-cenario="total" aria-pressed="false">Contratado + pipeline a 100%</button>
+          </span></label>
         <label class="zoom-label">Tipo <select id="prevTipo"><option value="">Todos</option></select></label>
         <label class="zoom-label">Direção <select id="prevDept"><option value="">Todas</option></select></label>
         <label class="zoom-label">Área <select id="prevEquipa"><option value="">Todas</option></select></label>
@@ -1162,8 +1168,8 @@
       <div id="prevKpis" class="an-kpis"></div>
       <div id="prevAvisos"></div>
       <div class="an-grelha an-grelha3" style="margin-bottom:14px;">
-        <div class="card"><h3 style="margin-top:0;">Reconhecimento previsto por mês (k€)</h3><div id="prevGrafRec"></div></div>
-        <div class="card"><h3 style="margin-top:0;">Faturação prevista por mês (k€)</h3><div id="prevGrafFat"></div></div>
+        <div class="card"><h3 style="margin-top:0;">Reconhecimento previsto por mês (k€)</h3><div id="prevGrafRec"></div><div class="an-legenda" id="prevLegRec"></div></div>
+        <div class="card"><h3 style="margin-top:0;">Faturação prevista por mês (k€)</h3><div id="prevGrafFat"></div><div class="an-legenda" id="prevLegFat"></div></div>
       </div>
       <div class="card" style="margin-bottom:14px;">
         <h3 style="margin-top:0;">Mapa mensal (k€) <span class="prev-sub">· o mês atual está assinalado</span></h3>
@@ -1310,15 +1316,15 @@
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009d"></script>
-<script src="js/crm.js?v=20261026a"></script>
+<script src="js/crm.js?v=20261026b"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
-<script src="js/previsao-logica.js?v=20261026a"></script>
-<script src="js/previsao.js?v=20261026a"></script>
+<script src="js/previsao-logica.js?v=20261026b"></script>
+<script src="js/previsao.js?v=20261026b"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261020a"></script>

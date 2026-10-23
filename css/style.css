@@ -590,6 +590,9 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .rc-bloco{border:1px dashed var(--cinza-300);border-radius:var(--radius);padding:10px 12px;margin:4px 0 8px;background:var(--cinza-50, transparent);}
 /* Previsão (reconhecimento e faturação) */
 .prev-sub{color:var(--cinza-500);font-size:11.5px;font-weight:400;}
+table.crm-plano{border-collapse:collapse;margin-bottom:4px;}
+.crm-plano th{font-size:11px;color:var(--cinza-500);font-weight:600;text-align:left;padding:2px 6px 2px 0;}
+.crm-plano td{padding:2px 6px 2px 0;}
 .prev-classificar{background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;}
 .prev-classificar summary{cursor:pointer;}
 table.prev-class{width:100%;border-collapse:collapse;}
@@ -606,6 +609,11 @@ table.prev-class{width:100%;border-collapse:collapse;}
 .prev-seg button{border:0;background:none;padding:5px 12px;font:inherit;font-size:12px;color:var(--cinza-500);cursor:pointer;border-right:1px solid var(--cinza-200);}
 .prev-seg button:last-child{border-right:0;}
 .prev-seg button[aria-pressed="true"]{background:var(--cinza-100);color:var(--cinza-900);font-weight:700;}
+.prev-hach{background-image:repeating-linear-gradient(45deg,#e07b39 0 2px,transparent 2px 5px);border:1px solid #e07b39;}
+.prev-tag.p{background:#fdebdd;color:#b45a1f;}
+:root[data-tema="escuro"] .prev-tag.p{background:#3b2a1e;color:#f0955a;}
+.prev-aviso a{color:inherit;text-decoration:underline;}
+.prev-mapa tr.total td{font-weight:700;border-top:1px solid var(--cinza-300);}
 .prev-tag{font-size:10px;padding:1px 6px;border-radius:999px;background:var(--cinza-100);color:var(--cinza-700);font-weight:700;margin-left:4px;}
 table.prev-mapa,table.prev-det{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums;}
 table.prev-mapa{min-width:900px;}table.prev-det{min-width:980px;}
