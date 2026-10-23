@@ -128,6 +128,12 @@
       const comServico = new Set(dados.service_activity_codes || []);
       return (dados.activities || []).filter(a => !comServico.has(a.code) && !ATIVIDADES_COM_PROJETO.includes(a.code));
     },
+    // As atividades da sublista "Atividade", pela ordem do orcprev: todas menos as que pedem um serviço (Consultoria,
+    // Prototipagem — essas escolhem-se em "Serviço"). Inclui "Preparação de candidaturas", que depois pede um projeto.
+    atividadesEscolhiveis(dados) {
+      const comServico = new Set(dados.service_activity_codes || []);
+      return (dados.activities || []).filter(a => !comServico.has(a.code));
+    },
     // "Preparação de candidaturas": atividade que leva um projeto do orcprev.
     atividadesComProjeto(dados) {
       const atividades = new Set((dados.activities || []).map(a => a.code));
@@ -150,7 +156,7 @@
         return p ? { tipo: 'PROJECT', atividade: null, projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
           : { tipo: 'PROJECT', atividade: null, projetoId: null, projetoNomeOrcprev: '', estado: 'escolher' };
       }
-      if (ov.destino === 'candidatura') {
+      if (ov.destino === 'candidatura' || (ov.destino === 'atividade' && ATIVIDADES_COM_PROJETO.includes(ov.atividade))) {
         const p = ov.id ? (dados.projects || []).find(x => Number(x.id) === Number(ov.id)) : null;
         const disponivel = atividades.has('APPLICATION_PREP');
         return p && disponivel ? { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
@@ -380,9 +386,8 @@
 
     const projetosOrdenados = (dados.projects || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt'));
     const servicosAtivos = (dados.services || []).filter(x => Number(x.active) !== 0);
-    const atividadesLivres = Imp.atividadesLivres(dados);
     const atividadesServico = Imp.atividadesDeServico(dados);
-    const atividadesComProjeto = Imp.atividadesComProjeto(dados);
+    const atividadesEscolhiveis = Imp.atividadesEscolhiveis(dados);
     const nomeAtividade = cod => ((dados.activities || []).find(a => a.code === cod) || {}).name || cod;
 
     const estilo = { td: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top;', sel: 'padding:4px;max-width:100%;font:inherit;' };
@@ -400,25 +405,28 @@
     // Editor de uma linha: destino (projeto / serviço / atividade), alvo, nota e "lembrar".
     const editor = l => {
       const i = l.indice;
-      const ov = est.edicoes[i] || (est.edicoes[i] = { destino: l.tipo === 'PROJECT' ? 'projeto' : l.tipo === 'APPLICATION' ? 'candidatura' : l.tipo === 'SERVICE' ? 'servico' : 'atividade',
+      const ov = est.edicoes[i] || (est.edicoes[i] = { destino: l.tipo === 'PROJECT' ? 'projeto' : l.tipo === 'SERVICE' ? 'servico' : 'atividade',
         id: l.tipo === 'PROJECT' || l.tipo === 'APPLICATION' ? l.projetoId : l.tipo === 'SERVICE' ? l.servicoId : null, atividade: l.atividade, lembrar: l.estado !== 'ok' && !!l.chave, soAberto: true });
       // Depois de mexer, o editor fica aberto até a pessoa o fechar (mesmo que a linha já fique "pronta").
       const mudou = () => { delete ov.soAberto; est.abertos.add(i); redesenhar(); };
       const selDestino = h('select', { style: estilo.sel, onchange: ev => {
         ov.destino = ev.target.value; ov.id = null;
-        ov.atividade = ov.destino === 'servico' ? ((atividadesServico[0] || {}).code || 'CONSULTING') : ov.destino === 'atividade' ? (atividadesLivres.some(a => a.code === 'OTHER') ? 'OTHER' : '') : null;
+        ov.atividade = ov.destino === 'servico' ? ((atividadesServico[0] || {}).code || 'CONSULTING') : ov.destino === 'atividade' ? (atividadesEscolhiveis.some(a => a.code === 'OTHER') ? 'OTHER' : '') : null;
         mudou();
       } },
         h('option', { value: 'projeto' }, 'Projeto de I&D'),
-        atividadesComProjeto.length ? h('option', { value: 'candidatura' }, `${nomeAtividade('APPLICATION_PREP')} (com projeto)`) : null,
         h('option', { value: 'servico' }, 'Serviço (consultoria / prototipagem)'), h('option', { value: 'atividade' }, 'Atividade (ex.: Outras atividades)'));
       selDestino.value = ov.destino;
-      let alvo;
-      if (ov.destino === 'projeto' || ov.destino === 'candidatura') {
-        alvo = h('select', { style: estilo.sel, onchange: ev => { ov.id = ev.target.value ? Number(ev.target.value) : null; mudou(); } },
-          h('option', { value: '' }, ov.destino === 'candidatura' ? 'Escolhe o projeto da candidatura…' : 'Escolhe o projeto…'),
+      const seletorProjeto = (vazio) => {
+        const sel = h('select', { style: estilo.sel, onchange: ev => { ov.id = ev.target.value ? Number(ev.target.value) : null; mudou(); } },
+          h('option', { value: '' }, vazio),
           projetosOrdenados.map(p => h('option', { value: String(p.id) }, `${p.name}${p.project_code ? ' (' + p.project_code + ')' : ''} — ${p.status_name || ''}`)));
-        alvo.value = ov.id ? String(ov.id) : '';
+        sel.value = ov.id ? String(ov.id) : '';
+        return sel;
+      };
+      let alvo;
+      if (ov.destino === 'projeto') {
+        alvo = seletorProjeto('Escolhe o projeto…');
       } else if (ov.destino === 'servico') {
         if (!servicosAtivos.length) alvo = h('span', { style: 'color:#92400e;' }, 'O orcprev não tem serviços — usa "Atividade" (ex.: Outras atividades).');
         else {
@@ -430,9 +438,11 @@
           alvo = [selAt, ' ', selSv];
         }
       } else {
-        alvo = h('select', { style: estilo.sel, onchange: ev => { ov.atividade = ev.target.value; mudou(); } },
-          h('option', { value: '' }, 'Escolhe a atividade…'), atividadesLivres.map(a => h('option', { value: a.code }, a.name)));
-        alvo.value = ov.atividade || '';
+        // Sublista "Atividade", pela ordem do orcprev. "Preparação de candidaturas" pede ainda o projeto (3.º campo).
+        const selAtividade = h('select', { style: estilo.sel, onchange: ev => { ov.atividade = ev.target.value; ov.id = null; mudou(); } },
+          h('option', { value: '' }, 'Escolhe a atividade…'), atividadesEscolhiveis.map(a => h('option', { value: a.code }, a.name)));
+        selAtividade.value = ov.atividade || '';
+        alvo = ATIVIDADES_COM_PROJETO.includes(ov.atividade) ? [selAtividade, ' ', seletorProjeto('Escolhe o projeto da candidatura…')] : selAtividade;
       }
       const campoNota = h('input', { type: 'text', value: typeof ov.nota === 'string' ? ov.nota : l.textoNotaPadrao, maxlength: String(NOTA_MAX - MARCA.length - 1),
         style: 'width:100%;box-sizing:border-box;padding:5px;font:inherit;border:1px solid #cbd5e1;border-radius:6px;', oninput: ev => { ov.nota = ev.target.value; delete ov.soAberto; } });

@@ -222,3 +222,14 @@ test('candidatura: qualquer linha de projeto pode ser reajustada para candidatur
   const mem = I.memorizar({}, p, { 0: { destino: 'candidatura', id: 2, lembrar: true } });
   assert.deepEqual(mem['d:2026/1'], { t: 'candidatura', id: 2 });
 });
+
+test('sublista Atividade: todas as do orcprev pela sua ordem, menos as de serviço; "Preparação de candidaturas" leva projeto', () => {
+  const d = dados([], { activities: [{ code: 'PROPOSAL_DRAFT' }, { code: 'APPLICATION_PREP' }, { code: 'TRAINING_GIVE' }, { code: 'PROTOTYPING' }, { code: 'CONSULTING' }, { code: 'OTHER' }], service_activity_codes: ['PROTOTYPING', 'CONSULTING'] });
+  assert.deepEqual(I.atividadesEscolhiveis(d).map(a => a.code), ['PROPOSAL_DRAFT', 'APPLICATION_PREP', 'TRAINING_GIVE', 'OTHER']);
+  // escolher a atividade APPLICATION_PREP na sublista + o projeto = candidatura com projeto
+  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'APPLICATION_PREP', id: 2 } } });
+  assert.equal(p.linhas[0].tipo, 'APPLICATION'); assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].projetoId, 2);
+  assert.deepEqual(I.corpoGravacao(p, d, pacote([linhaProj()])).entries[0], { id: null, work_date: '2026-10-19', project_id: 2, service_id: null, activity_code: 'APPLICATION_PREP', hours: 2, note: '[Gestor] Reunião com cliente' });
+  // sem projeto escolhido ainda: por escolher
+  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'APPLICATION_PREP', id: null } } }).linhas[0].estado, 'escolher');
+});
