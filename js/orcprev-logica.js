@@ -112,7 +112,8 @@ const OrcprevLogica = {
   linhasDaSemana({ registos, inicioISO, tipoPorId, projetoPorId, nomeTarefa }) {
     const inicio = this.segundaDaSemana(inicioISO);
     const fim = this.somarDias(inicio, 6);
-    const grupos = new Map(); // chave → { data, tipo, atividade, projeto, horas, notas:Set }
+    const grupos = new Map(); // chave → { data, tipo, atividade, projeto, horas, tarefas:Set, projetos:Set, clientes:Set }
+    const novoGrupo = (extra) => Object.assign({ horas: 0, tarefas: new Set(), projetos: new Set(), clientes: new Set() }, extra);
     const semAtividade = new Map(); // nome do tipo → horas
     let totalGestor = 0;
 
@@ -131,28 +132,32 @@ const OrcprevLogica = {
         if (alvo.tipo === 'atividade') {
           // Vai como atividade, sem projeto: o nome do projeto do Gestor fica na nota para se saber de onde vêm as horas.
           chave = `${r.data}|A|${alvo.atividade}`;
-          grupo = grupos.get(chave) || { data: r.data, tipo: 'ACTIVITY', atividade: alvo.atividade, horas: 0, notas: new Set(), projeto: null };
-          if (nome) grupo.notas.add(nome);
+          grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'ACTIVITY', atividade: alvo.atividade, projeto: null });
         } else if (alvo.tipo === 'servico') {
           chave = `${r.data}|S|${alvo.atividade}|${alvo.valor || r.projetoId || nome}`;
-          grupo = grupos.get(chave) || { data: r.data, tipo: 'SERVICE', atividade: alvo.atividade, horas: 0, notas: new Set(),
-            projeto: { ref: alvo.valor, nome, idInterno } };
+          grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'SERVICE', atividade: alvo.atividade,
+            projeto: { ref: alvo.valor, nome, idInterno } });
         } else {
           chave = `${r.data}|P|${r.projetoId || idInterno || nome}`;
-          grupo = grupos.get(chave) || { data: r.data, tipo: 'PROJECT', atividade: null, horas: 0, notas: new Set(),
-            projeto: { ref: alvo.valor, nome, idInterno } };
+          grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'PROJECT', atividade: null,
+            projeto: { ref: alvo.valor, nome, idInterno } });
         }
+        // Projeto e cliente do Gestor ficam sempre guardados: se a pessoa mudar o destino no importador (ex.: de projeto
+        // para "Outras atividades"), a nota passa a dizer de que projeto e cliente vêm as horas.
+        if (nome) grupo.projetos.add(nome);
+        const cli = String(r.cliente || (proj && proj.cliente) || '').trim();
+        if (cli) grupo.clientes.add(cli);
       } else if (!tipo.orcprevAtividade) {
         semAtividade.set(tipo.nome, (semAtividade.get(tipo.nome) || 0) + horas);
         return;
       } else {
         chave = `${r.data}|A|${tipo.orcprevAtividade}`;
-        grupo = grupos.get(chave) || { data: r.data, tipo: 'ACTIVITY', atividade: tipo.orcprevAtividade, horas: 0, notas: new Set(), projeto: null };
+        grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'ACTIVITY', atividade: tipo.orcprevAtividade, projeto: null });
+        if (r.cliente) grupo.clientes.add(String(r.cliente).trim());
       }
       grupo.horas += horas;
       const t = nomeTarefa ? String(nomeTarefa(r) || '').trim() : '';
-      if (t) grupo.notas.add(t);
-      if (tipo && r.cliente) grupo.notas.add(String(r.cliente).trim());
+      if (t) grupo.tarefas.add(t);
       grupos.set(chave, grupo);
     });
 
@@ -166,9 +171,9 @@ const OrcprevLogica = {
     });
 
     const linhas = [...grupos.values()].filter(g => g.horas > 0).map(g => {
-      const texto = [...g.notas].join('; ');
-      const nota = (this.MARCA + (texto ? ' ' + texto : '')).slice(0, this.NOTA_MAX);
-      return { data: g.data, tipo: g.tipo, atividade: g.atividade, projeto: g.projeto, horas: g.horas, nota };
+      const tarefas = [...g.tarefas], projetos = [...g.projetos], clientes = [...g.clientes];
+      const nota = this.montarNota(this.textoNota({ tarefas, projetos, clientes }, g.tipo));
+      return { data: g.data, tipo: g.tipo, atividade: g.atividade, projeto: g.projeto, horas: g.horas, nota, tarefas, projetos, clientes };
     }).sort((a, b) => a.data.localeCompare(b.data)
       || (this._ordemTipo(a.tipo) - this._ordemTipo(b.tipo))
       || String((a.projeto && a.projeto.nome) || a.atividade || '').localeCompare(String((b.projeto && b.projeto.nome) || b.atividade || ''), 'pt'));
@@ -178,6 +183,22 @@ const OrcprevLogica = {
     if (semHoras) avisos.push(`${semHoras} linha(s) com menos de 0,25 h foram absorvidas no arredondamento do dia.`);
     const totalEnvio = linhas.reduce((s, l) => s + l.horas, 0);
     return { inicio, fim, linhas, avisos, totalGestor, totalEnvio };
+  },
+  // Texto da nota (sem a marca): num projeto do orcprev basta o que foi feito (as tarefas); numa atividade ou serviço, que
+  // não identificam o projeto, acrescenta-se "— Projeto (Cliente)" para se saber de onde vêm as horas.
+  // O importador (js/orcprev-importar.js) repete esta regra quando a pessoa muda o destino de uma linha.
+  textoNota(l, tipoFinal) {
+    const tarefas = (l.tarefas || []).join('; ');
+    if (tipoFinal === 'PROJECT') return tarefas;
+    const projetos = l.projetos || [], clientes = l.clientes || [];
+    const ctx = [];
+    if (projetos.length) ctx.push(projetos.join('; '));
+    if (clientes.length) ctx.push(projetos.length ? `(${clientes.join('; ')})` : clientes.join('; '));
+    return [tarefas, ctx.join(' ')].filter(Boolean).join(' — ');
+  },
+  montarNota(texto) {
+    const t = String(texto || '').trim();
+    return (this.MARCA + (t ? ' ' + t : '')).slice(0, this.NOTA_MAX);
   },
   _ordemTipo(t) { return t === 'PROJECT' ? 0 : t === 'SERVICE' ? 1 : 2; },
   _fmt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); },

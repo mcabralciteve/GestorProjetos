@@ -107,5 +107,16 @@ test('projeto de consultoria → serviço do orcprev; sem serviço → "Outras a
   assert.equal(sv.atividade, 'CONSULTING'); assert.deepEqual(sv.projeto, { ref: 'Alfa · Auditoria', nome: 'Auditoria Alfa', idInterno: '2026/50' });
   const outras = s.linhas[2];
   assert.equal(outras.atividade, 'OTHER'); assert.equal(outras.projeto, null); assert.equal(outras.horas, 2);
-  assert.equal(outras.nota, '[Gestor] Estudo Beta; Relatório; Estudo Gama');
+  assert.equal(outras.nota, '[Gestor] Relatório — Estudo Beta; Estudo Gama');
+});
+
+test('cada linha leva tarefas, projetos e clientes — para o importador poder refazer a nota se o destino mudar', () => {
+  projetos.p1.cliente = 'Têxtil X';
+  const s = L.linhasDaSemana(ctx([reg({ horas: 1, tarefaNome: 'Análise' }), reg({ horas: 1, tarefaNome: 'Relatório', cliente: 'Têxtil X' })]));
+  assert.deepEqual([s.linhas[0].tarefas, s.linhas[0].projetos, s.linhas[0].clientes], [['Análise', 'Relatório'], ['TEXP@CT'], ['Têxtil X']]);
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório'); // num projeto do orcprev basta o que foi feito
+  assert.equal(L.textoNota(s.linhas[0], 'ACTIVITY'), 'Análise; Relatório — TEXP@CT (Têxtil X)');
+  assert.equal(L.textoNota({ tarefas: [], projetos: [], clientes: ['Alfa'] }, 'ACTIVITY'), 'Alfa');
+  assert.equal(L.montarNota('  '), '[Gestor]');
+  delete projetos.p1.cliente;
 });

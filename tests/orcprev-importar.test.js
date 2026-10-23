@@ -141,3 +141,52 @@ test('atividade "Outras atividades" (OTHER) vai sem projeto nem serviço', () =>
   assert.equal(p.linhas[0].estado, 'ok');
   assert.deepEqual(I.corpoGravacao(p, d, pacote(lin)).entries[0], { id: null, work_date: '2026-10-19', project_id: null, service_id: null, activity_code: 'OTHER', hours: 1.5, note: '[Gestor] Estudo Beta' });
 });
+
+// ---------- reajustes na pré-visualização ----------
+const linhaProj = (extra) => lp('Roadmapping Digital', Object.assign({ tarefas: ['Reunião com cliente'], projetos: ['Roadmapping Digital'], clientes: ['Alfa, Lda.'], horas: 2 }, extra));
+
+test('reajuste: linha de projeto do Gestor passa a "Outras atividades", com tarefa, projeto e cliente na nota', () => {
+  const d = dados([], { activities: [{ code: 'OTHER' }, { code: 'CONSULTING' }] });
+  const base = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, escolhas: {} });
+  assert.equal(base.linhas[0].estado, 'escolher'); // não existe no orcprev
+  assert.equal(base.linhas[0].nota, '[Gestor] Reunião com cliente');
+  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'OTHER' } } });
+  assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].tipo, 'ACTIVITY'); assert.equal(p.linhas[0].origem, 'editado');
+  assert.equal(p.linhas[0].nota, '[Gestor] Reunião com cliente — Roadmapping Digital (Alfa, Lda.)');
+  assert.deepEqual(I.corpoGravacao(p, d, pacote([linhaProj()])).entries[0], { id: null, work_date: '2026-10-19', project_id: null, service_id: null, activity_code: 'OTHER', hours: 2, note: '[Gestor] Reunião com cliente — Roadmapping Digital (Alfa, Lda.)' });
+});
+
+test('reajuste: corrigir uma linha que casou com o projeto errado; a nota editada à mão mantém a marca [Gestor]', () => {
+  const d = dados([]);
+  const errada = I.planear({ pacote: pacote([lp('TEXP@CT')]), dados: d, memoria: {}, edicoes: {} });
+  assert.equal(errada.linhas[0].projetoId, 2);
+  const p = I.planear({ pacote: pacote([lp('TEXP@CT')]), dados: d, memoria: {}, edicoes: { 0: { destino: 'projeto', id: 1, nota: 'Texto meu' } } });
+  assert.equal(p.linhas[0].projetoId, 1); assert.equal(p.linhas[0].nota, '[Gestor] Texto meu');
+  const vazia = I.planear({ pacote: pacote([lp('TEXP@CT')]), dados: d, memoria: {}, edicoes: { 0: { destino: 'projeto', id: 1, nota: '   ' } } });
+  assert.equal(vazia.linhas[0].nota, '[Gestor]'); // sem a marca, o reenvio não saberia substituir esta linha
+  assert.equal(I.montarNota('x'.repeat(500)).length, 200);
+});
+
+test('reajuste: serviço escolhido; destino inválido fica por escolher; editor aberto sem mudanças não conta', () => {
+  const d = dados([], { services: servicos, activities: [{ code: 'CONSULTING' }, { code: 'PROTOTYPING' }, { code: 'OTHER' }] });
+  const sv = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'servico', id: 7, atividade: 'CONSULTING' } } });
+  assert.equal(sv.linhas[0].estado, 'ok'); assert.equal(sv.linhas[0].tipo, 'SERVICE'); assert.equal(sv.linhas[0].servicoId, 7);
+  assert.equal(sv.linhas[0].nota, '[Gestor] Reunião com cliente — Roadmapping Digital (Alfa, Lda.)');
+  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'servico', id: null, atividade: 'CONSULTING' } } }).linhas[0].estado, 'escolher');
+  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'PROTOTYPING' } } }).linhas[0].estado, 'escolher'); // pede serviço
+  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'OTHER', soAberto: true } } }).linhas[0].origem, 'automatico');
+});
+
+test('lembrar: guarda o destino por projeto do Gestor e aplica-o nos envios seguintes (sem referência definida no Gestor)', () => {
+  const d = dados([], { activities: [{ code: 'OTHER' }] });
+  const edicoes = { 0: { destino: 'atividade', atividade: 'OTHER', lembrar: true } };
+  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes });
+  const mem = I.memorizar({}, p, edicoes);
+  assert.deepEqual(mem['d:2026/1'], { t: 'atividade', atividade: 'OTHER' });
+  const depois = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: mem, edicoes: {} });
+  assert.equal(depois.linhas[0].tipo, 'ACTIVITY'); assert.equal(depois.linhas[0].origem, 'memorizado'); assert.equal(depois.linhas[0].estado, 'ok');
+  // sem "lembrar" não guarda; com referência definida no Gestor, a memória não manda
+  assert.deepEqual(I.memorizar({}, p, { 0: { destino: 'atividade', atividade: 'OTHER' } }), {});
+  const comRef = linhaProj({ projeto: { ref: '005323', nome: 'Roadmapping Digital', idInterno: '2026/1' } });
+  assert.equal(I.planear({ pacote: pacote([comRef]), dados: d, memoria: mem, edicoes: {} }).linhas[0].tipo, 'PROJECT');
+});

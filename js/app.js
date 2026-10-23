@@ -9323,7 +9323,7 @@ const App = {
     const codigoMarcador = "javascript:(function(){if(location.hostname!=='orcprev.citeve.pt'){alert('Abre primeiro o orcprev (orcprev.citeve.pt) e só depois clica neste marcador.');return}var s=document.createElement('script');s.src='" + baseSite + "js/orcprev-importar.js?t='+Date.now();document.head.appendChild(s)})();";
 
     this.abrirModal('Horas → orcprev', `
-      <p class="hint" style="margin-top:0;">Copia a semana daqui e importa-a no orcprev com um clique — sem preencher duas vezes. Só enviamos o que está no Gestor; o que lançaste à mão no orcprev não é tocado.</p>
+      <p class="hint" style="margin-top:0;">Copia a semana daqui e importa-a no orcprev com um clique — sem preencher duas vezes. Só enviamos o que está no Gestor; o que lançaste à mão no orcprev não é tocado. No orcprev podes ainda reajustar qualquer linha antes de enviar (projeto, serviço ou atividade, e a nota).</p>
       <div class="cal-topbar" style="margin-bottom:6px;">
         <button type="button" class="btn btn-sm" id="orcSemAnt">‹</button>
         <strong id="orcSemLabel"></strong>
