@@ -511,6 +511,7 @@ const Crm = {
       valorVendido: base ? base.total : ((vigente && this.valorProposta(vigente)) || op.valor_estimado || 0),
       horasVendidas: base ? base.horas : ((vigente && vigente.horas_estimadas) || 0),
       refGiaf: this.refGiafDaOp(op) || (vigente ? vigente.referencia_giaf : ''),
+      previsao: this.previsaoParaProjeto(op),
       // Tipo do projeto: o do tipo da oportunidade (I&D / Serviços), para a Previsão.
       tipoProjeto: PrevisaoLogica.tipoDeProjeto({ tipoCrmNome: (this.idx.tipo.get(op.tipo_id) || {}).nome }).codigo,
       gestorRecursoId: op.responsavel_id || null,
@@ -526,6 +527,15 @@ const Crm = {
       }
     });
   },
+  // O que a oportunidade já sabe sobre a execução, para o projeto que dela nasce: início/fim (do início previsto e duração, ou
+  // dos defeitos do tipo), área e plano de faturas. null se não houver nada que copiar (SQL por correr, ou sem datas).
+  previsaoParaProjeto(op) {
+    if (this.temPrevisao === false) return null;
+    const def = this.defeitosDoTipo(op.tipo_id);
+    const ini = PrevisaoLogica.inicioDaOportunidade({ inicioPrevisto: op.inicio_previsto, dataFecho: op.data_prevista_fecho, aposFecho: def.apos, hojeISO: this.hoje() });
+    const duracao = op.duracao_meses || def.duracao;
+    return { inicioMes: ini.mes, duracao, definido: ini.origem === 'definido' && !!op.duracao_meses, equipaId: op.equipa_id || null, plano: this.planoFaturasDaOp(op.id) };
+  },
   nomeProjetoDaOp(op) {
     const p = op.projeto_id && App.state.projetos[op.projeto_id];
     return p ? `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}` : null;
@@ -540,8 +550,20 @@ const Crm = {
     const ehId = /i\s*&\s*d|investiga/i.test(t.nome || '');
     return {
       apos: t.prev_inicio_apos_fecho_meses === undefined || t.prev_inicio_apos_fecho_meses === null ? 1 : Number(t.prev_inicio_apos_fecho_meses),
-      duracao: t.prev_duracao_meses === undefined || t.prev_duracao_meses === null ? (ehId ? 12 : 4) : Number(t.prev_duracao_meses)
+      duracao: t.prev_duracao_meses === undefined || t.prev_duracao_meses === null ? (ehId ? 12 : 4) : Number(t.prev_duracao_meses),
+      atrasoFat: t.prev_fat_atraso_meses === undefined || t.prev_fat_atraso_meses === null ? 1 : Number(t.prev_fat_atraso_meses)
     };
+  },
+  // Valores por defeito da previsão, por tipo (Configurações → Funil CRM): quando a oportunidade não tem início/duração/plano.
+  htmlDefeitosPrevisao(t) {
+    if (!('prev_duracao_meses' in t)) return '<p class="hint" style="margin:4px 0;">Previsão (defeitos por tipo): corre primeiro <b>supabase/previsao_oportunidades.sql</b> no Supabase.</p>';
+    const temAtraso = 'prev_fat_atraso_meses' in t;
+    const campo = (rot, c, min, max, valor, dis, dica) => `<label class="zoom-label" title="${escapeAttr(dica)}">${rot} <input type="number" min="${min}" max="${max}" step="1" style="width:64px" data-funil="tipos" data-id="${escapeAttr(t.id)}" data-campo="${c}" value="${valor}"${dis ? ' disabled' : ''}></label>`;
+    return `<div class="crm-funil-prev"><b>Previsão (por defeito):</b>
+      ${campo('começa', 'prev_inicio_apos_fecho_meses', 0, 24, Number(t.prev_inicio_apos_fecho_meses) || 0, false, 'Meses depois da data prevista de fecho em que o trabalho começa, se a oportunidade não tiver início previsto.')} meses depois do fecho ·
+      ${campo('dura', 'prev_duracao_meses', 1, 120, Number(t.prev_duracao_meses) || 4, false, 'Duração do trabalho em meses, se a oportunidade não tiver duração.')} meses ·
+      ${campo('fatura com', 'prev_fat_atraso_meses', 0, 24, temAtraso ? Number(t.prev_fat_atraso_meses) || 0 : 1, !temAtraso, temAtraso ? 'Sem plano de faturas, a faturação acompanha o trabalho com este atraso.' : 'Corre supabase/previsao_fase_c.sql.')} mês(es) de atraso (sem plano de faturas)
+      ${temAtraso ? '' : '<span class="hint">— corre supabase/previsao_fase_c.sql para editar o atraso.</span>'}</div>`;
   },
   planoFaturasDaOp(opId) {
     return (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
@@ -1343,6 +1365,7 @@ const Crm = {
             <span class="hint">${usos('oportunidades', 'tipo_id', t.id)} oportunidades</span>
           </div>
           ${semMotivo ? '<p class="crm-atrasada" style="margin:4px 0;">⚠ Este tipo tem uma etapa "perdida" mas nenhum motivo de perda ativo.</p>' : ''}
+          ${this.htmlDefeitosPrevisao(t)}
           <h4 class="crm-h">Etapas</h4>
           <table class="tabela-crud crm-funil-tab"><thead><tr><th></th><th>Nome</th><th>Probabilidade %</th><th>Categoria</th><th>Ativa</th><th>Oport.</th><th></th></tr></thead><tbody>
             ${etapas.map((e, i) => `<tr>
@@ -1381,6 +1404,8 @@ const Crm = {
     const nova = Object.assign({}, linha);
     if (campo === 'ativo') nova.ativo = c.checked;
     else if (campo === 'probabilidade') nova.probabilidade = Math.min(100, Math.max(0, Number(c.value) || 0));
+    else if (campo === 'prev_inicio_apos_fecho_meses' || campo === 'prev_fat_atraso_meses') nova[campo] = Math.min(24, Math.max(0, Math.round(Number(c.value) || 0)));
+    else if (campo === 'prev_duracao_meses') nova[campo] = Math.min(120, Math.max(1, Math.round(Number(c.value) || 1)));
     else if (campo === 'nome') { nova.nome = c.value.trim(); if (!nova.nome) { this.renderAtual(); return; } }
     else nova[campo] = c.value;
     if (campo === 'categoria') nova.probabilidade = c.value === 'ganha' ? 100 : (c.value === 'perdida' ? 0 : (linha.categoria === 'aberta' ? linha.probabilidade : 50));

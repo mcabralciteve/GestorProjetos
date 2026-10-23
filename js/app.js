@@ -1369,6 +1369,8 @@ const App = {
         </label>
       </div>
       <p id="novoProjRefInfo" class="hint" style="margin:0;"></p>
+      ${opts.previsao ? `<label class="zoom-label" style="flex-direction:row;align-items:flex-start;gap:8px;margin-top:8px;"><input type="checkbox" id="novoProjCopiarPrevisao" checked style="margin-top:3px;">
+        <span>Copiar a previsão da oportunidade: início ${escapeHtml(opts.previsao.inicioMes)}, ${opts.previsao.duracao} mês(es)${opts.previsao.equipaId ? ', a área' : ''}${opts.previsao.plano.length ? ` e ${opts.previsao.plano.length} fatura(s) do plano` : ''}${opts.previsao.definido ? '' : ' <span class="hint">(parte com valores por defeito do tipo)</span>'}.</span></label>` : ''}
       <button class="btn btn-primary" id="btnConfirmarNovoProjeto" style="margin-top:10px;">Criar Projeto</button>`;
     this.abrirModal('Novo Projeto', html);
     const inpNome = this.els.modalCorpo.querySelector('#novoProjNome');
@@ -1396,6 +1398,18 @@ const App = {
       if (opts.valorVendido) p.valorVendido = Number(opts.valorVendido) || 0;
       if (opts.horasVendidas) p.horasVendidas = Number(opts.horasVendidas) || 0;
       if (opts.tipoProjeto) p.tipoProjeto = opts.tipoProjeto;
+      // Previsão da oportunidade → projeto: datas, área e faturas (em % do valor vendido, no último dia de cada mês do plano).
+      const copiar = this.els.modalCorpo.querySelector('#novoProjCopiarPrevisao');
+      if (opts.previsao && copiar && copiar.checked) {
+        const d = PrevisaoLogica.datasDoTrabalho(opts.previsao.inicioMes, opts.previsao.duracao);
+        p.dataInicio = d.inicio; p.dataFim = d.fim;
+        if (opts.previsao.equipaId && this.state.equipas.some(e => e.id === opts.previsao.equipaId)) p.equipaId = opts.previsao.equipaId;
+        opts.previsao.plano.forEach(f => {
+          const fatura = this.novaFaturaObj();
+          fatura.tipo = 'percentagem'; fatura.percentagem = f.pct; fatura.dataPrevista = PrevisaoLogica.ultimoDiaDoMes(f.mes);
+          p.faturas.push(fatura);
+        });
+      }
       p.tipoReferencia = selTipoRef.value === 'interno' ? 'interno' : 'giaf';
       if (p.tipoReferencia === 'interno') {
         p.idInterno = this.proximoCodigoInterno();

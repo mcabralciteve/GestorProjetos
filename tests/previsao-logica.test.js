@@ -136,3 +136,9 @@ test('oportunidade: o que cai depois do horizonte não entra, mas fica contabili
   const r = P.oportunidadeNoMapa({ valor: 12000, peso: 1, inicioMes: '2026-12', duracao: 4, plano: [], hojeISO: HOJE, meses: ms });
   assert.deepEqual(arr2(r.rec, ms), [0, 0, 3000]); assert.equal(arred(r.recFora), 9000);
 });
+
+test('datas do trabalho para o projeto: dia 1 do mês de início ao último dia do último mês', () => {
+  assert.equal(P.ultimoDiaDoMes('2027-02'), '2027-02-28'); assert.equal(P.ultimoDiaDoMes('2028-02'), '2028-02-29'); assert.equal(P.ultimoDiaDoMes('2026-12'), '2026-12-31');
+  assert.deepEqual(P.datasDoTrabalho('2026-12', 4), { inicio: '2026-12-01', fim: '2027-03-31' });
+  assert.deepEqual(P.datasDoTrabalho('2026-11', 1), { inicio: '2026-11-01', fim: '2026-11-30' });
+});

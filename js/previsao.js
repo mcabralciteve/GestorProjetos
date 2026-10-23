@@ -106,11 +106,11 @@ const Previsao = {
       const ini = L.inicioDaOportunidade({ inicioPrevisto: op.inicio_previsto, dataFecho: op.data_prevista_fecho, aposFecho: def.apos, hojeISO });
       const duracao = op.duracao_meses || def.duracao;
       const plano = Crm.planoFaturasDaOp(op.id);
-      const r = L.oportunidadeNoMapa({ valor, peso, inicioMes: ini.mes, duracao, plano, atrasoFat: 1, hojeISO, meses });
+      const r = L.oportunidadeNoMapa({ valor, peso, inicioMes: ini.mes, duracao, plano, atrasoFat: def.atrasoFat, hojeISO, meses });
       const linha = {
         kind: 'op', id: op.id, nome, tipo: tipoEf.rotulo, equipaId: op.equipa_id || '', equipa: equipa ? equipa.nome : 'Por atribuir',
         deptId: dept ? dept.id : '', peso, etapa: etapa.nome || '', valor, valorPonderado: r.total, categoria: cat, rec: { porMes: r.rec }, fat: { porMes: r.fat },
-        inicio: ini.mes, inicioOrigem: ini.origem, duracao, duracaoDefinida: !!op.duracao_meses, temPlano: r.temPlano, plano, planoSoma: r.planoSoma,
+        inicio: ini.mes, inicioOrigem: ini.origem, duracao, duracaoDefinida: !!op.duracao_meses, temPlano: r.temPlano, plano, planoSoma: r.planoSoma, atrasoFat: def.atrasoFat,
         fecho: op.data_prevista_fecho || ''
       };
       out.linhas.push(linha);
@@ -248,15 +248,7 @@ const Previsao = {
       const cel = meses.map(m => `<td${s[m] > 49 ? ` style="${op ? `background-image:repeating-linear-gradient(45deg,rgba(${rgb},${(0.1 + s[m] / max * 0.4).toFixed(2)}) 0 3px,transparent 3px 7px)` : `background:rgba(${rgb},${(0.08 + s[m] / max * 0.34).toFixed(2)})`}"` : ''}>${this.k(s[m])}</td>`).join('');
       const cob = !op && l.rec ? Math.round(l.rec.cobertura * 100) : null;
       const ab = this.expandidas.has(l.id);
-      let pressup;
-      if (op) {
-        const dataFim = PrevisaoLogica.addMeses(l.inicio, l.duracao - 1);
-        pressup = `${escapeHtml(l.etapa)}${l.categoria === 'ganha' ? ' (ganha, sem projeto)' : ''} · valor ${this.eur(l.valor)} × ${Math.round(l.peso * 100)}% = ${this.eur(l.valorPonderado)} · trabalho de ${this.rotuloMes(l.inicio)}/${l.inicio.slice(0, 4)} a ${this.rotuloMes(dataFim)}/${dataFim.slice(0, 4)} (${l.duracao} meses)${l.inicioOrigem !== 'definido' || !l.duracaoDefinida ? ' — valores por defeito' : ''} · ${l.temPlano ? 'plano de faturas: ' + l.plano.map(p => p.pct + '% em ' + this.rotuloMes(p.mes) + '/' + p.mes.slice(0, 4)).join(', ') : 'sem plano de faturas: a faturação acompanha o trabalho, com 1 mês de atraso'}. <a href="#" data-prev-op="${escapeAttr(l.id)}">Abrir oportunidade</a>`;
-      } else {
-        pressup = l.rec
-          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}.`
-          : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`;
-      }
+      const pressup = this.pressupostos(l, cob);
       const valorCol = op ? l.valorPonderado : (rec ? (l.rec ? l.rec.porReconhecer : 0) : l.fat.total);
       const marca = op ? (l.inicioOrigem !== 'definido' || !l.duracaoDefinida ? ' <span class="prev-tag p">defeito</span>' : '') : (l.suspenso ? ' <span class="prev-tag">suspenso</span>' : '') + (l.semFaturacao ? ' <span class="prev-tag">sem faturação</span>' : '');
       return `<tr class="item" data-prev-linha="${escapeAttr(l.id)}"><td>${op ? '🎯 ' : '🔒 '}${escapeHtml(l.nome)}${marca}</td><td>${escapeHtml(l.tipo)}</td><td>${escapeHtml(l.equipa)}</td>
@@ -264,6 +256,77 @@ const Previsao = {
         <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${nm + 4 + (comOps ? 1 : 0) + (rec ? 1 : 0)}">${pressup}</td></tr>`;
     }).join('');
     document.getElementById('prevDet').innerHTML = cabDet + `<tbody>${corpoDet || `<tr><td colspan="${nm + 5}">Sem projetos nem oportunidades com algo a prever neste filtro.</td></tr>`}</tbody>`;
+  },
+
+  // Texto (HTML) dos pressupostos de uma linha: contratado ou oportunidade. cob = cobertura do plano (contratados).
+  pressupostos(l, cob) {
+    const op = l.kind === 'op';
+      let pressup;
+      if (op) {
+        const dataFim = PrevisaoLogica.addMeses(l.inicio, l.duracao - 1);
+        pressup = `${escapeHtml(l.etapa)}${l.categoria === 'ganha' ? ' (ganha, sem projeto)' : ''} · valor ${this.eur(l.valor)} × ${Math.round(l.peso * 100)}% = ${this.eur(l.valorPonderado)} · trabalho de ${this.rotuloMes(l.inicio)}/${l.inicio.slice(0, 4)} a ${this.rotuloMes(dataFim)}/${dataFim.slice(0, 4)} (${l.duracao} meses)${l.inicioOrigem !== 'definido' || !l.duracaoDefinida ? ' — valores por defeito' : ''} · ${l.temPlano ? 'plano de faturas: ' + l.plano.map(p => p.pct + '% em ' + this.rotuloMes(p.mes) + '/' + p.mes.slice(0, 4)).join(', ') : 'sem plano de faturas: a faturação acompanha o trabalho, com ${l.atrasoFat} mês(es) de atraso'}. <a href="#" data-prev-op="${escapeAttr(l.id)}">Abrir oportunidade</a>`;
+      } else {
+        pressup = l.rec
+          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}.`
+          : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`;
+      }
+    return pressup;
+  },
+
+  // Exporta para Excel o que está no ecrã (cenário, filtros e horizonte): mapa mensal, reconhecimento e faturação por item, e os
+  // pressupostos de cada linha. Valores em euros, arredondados à unidade.
+  async exportarExcel() {
+    const btn = document.getElementById('btnPrevExportar');
+    if (btn) btn.disabled = true;
+    try {
+      if (typeof XLSX === 'undefined') await App.carregarScript('lib/xlsx.full.min.js');
+      const hoje = DateUtil.todayISO(), f = this.filtros, S = App.state;
+      const meses = PrevisaoLogica.mesesHorizonte(hoje, f.horizonte);
+      const linhasC = this.filtrar(this.calcular(hoje, meses).linhas);
+      const ops = this.oportunidades(hoje, meses), linhasO = this.filtrar(ops.linhas);
+      const sc = PrevisaoLogica.somar.bind(PrevisaoLogica), tot = s => PrevisaoLogica.total(s, meses), e0 = v => Math.round(v);
+      const recC = sc(linhasC.map(l => l.rec && l.rec.porMes), meses), fatC = sc(linhasC.map(l => l.fat.porMes), meses);
+      const recP = sc(linhasO.map(l => l.rec.porMes), meses), fatP = sc(linhasO.map(l => l.fat.porMes), meses);
+      const recT = sc([recC, recP], meses), fatT = sc([fatC, fatP], meses);
+      const comOps = f.cenario !== 'contratado';
+      const rot = m => `${this.rotuloMes(m)}/${m.slice(2, 4)}`;
+      const nomeDe = (lista, id) => (lista.find(x => x.id === id) || {}).nome || '';
+      const cenario = { contratado: 'Só contratado', pond: 'Contratado + oportunidades ponderadas pela probabilidade da etapa', total: 'Contratado + pipeline a 100%' }[f.cenario];
+      const linhaSerie = (nome, s) => [nome, ...meses.map(m => e0(s[m])), e0(tot(s))];
+      const acum = s => { const a = PrevisaoLogica.acumular(s, meses); return ['Acumulado', ...meses.map(m => e0(a[m])), '']; };
+      const mapa = [
+        ['Previsão de reconhecimento e faturação'], [`Cenário: ${cenario}`],
+        [`Filtros: tipo ${f.tipo || 'todos'} · direção ${f.dept ? nomeDe(S.departamentos, f.dept) : 'todas'} · área ${f.equipa ? nomeDe(S.equipas, f.equipa) : 'todas'} · horizonte ${meses.length} meses`],
+        [`Gerado em ${hoje}`], [],
+        ['€', ...meses.map(rot), `Total ${meses.length} meses`],
+        ['RECONHECIMENTO (trabalho feito)'], linhaSerie('Contratado (backlog)', recC),
+        ...(comOps ? [linhaSerie(f.cenario === 'total' ? 'Oportunidades (100%)' : 'Oportunidades (ponderadas)', recP), linhaSerie('Total reconhecimento', recT)] : []),
+        acum(recT),
+        ['FATURAÇÃO'], linhaSerie('Contratada (faturas por emitir)', fatC),
+        ...(comOps ? [linhaSerie(f.cenario === 'total' ? 'Oportunidades (100%)' : 'Oportunidades (ponderadas)', fatP), linhaSerie('Total faturação', fatT)] : []),
+        acum(fatT),
+        ['Faturação − reconhecimento (acumulado)', ...(() => { const a = PrevisaoLogica.acumular(fatT, meses), b = PrevisaoLogica.acumular(recT, meses); return meses.map(m => e0(a[m] - b[m])); })(), '']
+      ];
+      const itens = linhasC.map(l => Object.assign({ kind: 'c' }, l)).concat(linhasO);
+      const porItem = (serie) => [['Origem', 'Item', 'Tipo', 'Área', 'Peso', ...meses.map(rot), 'Total'],
+        ...itens.map(l => { const s = serie(l); return [l.kind === 'op' ? 'Oportunidade' : 'Contratado', l.nome, l.tipo, l.equipa, l.kind === 'op' ? Math.round(l.peso * 100) + '%' : '100%', ...meses.map(m => e0(s[m])), e0(tot(s))]; })];
+      const txt = h => String(h).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const pressup = [['Origem', 'Item', 'Pressupostos'], ...itens.map(l => [l.kind === 'op' ? 'Oportunidade' : 'Contratado', l.nome, txt(this.pressupostos(l, l.kind !== 'op' && l.rec ? Math.round(l.rec.cobertura * 100) : null))])];
+      const wb = XLSX.utils.book_new();
+      const folha = (nome, aoa, larguras) => { const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = larguras.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, nome); };
+      folha('Mapa', mapa, [36, ...meses.map(() => 9), 14]);
+      folha('Reconhecimento por item', porItem(l => l.rec ? l.rec.porMes : PrevisaoLogica.vazio(meses)), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
+      folha('Faturação por item', porItem(l => l.fat.porMes), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
+      folha('Pressupostos', pressup, [14, 46, 140]);
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      App.descarregarBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Previsao_${hoje}.xlsx`);
+      App.toast('Previsão exportada.');
+    } catch (err) {
+      console.error(err);
+      App.toast('Erro ao exportar: ' + err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   },
 
   // Projetos cujo tipo não está definido no próprio projeto (vem do CRM ou falta): permite classificá-los aqui mesmo.
@@ -328,6 +391,7 @@ const Previsao = {
       if (cenario) { f.cenario = cenario.dataset.prevCenario; this.render(); return; }
       const serie = ev.target.closest('[data-prev-serie]');
       if (serie) { f.serie = serie.dataset.prevSerie; this.render(); return; }
+      if (ev.target.closest('#btnPrevExportar')) { this.exportarExcel(); return; }
       if (ev.target.closest('#btnPrevLimpar')) { Object.assign(f, { tipo: '', dept: '', equipa: '' }); this.render(); return; }
       const linha = ev.target.closest('[data-prev-linha]');
       if (linha) { const id = linha.dataset.prevLinha; if (this.expandidas.has(id)) this.expandidas.delete(id); else this.expandidas.add(id); linha.nextElementSibling.hidden = !this.expandidas.has(id); }

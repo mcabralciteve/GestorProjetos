@@ -111,6 +111,17 @@ const PrevisaoLogica = {
     return (a2 * 12 + m2) - (a1 * 12 + m1);
   },
 
+  // Último dia ('AAAA-MM-DD') de um mês 'AAAA-MM'.
+  ultimoDiaDoMes(mes) {
+    const [a, m] = mes.split('-').map(Number);
+    return this._iso(new Date(Date.UTC(a, m, 0)));
+  },
+  // Datas do projeto que nasce de uma oportunidade: do dia 1 do mês de início ao último dia do último mês de trabalho.
+  datasDoTrabalho(inicioMes, duracao) {
+    const dur = Math.max(1, Math.round(duracao || 1));
+    return { inicio: inicioMes + '-01', fim: this.ultimoDiaDoMes(this.addMeses(inicioMes, dur - 1)) };
+  },
+
   // Início do trabalho de uma oportunidade: o previsto (se definido), senão "N meses depois da data prevista de fecho" (N do
   // tipo), senão o mês seguinte ao atual. origem: 'definido' | 'defeito' | 'sem-fecho'.
   inicioDaOportunidade({ inicioPrevisto, dataFecho, aposFecho, hojeISO }) {
