@@ -640,6 +640,11 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .dash-cartao{border:1px solid var(--cinza-200);border-radius:var(--radius);background:var(--branco);box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:8px;}
 .dash-cartao-head{display:flex;justify-content:space-between;align-items:center;}
 .dash-cartao-head h3{margin:0;font-size:12.5px;font-weight:700;color:var(--cinza-700);}
+/* Pega para reordenar os cartões do Início */
+.dash-arrastar{margin-left:auto;border:none;background:none;cursor:grab;color:var(--cinza-400);font-size:17px;line-height:1;padding:2px 5px;border-radius:5px;}
+.dash-arrastar:hover,.dash-arrastar:focus-visible{background:var(--cinza-100);color:var(--cinza-700);outline:none;}
+.dash-arrastar:active{cursor:grabbing;}
+.dash-cartao.a-arrastar{opacity:.45;outline:2px dashed var(--cinza-400);}
 .dash-cartao-corpo{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;}
 .dash-linha{display:flex;flex-direction:column;gap:1px;padding-bottom:7px;border-bottom:1px solid var(--cinza-100);}
 .dash-linha:last-child{border-bottom:none;padding-bottom:0;}

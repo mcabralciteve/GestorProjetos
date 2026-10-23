@@ -4162,8 +4162,83 @@ const App = {
       <label style="display:flex;gap:8px;align-items:center;padding:5px 12px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" data-widget="${w.key}" ${ocultos.has(w.key) ? '' : 'checked'}> ${escapeHtml(w.label)}
       </label>`).join('');
+    this.els.painelPersonalizarDashboard.insertAdjacentHTML('beforeend', '<div style="padding:6px 12px 2px;font-size:12px;border-top:1px solid var(--cinza-200);margin-top:4px;"><a href="#" data-dash-repor-ordem="1">↺ Repor a ordem dos cartões</a><div class="hint" style="margin:2px 0 0;">Arrasta a pega ⠿ de um cartão para o mudar de sítio.</div></div>');
+    const reporOrdem = this.els.painelPersonalizarDashboard.querySelector('[data-dash-repor-ordem]');
+    if (reporOrdem) reporOrdem.addEventListener('click', (ev) => { ev.preventDefault(); this.reporOrdemDashboard(); });
     this.els.painelPersonalizarDashboard.querySelectorAll('input[data-widget]').forEach(chk => {
       chk.addEventListener('change', () => this.alternarWidgetDashboard(chk.dataset.widget));
+    });
+  },
+  // ---------- Início: ordem dos cartões (arrastar) ----------
+  // Cada cartão tem uma chave (data-cartao) e uma pega "⠿" no canto: arrastar muda o lugar, ou com a pega em foco as setas
+  // movem-no. A ordem fica só neste browser (preferência "dashboardOrdem"), como o resto de "⚙ Personalizar". Regras puras em
+  // js/dashboard-ordem.js.
+  dashboardOrdemGuardada() {
+    const o = this.lerPrefsUI().dashboardOrdem;
+    return Array.isArray(o) ? o : [];
+  },
+  cartoesDoDashboard() {
+    const g = this.els.dashboardGrelha;
+    return g ? [...g.children].filter(c => c.classList && c.classList.contains('dash-cartao') && c.dataset.cartao) : [];
+  },
+  aplicarOrdemDashboard() {
+    const g = this.els.dashboardGrelha;
+    const cartoes = this.cartoesDoDashboard();
+    if (!g || cartoes.length < 2) return;
+    const porChave = new Map(cartoes.map(c => [c.dataset.cartao, c]));
+    DashboardOrdem.ordenar(cartoes.map(c => c.dataset.cartao), this.dashboardOrdemGuardada()).forEach(k => g.appendChild(porChave.get(k)));
+  },
+  guardarOrdemDashboard() {
+    this.gravarPrefUI('dashboardOrdem', DashboardOrdem.paraGuardar(this.cartoesDoDashboard().map(c => c.dataset.cartao), this.dashboardOrdemGuardada()));
+  },
+  reporOrdemDashboard() {
+    this.gravarPrefUI('dashboardOrdem', []);
+    this.renderDashboard();
+  },
+  ligarArrastarCartoesDashboard() {
+    const g = this.els.dashboardGrelha;
+    if (!g || g._arrastarLigado) return;
+    g._arrastarLigado = true;
+    let arrastado = null;
+    // Só se arrasta pela pega (senão seria impossível selecionar texto ou deslizar a lista dentro de um cartão).
+    g.addEventListener('mousedown', ev => { const h = ev.target.closest('.dash-arrastar'); if (h) h.closest('.dash-cartao').draggable = true; });
+    g.addEventListener('dragstart', ev => {
+      const c = ev.target.closest && ev.target.closest('.dash-cartao');
+      if (!c || !c.draggable) return;
+      arrastado = c;
+      c.classList.add('a-arrastar');
+      if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', c.dataset.cartao); } catch (e) { /* ignora */ } }
+    });
+    g.addEventListener('dragover', ev => {
+      if (!arrastado) return;
+      ev.preventDefault();
+      const alvo = ev.target.closest('.dash-cartao');
+      if (!alvo || alvo === arrastado) return;
+      const r = alvo.getBoundingClientRect();
+      const dx = (ev.clientX - (r.left + r.width / 2)) / r.width, dy = (ev.clientY - (r.top + r.height / 2)) / r.height;
+      const antes = Math.abs(dx) > Math.abs(dy) ? dx < 0 : dy < 0;     // lado a lado decide pelo x; em coluna pelo y
+      if (antes ? alvo.previousElementSibling === arrastado : alvo.nextElementSibling === arrastado) return;
+      g.insertBefore(arrastado, antes ? alvo : alvo.nextElementSibling);
+    });
+    g.addEventListener('drop', ev => { if (arrastado) ev.preventDefault(); });
+    g.addEventListener('dragend', () => {
+      if (!arrastado) return;
+      arrastado.classList.remove('a-arrastar');
+      arrastado.draggable = false;
+      arrastado = null;
+      this.guardarOrdemDashboard();
+    });
+    // Teclado: com a pega em foco, setas para trás/para a frente.
+    g.addEventListener('keydown', ev => {
+      const h = ev.target.closest && ev.target.closest('.dash-arrastar');
+      if (!h) return;
+      const c = h.closest('.dash-cartao');
+      let moveu = false;
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') { const p = c.previousElementSibling; if (p) { g.insertBefore(c, p); moveu = true; } }
+      else if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') { const n = c.nextElementSibling; if (n) { g.insertBefore(n, c); moveu = true; } }
+      else return;
+      ev.preventDefault();
+      if (moveu) { this.guardarOrdemDashboard(); c.querySelector('.dash-arrastar').focus(); }
     });
   },
   alternarPainelPersonalizarDashboard() {
@@ -4175,7 +4250,7 @@ const App = {
   // onde saltar e qual destacar.
   cartaoDashboard(titulo, corpoHtml, extraHead, key) {
     return `<div class="dash-cartao"${key ? ` data-cartao="${key}"` : ''}>
-      <div class="dash-cartao-head"><h3>${titulo}</h3>${extraHead || ''}</div>
+      <div class="dash-cartao-head"><h3>${titulo}</h3>${extraHead || ''}${key ? '<button type="button" class="dash-arrastar" title="Arrasta para mudar a ordem dos cartões (ou usa as setas do teclado)" aria-label="Mudar a posição deste cartão">⠿</button>' : ''}</div>
       <div class="dash-cartao-corpo">${corpoHtml}</div>
     </div>`;
   },
@@ -4351,7 +4426,7 @@ const App = {
             </div>`).join('') : '<p class="hint">Sem tarefas previstas para hoje.</p>';
         }
       }
-      html += this.cartaoDashboard('🗓 A minha agenda de hoje', corpo);
+      html += this.cartaoDashboard('🗓 A minha agenda de hoje', corpo, null, 'agendaHoje');
     }
 
     if (!ocultos.has('proximos7dias')) {
@@ -4369,7 +4444,7 @@ const App = {
             <span class="dash-linha-sub">${escapeHtml(p.nome)} · começa ${DateUtil.formatShort(DateUtil.parseISO(t.inicio))}</span>
           </div>`).join('') : '<p class="hint">Nada a começar nos próximos 7 dias.</p>';
       }
-      html += this.cartaoDashboard('📅 Próximos 7 dias', corpo);
+      html += this.cartaoDashboard('📅 Próximos 7 dias', corpo, null, 'proximos7dias');
     }
 
     if (!ocultos.has('meusPassos')) {
@@ -4396,11 +4471,11 @@ const App = {
           <span class="dash-linha-principal">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</span>
           <span class="dash-linha-sub">${escapeHtml(p.cliente || 'Sem cliente')} · ${escapeHtml(p.estado)}</span>
         </div>`).join('') : '<p class="hint">Ainda não és gestor nem consultor de nenhum projeto.</p>';
-      html += this.cartaoDashboard('📁 Os meus projetos', corpo);
+      html += this.cartaoDashboard('📁 Os meus projetos', corpo, null, 'meusProjetos');
     }
 
     if (!ocultos.has('registoRapido')) {
-      html += this.cartaoDashboard('🕒 Registar horas de hoje', `<button type="button" class="btn btn-primary" id="btnDashRegistoRapido">Abrir Registo do Dia</button>`);
+      html += this.cartaoDashboard('🕒 Registar horas de hoje', `<button type="button" class="btn btn-primary" id="btnDashRegistoRapido">Abrir Registo do Dia</button>`, null, 'registoRapido');
     }
 
     if (!ocultos.has('meusDiasIncompletos')) {
@@ -4428,7 +4503,7 @@ const App = {
             <span class="dash-linha-sub">${ROTULOS_ESTADO[a.estado] || a.estado}${a.estado === 'rejeitada' && a.motivoRejeicao ? ' — ' + escapeHtml(a.motivoRejeicao) : ''}</span>
           </div>`).join('') : '<p class="hint">Sem ausências futuras.</p>';
       }
-      html += this.cartaoDashboard('🌴 As minhas ausências', corpo);
+      html += this.cartaoDashboard('🌴 As minhas ausências', corpo, null, 'minhasAusencias');
     }
 
     if ((gestorOuAdmin || liderOuAdmin) && !ocultos.has('saidasPorResolver')) {
@@ -4491,7 +4566,7 @@ const App = {
           <span class="dash-linha-principal">${escapeHtml(r.nome)} — ${escapeHtml(a.tipo)}</span>
           <span class="dash-linha-sub">${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} – ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}</span>
         </div>`).join('') : '<p class="hint">Sem ausências nos próximos 7 dias.</p>';
-      html += this.cartaoDashboard('🌴 Ausências da equipa (próx. 7 dias)', corpo);
+      html += this.cartaoDashboard('🌴 Ausências da equipa (próx. 7 dias)', corpo, null, 'ausenciasEquipa');
     }
 
     if (liderOuAdmin && !ocultos.has('equipaDiasIncompletos')) {
@@ -4536,6 +4611,7 @@ const App = {
     }
 
     e.dashboardGrelha.innerHTML = html || '<p class="hint">Sem cartões para mostrar — liga alguns em "⚙ Personalizar".</p>';
+    this.aplicarOrdemDashboard();
     const btnRegisto = document.getElementById('btnDashRegistoRapido');
     if (btnRegisto) btnRegisto.addEventListener('click', () => {
       this.irParaGrupo('horas');
@@ -10571,6 +10647,7 @@ const App = {
     e.btnColunasProjetos.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelColunasProjetos(); });
     e.painelColunasProjetos.addEventListener('click', (ev) => ev.stopPropagation()); // não fecha ao marcar várias colunas seguidas
     document.addEventListener('click', () => this.els.painelColunasProjetos.classList.remove('aberto'));
+    this.ligarArrastarCartoesDashboard();
     const btnPersonalizarDashboard = document.getElementById('btnPersonalizarDashboard');
     if (btnPersonalizarDashboard) btnPersonalizarDashboard.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelPersonalizarDashboard(); });
     if (e.painelPersonalizarDashboard) {
