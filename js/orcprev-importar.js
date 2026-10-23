@@ -14,14 +14,13 @@
 //    prototipagem) ou atividade (ex.: "Outras atividades"), e editar a nota. A mudança vale só para este envio, a
 //    não ser que se marque "lembrar" (guarda-se neste browser, por projeto do Gestor);
 //  - sem serviços no orcprev, a consultoria vai como atividade (ex.: "Outras atividades") com o projeto e o cliente na nota;
-//  - "Preparação de candidaturas" é uma atividade que leva também um projeto do orcprev (linha do tipo APPLICATION).
+//  - "Preparação de candidaturas" vai como uma atividade simples, sem projeto: o que veio do Gestor fica na nota.
 // A lógica pura (sem DOM) está testada em tests/orcprev-importar.test.js.
 (function (raiz) {
   'use strict';
   const MARCA = '[Gestor]';
   const NOTA_MAX = 200;
   const FORMATO = 'gestor-orcprev';
-  const ATIVIDADES_COM_PROJETO = ['APPLICATION_PREP'];
   const CHAVE_MEMORIA = 'gestorOrcprevMemoria';
 
   const Imp = {
@@ -111,7 +110,7 @@
     textoNota(l, tipoFinal) {
       if (!Array.isArray(l.tarefas)) return String(l.nota || '').replace(/^\[Gestor\]\s*/, '');
       const tarefas = l.tarefas.join('; ');
-      if (tipoFinal === 'PROJECT' || tipoFinal === 'APPLICATION') return tarefas;
+      if (tipoFinal === 'PROJECT') return tarefas;
       const projetos = l.projetos || [], clientes = l.clientes || [];
       const ctx = [];
       if (projetos.length) ctx.push(projetos.join('; '));
@@ -123,21 +122,11 @@
       return (MARCA + (t ? ' ' + t : '')).slice(0, NOTA_MAX);
     },
 
-    // Atividades que se podem escolher como "atividade" (as que não pedem serviço nem projeto).
-    atividadesLivres(dados) {
-      const comServico = new Set(dados.service_activity_codes || []);
-      return (dados.activities || []).filter(a => !comServico.has(a.code) && !ATIVIDADES_COM_PROJETO.includes(a.code));
-    },
     // As atividades da sublista "Atividade", pela ordem do orcprev: todas menos as que pedem um serviço (Consultoria,
-    // Prototipagem — essas escolhem-se em "Serviço"). Inclui "Preparação de candidaturas", que depois pede um projeto.
+    // Prototipagem — essas escolhem-se em "Serviço").
     atividadesEscolhiveis(dados) {
       const comServico = new Set(dados.service_activity_codes || []);
       return (dados.activities || []).filter(a => !comServico.has(a.code));
-    },
-    // "Preparação de candidaturas": atividade que leva um projeto do orcprev.
-    atividadesComProjeto(dados) {
-      const atividades = new Set((dados.activities || []).map(a => a.code));
-      return ATIVIDADES_COM_PROJETO.filter(c => atividades.has(c));
     },
     // Atividades que levam serviço (consultoria, prototipagem), as que o orcprev indicar.
     atividadesDeServico(dados) {
@@ -149,18 +138,14 @@
     //   ov = { destino: 'projeto'|'servico'|'atividade', id, atividade }
     // Devolve os campos que mudam na linha, ou null se o destino for desconhecido.
     aplicarDestino(ov, dados) {
+      // Memória antiga ("candidatura") = atividade "Preparação de candidaturas", sem projeto.
+      if (ov.destino === 'candidatura') ov = { destino: 'atividade', atividade: 'APPLICATION_PREP' };
       const atividades = new Set((dados.activities || []).map(a => a.code));
       const comServico = new Set(dados.service_activity_codes || []);
       if (ov.destino === 'projeto') {
         const p = ov.id ? (dados.projects || []).find(x => Number(x.id) === Number(ov.id)) : null;
         return p ? { tipo: 'PROJECT', atividade: null, projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
           : { tipo: 'PROJECT', atividade: null, projetoId: null, projetoNomeOrcprev: '', estado: 'escolher' };
-      }
-      if (ov.destino === 'candidatura' || (ov.destino === 'atividade' && ATIVIDADES_COM_PROJETO.includes(ov.atividade))) {
-        const p = ov.id ? (dados.projects || []).find(x => Number(x.id) === Number(ov.id)) : null;
-        const disponivel = atividades.has('APPLICATION_PREP');
-        return p && disponivel ? { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projetoId: p.id, projetoNomeOrcprev: p.name, estado: 'ok' }
-          : { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projetoId: null, projetoNomeOrcprev: '', estado: 'escolher' };
       }
       if (ov.destino === 'servico') {
         const codigo = ov.atividade || 'CONSULTING';
@@ -171,7 +156,7 @@
       }
       if (ov.destino === 'atividade') {
         const codigo = ov.atividade || '';
-        const valido = atividades.has(codigo) && !comServico.has(codigo) && !ATIVIDADES_COM_PROJETO.includes(codigo);
+        const valido = atividades.has(codigo) && !comServico.has(codigo);
         return { tipo: 'ACTIVITY', atividade: codigo || null, estado: valido ? 'ok' : 'escolher' };
       }
       return null;
@@ -191,13 +176,11 @@
       const manuais = entradas.filter(e => !String(e.note || '').startsWith(MARCA));
 
       const automatico = (l, base) => {
-        if (l.tipo === 'PROJECT' || l.tipo === 'APPLICATION') {
+        if (l.tipo === 'PROJECT') {
           const chave = this.chaveProjeto(l.projeto);
           const m = this.casarProjeto(l.projeto, projetos, memoria, escolhas && escolhas[chave]);
           const proj = m.id ? projetos.find(p => Number(p.id) === Number(m.id)) : null;
-          const semAtividade = l.tipo === 'APPLICATION' && !atividades.has('APPLICATION_PREP');
-          return Object.assign(base, { chave, projetoId: m.id, projetoNomeOrcprev: proj ? proj.name : '', como: m.como, candidatos: m.candidatos,
-            estado: semAtividade ? 'manual' : (m.id ? 'ok' : 'escolher'), motivo: semAtividade ? 'O orcprev não tem a atividade "Preparação de candidaturas".' : undefined });
+          return Object.assign(base, { chave, projetoId: m.id, projetoNomeOrcprev: proj ? proj.name : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
         }
         if (!atividades.has(l.atividade)) return Object.assign(base, { estado: 'manual', motivo: 'Atividade desconhecida no orcprev.' });
         if (l.tipo === 'SERVICE') {
@@ -208,17 +191,14 @@
           const sv = m.id ? servicos.find(x => Number(x.id) === Number(m.id)) : null;
           return Object.assign(base, { chave, chaveEscolha: 's:' + chave, servicoId: m.id, servicoNomeOrcprev: sv ? `${sv.client_name || ''} · ${sv.name || ''}` : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
         }
-        if (ATIVIDADES_COM_PROJETO.includes(l.atividade)) {
-          // ex.: tipo de trabalho "Candidaturas" → o orcprev pede o projeto da candidatura: escolhe-se em "Alterar".
-          return Object.assign(base, { tipo: 'APPLICATION', projetoId: null, projetoNomeOrcprev: '', candidatos: [], estado: 'escolher' });
-        }
         if (comServico.has(l.atividade)) {
           return Object.assign(base, { estado: 'manual', motivo: 'O orcprev pede um serviço nesta atividade — escolhe o destino em "Alterar" ou preenche-a à mão.' });
         }
         return Object.assign(base, { estado: 'ok' });
       };
 
-      const linhas = (pacote.linhas || []).map((l, i) => {
+      const linhas = (pacote.linhas || []).map((lPacote, i) => {
+        const l = lPacote.tipo === 'APPLICATION' ? Object.assign({}, lPacote, { tipo: 'ACTIVITY', projeto: null }) : lPacote;
         const chave = this.chaveProjeto(l.projeto);
         const base = { indice: i, data: l.data, tipo: l.tipo, tipoOriginal: l.tipo, atividade: l.atividade || null, horas: Number(l.horas) || 0, projeto: l.projeto || null,
           tarefas: l.tarefas || null, projetos: l.projetos || null, clientes: l.clientes || null, chave, origem: 'automatico' };
@@ -262,7 +242,7 @@
         week_start: pacote.semana.inicio,
         entries: plano.linhas.filter(l => l.estado === 'ok').map(l => ({
           id: null, work_date: l.data,
-          project_id: l.tipo === 'PROJECT' || l.tipo === 'APPLICATION' ? Number(l.projetoId) : null,
+          project_id: l.tipo === 'PROJECT' ? Number(l.projetoId) : null,
           service_id: l.tipo === 'SERVICE' ? Number(l.servicoId) : null,
           activity_code: l.tipo === 'PROJECT' ? null : l.atividade,
           hours: l.horas, note: l.nota
@@ -277,7 +257,7 @@
       plano.linhas.forEach(l => {
         const ov = edicoes && edicoes[l.indice];
         if (!ov || ov.soAberto || !ov.lembrar || l.estado !== 'ok' || !l.chave) return;
-        mem['d:' + l.chave] = l.tipo === 'PROJECT' ? { t: 'projeto', id: l.projetoId } : l.tipo === 'APPLICATION' ? { t: 'candidatura', id: l.projetoId } : l.tipo === 'SERVICE' ? { t: 'servico', id: l.servicoId, atividade: l.atividade } : { t: 'atividade', atividade: l.atividade };
+        mem['d:' + l.chave] = l.tipo === 'PROJECT' ? { t: 'projeto', id: l.projetoId } : l.tipo === 'SERVICE' ? { t: 'servico', id: l.servicoId, atividade: l.atividade } : { t: 'atividade', atividade: l.atividade };
       });
       return mem;
     }
@@ -396,7 +376,6 @@
     const destinoTexto = l => {
       const linha = (etiqueta, nome) => h('div', { style: 'margin-top:2px;' }, h('span', { style: 'color:#64748b;font-size:12px;' }, 'Vai para → ' + etiqueta + ': '), h('b', { style: 'font-size:14px;' }, nome));
       if (l.tipo === 'PROJECT') return linha('Projeto', l.projetoNomeOrcprev || 'por escolher');
-      if (l.tipo === 'APPLICATION') return linha('Preparação de candidaturas, projeto', l.projetoNomeOrcprev || 'por escolher');
       if (l.tipo === 'SERVICE') return linha(l.atividade === 'PROTOTYPING' ? 'Prototipagem, serviço' : 'Consultoria, serviço', l.servicoNomeOrcprev || 'por escolher');
       return linha('Atividade', l.atividade ? nomeAtividade(l.atividade) : 'por escolher');
     };
@@ -406,7 +385,7 @@
     const editor = l => {
       const i = l.indice;
       const ov = est.edicoes[i] || (est.edicoes[i] = { destino: l.tipo === 'PROJECT' ? 'projeto' : l.tipo === 'SERVICE' ? 'servico' : 'atividade',
-        id: l.tipo === 'PROJECT' || l.tipo === 'APPLICATION' ? l.projetoId : l.tipo === 'SERVICE' ? l.servicoId : null, atividade: l.atividade, lembrar: l.estado !== 'ok' && !!l.chave, soAberto: true });
+        id: l.tipo === 'PROJECT' ? l.projetoId : l.tipo === 'SERVICE' ? l.servicoId : null, atividade: l.atividade, lembrar: l.estado !== 'ok' && !!l.chave, soAberto: true });
       // Depois de mexer, o editor fica aberto até a pessoa o fechar (mesmo que a linha já fique "pronta").
       const mudou = () => { delete ov.soAberto; est.abertos.add(i); redesenhar(); };
       const selDestino = h('select', { style: estilo.sel, onchange: ev => {
@@ -438,11 +417,11 @@
           alvo = [selAt, ' ', selSv];
         }
       } else {
-        // Sublista "Atividade", pela ordem do orcprev. "Preparação de candidaturas" pede ainda o projeto (3.º campo).
+        // Sublista "Atividade", pela ordem do orcprev.
         const selAtividade = h('select', { style: estilo.sel, onchange: ev => { ov.atividade = ev.target.value; ov.id = null; mudou(); } },
           h('option', { value: '' }, 'Escolhe a atividade…'), atividadesEscolhiveis.map(a => h('option', { value: a.code }, a.name)));
         selAtividade.value = ov.atividade || '';
-        alvo = ATIVIDADES_COM_PROJETO.includes(ov.atividade) ? [selAtividade, ' ', seletorProjeto('Escolhe o projeto da candidatura…')] : selAtividade;
+        alvo = selAtividade;
       }
       const campoNota = h('input', { type: 'text', value: typeof ov.nota === 'string' ? ov.nota : l.textoNotaPadrao, maxlength: String(NOTA_MAX - MARCA.length - 1),
         style: 'width:100%;box-sizing:border-box;padding:5px;font:inherit;border:1px solid #cbd5e1;border-radius:6px;', oninput: ev => { ov.nota = ev.target.value; delete ov.soAberto; } });

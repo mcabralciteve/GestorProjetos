@@ -121,14 +121,16 @@ test('cada linha leva tarefas, projetos e clientes — para o importador poder r
   delete projetos.p1.cliente;
 });
 
-test('candidatura: projeto do Gestor que corresponde a "Preparação de candidaturas" do orcprev', () => {
-  assert.deepEqual(L.alvoDe('Candidatura: 005400'), { tipo: 'candidatura', atividade: 'APPLICATION_PREP', valor: '005400' });
-  assert.equal(L.codificarAlvo('candidatura', ' AI FACTORY '), 'candidatura:AI FACTORY');
-  assert.equal(L.tipoDoAlvo('candidatura:X'), 'candidatura');
-  projetos.k1 = { id: 'k1', idInterno: '2026/60', nome: 'Candidatura AI Factory', orcprevRef: 'candidatura:AI FACTORY' };
+test('Preparação de candidaturas: atividade simples, sem projeto no orcprev; o projeto e o cliente vão na nota', () => {
+  assert.deepEqual(L.alvoDe('atividade:APPLICATION_PREP'), { tipo: 'atividade', atividade: 'APPLICATION_PREP', valor: 'APPLICATION_PREP' });
+  assert.equal(L.alvoDe('candidatura: 005400').atividade, 'APPLICATION_PREP'); // forma antiga
+  assert.equal(L.codificarAlvo('candidatura', 'ignorado'), 'atividade:APPLICATION_PREP');
+  assert.equal(L.tipoDoAlvo('atividade:APPLICATION_PREP'), 'candidatura');
+  assert.equal(L.tipoDoAlvo('atividade:OTHER'), 'outras');
+  projetos.k1 = { id: 'k1', idInterno: '2026/60', nome: 'Candidatura AI Factory', cliente: 'Alfa', orcprevRef: 'atividade:APPLICATION_PREP' };
   const s = L.linhasDaSemana(ctx([reg({ projetoId: 'k1', projetoNome: 'Candidatura AI Factory', projetoIdInterno: '2026/60', horas: 3, tarefaNome: 'Formulário' }), reg({ horas: 1 })]));
-  assert.deepEqual(s.linhas.map(l => l.tipo), ['PROJECT', 'APPLICATION']);
-  assert.equal(s.linhas[1].atividade, 'APPLICATION_PREP');
-  assert.deepEqual(s.linhas[1].projeto, { ref: 'AI FACTORY', nome: 'Candidatura AI Factory', idInterno: '2026/60' });
-  assert.equal(s.linhas[1].nota, '[Gestor] Formulário'); // o projeto identifica-se no orcprev: basta o que foi feito
+  assert.deepEqual(s.linhas.map(l => [l.tipo, l.atividade]), [['PROJECT', null], ['ACTIVITY', 'APPLICATION_PREP']]);
+  assert.equal(s.linhas[1].projeto, null);
+  assert.equal(s.linhas[1].nota, '[Gestor] Formulário — Candidatura AI Factory (Alfa)');
+  delete projetos.k1;
 });
