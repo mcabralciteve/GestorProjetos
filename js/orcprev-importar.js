@@ -13,6 +13,8 @@
 //  - QUALQUER linha pode ser reajustada na pré-visualização: enviar como projeto de I&D, serviço (consultoria/
 //    prototipagem) ou atividade (ex.: "Outras atividades"), e editar a nota. A mudança vale só para este envio, a
 //    não ser que se marque "lembrar" (guarda-se neste browser, por projeto do Gestor);
+//  - os reajustes ficam guardados neste browser à medida que se fazem (rascunho): se a sessão do orcprev expirar ou a
+//    página recarregar, ao clicar de novo no marcador recupera-se tudo e continua-se de onde se ficou;
 //  - sem serviços no orcprev, a consultoria vai como atividade (ex.: "Outras atividades") com o projeto e o cliente na nota;
 //  - "Preparação de candidaturas" é uma atividade que leva também um projeto do orcprev (linha do tipo APPLICATION).
 // A lógica pura (sem DOM) está testada em tests/orcprev-importar.test.js.
@@ -309,6 +311,29 @@
   const lerMemoria = () => { try { return JSON.parse(localStorage.getItem(CHAVE_MEMORIA) || '{}') || {}; } catch (e) { return {}; } };
   const gravarMemoria = m => { try { localStorage.setItem(CHAVE_MEMORIA, JSON.stringify(m)); } catch (e) { /* sem armazenamento: só não se lembra */ } };
 
+  const CHAVE_RASCUNHOS = 'gestorOrcprevRascunhos';
+  const lerRascunhos = () => { try { return JSON.parse(localStorage.getItem(CHAVE_RASCUNHOS) || '{}') || {}; } catch (e) { return {}; } };
+  const gravarRascunhos = r => { try { localStorage.setItem(CHAVE_RASCUNHOS, JSON.stringify(r)); } catch (e) { /* sem armazenamento: não há rascunho */ } };
+  const chaveRascunho = pacote => `${String(pacote.email || '').trim().toLowerCase()}|${pacote.semana.inicio}`;
+  const assinaturaLinha = l => `${l.data}|${l.tipo}|${Imp.chaveProjeto(l.projeto)}|${l.atividade || ''}`;
+  // Guarda os reajustes reais (não os editores só abertos). Sem reajustes, não há rascunho.
+  const guardarRascunho = (pacote, est) => {
+    const porLinha = {};
+    (pacote.linhas || []).forEach((l, i) => { const ov = est.edicoes[i]; if (ov && !ov.soAberto) porLinha[assinaturaLinha(l)] = ov; });
+    const todos = lerRascunhos(), k = chaveRascunho(pacote);
+    if (Object.keys(porLinha).length) todos[k] = { pacote, edicoes: porLinha, guardadoEm: Date.now() }; else delete todos[k];
+    gravarRascunhos(todos);
+  };
+  const limparRascunho = pacote => { const todos = lerRascunhos(); delete todos[chaveRascunho(pacote)]; gravarRascunhos(todos); };
+  // Reajustes guardados para esta semana, ligados às linhas atuais do pacote.
+  const edicoesGuardadas = pacote => {
+    const r = lerRascunhos()[chaveRascunho(pacote)];
+    const edicoes = {};
+    if (r) (pacote.linhas || []).forEach((l, i) => { const ov = r.edicoes && r.edicoes[assinaturaLinha(l)]; if (ov) edicoes[i] = ov; });
+    return { edicoes, guardadoEm: r ? r.guardadoEm : null };
+  };
+  const horaDe = ms => new Date(ms).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
   let perfil = 'COLLABORATOR';
   const api = async (caminho, opt) => {
     const r = await fetch('/api' + caminho, Object.assign({ credentials: 'same-origin' }, opt, {
@@ -316,7 +341,11 @@
     }));
     const txt = await r.text();
     let v = null; try { v = txt ? JSON.parse(txt) : null; } catch (e) { /* não é JSON */ }
-    if (!r.ok) throw new Error((v && (v.error || v.message || v.detail)) || ('Erro ' + r.status));
+    if (!r.ok) {
+      const erro = new Error((v && (v.error || v.message || v.detail)) || ('Erro ' + r.status));
+      erro.sessaoExpirada = r.status === 401 || !!(v && v.auth_required);
+      throw erro;
+    }
     return v;
   };
 
@@ -347,7 +376,13 @@
       if (!r.ok) { ecraEntrada(r.erro); return; }
       ecraPrevia(r.pacote);
     };
+    const rascunhos = Object.values(lerRascunhos()).sort((a, b) => b.guardadoEm - a.guardadoEm);
+    const rasc = rascunhos[0];
     moldura('Importar horas do Gestor', [
+      rasc ? h('div', { style: 'margin:0 0 12px;padding:10px 12px;border-radius:8px;background:#eef4ff;border:1px solid #bfd3f5;' },
+        h('div', { style: 'font-weight:700;margin-bottom:6px;' }, `Tens um envio por terminar: semana ${fmtData(rasc.pacote.semana.inicio)} a ${fmtData(rasc.pacote.semana.fim)} · ${rasc.pacote.pessoa || ''}`),
+        h('div', { style: 'color:#475569;margin-bottom:8px;' }, `Os reajustes que fizeste ficaram guardados às ${horaDe(rasc.guardadoEm)}. Não perdes nada: retoma de onde ficaste.`),
+        h('div', { style: 'display:flex;gap:8px;' }, botao('Retomar', () => ecraPrevia(rasc.pacote), true), botao('Descartar', () => { limparRascunho(rasc.pacote); ecraEntrada(); }))) : null,
       h('p', { style: 'margin:0 0 10px;' }, 'No Gestor, em Registo do Dia, abre "Orcprev" e carrega em "Copiar semana". Depois cola aqui.'),
       mensagem ? aviso(mensagem, 'erro') : null, area],
       [botao('Cancelar', fechar), botao('Ler e pré-visualizar', seguir, true)]);
@@ -363,15 +398,25 @@
   // est = { dados, eu, edicoes: {indice: {...}}, abertos: Set(indice) } — guardado entre redesenhos para não voltar a
   // consultar o orcprev a cada alteração.
   async function ecraPrevia(pacote, est) {
-    est = est || { edicoes: {}, abertos: new Set() };
-    if (!est.dados) {
-      moldura('Importar horas do Gestor', h('p', {}, 'A consultar o orcprev…'));
+    if (!est) {
+      const guardadas = edicoesGuardadas(pacote);
+      est = { edicoes: guardadas.edicoes, abertos: new Set(), recuperadas: Object.keys(guardadas.edicoes).length, guardadoEm: guardadas.guardadoEm };
+    }
+    if (!est.dados || est.recarregar) {
+      if (!est.dados) moldura('Importar horas do Gestor', h('p', {}, 'A consultar o orcprev…'));
       try {
-        est.eu = await api('/auth/me');
-        if (est.eu && est.eu.profiles && est.eu.profiles[0] && est.eu.profiles[0].code) perfil = est.eu.profiles[0].code;
+        const eu = await api('/auth/me');
+        if (eu && eu.authenticated === false) { const e = new Error('Sessão não iniciada'); e.sessaoExpirada = true; throw e; }
+        if (eu && eu.profiles && eu.profiles[0] && eu.profiles[0].code) perfil = eu.profiles[0].code;
         est.dados = await api('/timesheet?week_start=' + encodeURIComponent(pacote.semana.inicio));
-        est.lidoEm = new Date();
-      } catch (e) { moldura('Importar horas do Gestor', aviso('Não consegui falar com o orcprev: ' + e.message + '. Confirma que a sessão está iniciada.', 'erro'), [botao('Fechar', fechar)]); return; }
+        est.eu = eu; est.lidoEm = new Date(); est.erroAtualizar = null;
+      } catch (e) {
+        const msg = e.sessaoExpirada
+          ? 'A sessão do orcprev expirou (ou ainda não está iniciada). Entra no orcprev (nesta página ou noutro separador) e carrega em "Tentar de novo". Os teus reajustes estão guardados.'
+          : 'Não consegui falar com o orcprev: ' + e.message + '.';
+        if (est.dados) est.erroAtualizar = msg; // já tinha dados: mantém-se o ecrã e avisa-se por cima
+        else { moldura('Importar horas do Gestor', aviso(msg, 'erro'), [botao('Fechar', fechar), botao('Tentar de novo', () => ecraPrevia(pacote, est), true)]); return; }
+      } finally { est.recarregar = false; }
     }
     const { dados, eu } = est;
     const scrollAntes = (document.getElementById('gestor-orcprev-corpo') || {}).scrollTop || 0;
@@ -386,7 +431,7 @@
     const calcular = () => Imp.planear({ pacote, dados, memoria, edicoes: est.edicoes });
     const plano = calcular();
     const nok = plano.linhas.filter(l => l.estado === 'ok').length;
-    const redesenhar = () => ecraPrevia(pacote, est);
+    const redesenhar = () => { guardarRascunho(pacote, est); ecraPrevia(pacote, est); };
 
     const projetosOrdenados = (dados.projects || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt'));
     const servicosAtivos = (dados.services || []).filter(x => Number(x.active) !== 0);
@@ -454,9 +499,9 @@
         alvo = ATIVIDADES_COM_PROJETO.includes(ov.atividade) ? [selAtividade, ' ', seletorProjeto('Escolhe a candidatura…', true)] : selAtividade;
       }
       const campoNota = h('input', { type: 'text', value: typeof ov.nota === 'string' ? ov.nota : l.textoNotaPadrao, maxlength: String(NOTA_MAX - MARCA.length - 1),
-        style: 'width:100%;box-sizing:border-box;padding:5px;font:inherit;border:1px solid #cbd5e1;border-radius:6px;', oninput: ev => { ov.nota = ev.target.value; delete ov.soAberto; } });
+        style: 'width:100%;box-sizing:border-box;padding:5px;font:inherit;border:1px solid #cbd5e1;border-radius:6px;', oninput: ev => { ov.nota = ev.target.value; delete ov.soAberto; guardarRascunho(pacote, est); } });
       const lembrar = l.chave ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px;color:#475569;' },
-        h('input', { type: 'checkbox', onchange: ev => { ov.lembrar = ev.target.checked; } }), `Lembrar este destino para "${l.projeto && l.projeto.nome || l.chave}" (neste browser)`) : null;
+        h('input', { type: 'checkbox', onchange: ev => { ov.lembrar = ev.target.checked; guardarRascunho(pacote, est); } }), `Lembrar este destino para "${l.projeto && l.projeto.nome || l.chave}" (neste browser)`) : null;
       if (lembrar) lembrar.firstChild.checked = !!ov.lembrar;
       return h('div', { style: 'display:grid;gap:8px;' },
         h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;' }, h('span', { style: 'min-width:92px;color:#475569;' }, 'Enviar como'), selDestino, alvo),
@@ -505,8 +550,10 @@
       h('div', { style: 'margin-bottom:6px;' }, h('b', {}, `Semana ${fmtData(pacote.semana.inicio)} a ${fmtData(pacote.semana.fim)}`), ` · ${pacote.pessoa || ''}`),
       h('div', { style: 'color:#64748b;font-size:12px;margin-bottom:2px;' }, `Projetos, serviços e atividades lidos agora do orcprev (${est.lidoEm ? est.lidoEm.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : ''}) · `,
         h('button', { type: 'button', title: 'Voltar a ler do orcprev (por exemplo, depois de criares uma candidatura nova lá). Os reajustes que fizeste mantêm-se.',
-          style: 'background:none;border:0;color:#0f2a4a;text-decoration:underline;cursor:pointer;font:inherit;padding:0;', onclick: () => { est.dados = null; redesenhar(); } }, '↻ atualizar')),
+          style: 'background:none;border:0;color:#0f2a4a;text-decoration:underline;cursor:pointer;font:inherit;padding:0;', onclick: () => { est.recarregar = true; redesenhar(); } }, '↻ atualizar')),
       h('div', { style: 'color:#475569;' }, `${fmtH(plano.totalEnviar)} a enviar${plano.totalPendente ? ` · ${fmtH(plano.totalPendente)} ficam por enviar` : ''}${plano.apagar.length ? ` · substitui ${fmtH(plano.horasMarcadasAnteriores)} enviadas antes pelo Gestor` : ''}`),
+      est.erroAtualizar ? aviso(est.erroAtualizar, 'erro') : null,
+      est.recuperadas ? aviso(`Recuperei ${est.recuperadas} reajuste(s) que tinhas feito${est.guardadoEm ? ' (guardados às ' + horaDe(est.guardadoEm) + ')' : ''}. Confirma e continua.`, 'ok') : null,
       bloqueios.map(b => aviso(b, 'erro')),
       (pacote.avisos || []).map(a => aviso(a)),
       diasComConflito.length ? aviso(`Nestes dias já tens horas lançadas à mão no orcprev (não vou mexer nelas): ${diasComConflito.map(d => `${diaSemana(d.data)} ${fmtData(d.data)} (${fmtH(d.manual)})`).join(', ')}. Confirma que não ficam duplicadas.`) : null,
@@ -521,12 +568,17 @@
         const corpoPedido = Imp.corpoGravacao(planoFinal, dados, pacote);
         const r = await api('/timesheet-bulk-save', { method: 'POST', body: JSON.stringify(corpoPedido) });
         gravarMemoria(Imp.memorizar(lerMemoria(), planoFinal, est.edicoes));
+        limparRascunho(pacote);
         moldura('Importar horas do Gestor',
           [aviso(`Gravado no orcprev: ${r && r.inserted != null ? r.inserted : corpoPedido.entries.length} linha(s) novas${r && r.deleted ? `, ${r.deleted} substituídas` : ''}.`, 'ok'),
             planoFinal.totalPendente ? aviso(`${fmtH(planoFinal.totalPendente)} ficaram por enviar — preenche-as à mão no orcprev.`) : null],
           [botao('Fechar', fechar), botao('Recarregar o orcprev', () => location.reload(), true)]);
       } catch (e) {
-        moldura('Importar horas do Gestor', aviso('O orcprev não gravou: ' + e.message + '. Nada foi alterado por mim além disto.', 'erro'), [botao('Voltar', () => ecraPrevia(pacote, est)), botao('Fechar', fechar)]);
+        guardarRascunho(pacote, est);
+        const msg = e.sessaoExpirada
+          ? 'A sessão do orcprev expirou antes de gravar — nada foi gravado. Entra de novo no orcprev (nesta página ou noutro separador) e carrega em "Tentar de novo". Os teus reajustes estão guardados.'
+          : 'O orcprev não gravou: ' + e.message + '. Nada foi alterado por mim além disto. Os teus reajustes estão guardados.';
+        moldura('Importar horas do Gestor', aviso(msg, 'erro'), [botao('Voltar', () => ecraPrevia(pacote, est)), botao('Fechar', fechar), botao('Tentar de novo', enviar, true)]);
       }
     };
     moldura('Importar horas do Gestor', corpo, [
