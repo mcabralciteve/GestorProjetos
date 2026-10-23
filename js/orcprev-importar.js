@@ -389,10 +389,11 @@
 
     // O destino atual de uma linha, em texto.
     const destinoTexto = l => {
-      if (l.tipo === 'PROJECT') return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Projeto'), h('b', {}, l.projetoNomeOrcprev || 'por escolher')];
-      if (l.tipo === 'APPLICATION') return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Preparação de candidaturas · projeto'), h('b', {}, l.projetoNomeOrcprev || 'por escolher')];
-      if (l.tipo === 'SERVICE') return [h('div', { style: 'color:#64748b;font-size:12px;' }, l.atividade === 'PROTOTYPING' ? 'Serviço · Prototipagem' : 'Serviço · Consultoria'), h('b', {}, l.servicoNomeOrcprev || 'por escolher')];
-      return [h('div', { style: 'color:#64748b;font-size:12px;' }, 'Atividade'), h('b', {}, l.atividade ? nomeAtividade(l.atividade) : 'por escolher')];
+      const linha = (etiqueta, nome) => h('div', { style: 'margin-top:2px;' }, h('span', { style: 'color:#64748b;font-size:12px;' }, 'Vai para → ' + etiqueta + ': '), h('b', { style: 'font-size:14px;' }, nome));
+      if (l.tipo === 'PROJECT') return linha('Projeto', l.projetoNomeOrcprev || 'por escolher');
+      if (l.tipo === 'APPLICATION') return linha('Preparação de candidaturas, projeto', l.projetoNomeOrcprev || 'por escolher');
+      if (l.tipo === 'SERVICE') return linha(l.atividade === 'PROTOTYPING' ? 'Prototipagem, serviço' : 'Consultoria, serviço', l.servicoNomeOrcprev || 'por escolher');
+      return linha('Atividade', l.atividade ? nomeAtividade(l.atividade) : 'por escolher');
     };
     const origemTexto = l => l.projeto && l.projeto.nome ? l.projeto.nome : (l.tipoOriginal === 'ACTIVITY' ? 'Tipo de trabalho' : '');
 
@@ -438,7 +439,7 @@
       const lembrar = l.chave ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px;color:#475569;' },
         h('input', { type: 'checkbox', onchange: ev => { ov.lembrar = ev.target.checked; } }), `Lembrar este destino para "${l.projeto && l.projeto.nome || l.chave}" (neste browser)`) : null;
       if (lembrar) lembrar.firstChild.checked = !!ov.lembrar;
-      return h('div', { style: 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;display:grid;gap:8px;' },
+      return h('div', { style: 'display:grid;gap:8px;' },
         h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;' }, h('span', { style: 'min-width:92px;color:#475569;' }, 'Enviar como'), selDestino, alvo),
         h('div', { style: 'display:flex;gap:8px;align-items:center;' }, h('span', { style: 'min-width:92px;color:#475569;' }, `Nota ${MARCA}`), campoNota),
         h('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap;' }, lembrar,
@@ -446,26 +447,38 @@
           h('button', { type: 'button', style: 'background:none;border:0;color:#0f2a4a;text-decoration:underline;cursor:pointer;font:inherit;', onclick: () => { est.abertos.delete(i); redesenhar(); } }, 'Fechar')));
     };
 
-    const linhasTabela = [];
+    // Cada linha é um cartão; o que se edita fica DENTRO do cartão (destacado), com o dia, as horas e a origem no cabeçalho.
+    const cartoes = [];
+    let diaAtual = '';
     plano.linhas.forEach(l => {
-      const aberto = est.abertos.has(l.indice) || (l.estado !== 'ok' && !(est.edicoes[l.indice] && !est.edicoes[l.indice].soAberto));
+      if (l.data !== diaAtual) {
+        diaAtual = l.data;
+        const totalDia = plano.linhas.filter(x => x.data === l.data).reduce((soma, x) => soma + x.horas, 0);
+        cartoes.push(h('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;margin:16px 0 6px;padding-bottom:3px;border-bottom:2px solid #cbd5e1;font-weight:700;color:#0f2a4a;' },
+          `${diaSemana(l.data)} ${fmtData(l.data)}`, h('span', { style: 'font-weight:400;color:#64748b;' }, fmtH(totalDia) + ' no dia')));
+      }
+      const pendente = l.estado !== 'ok';
+      const jaEditou = !!(est.edicoes[l.indice] && !est.edicoes[l.indice].soAberto);
+      const aberto = est.abertos.has(l.indice) || (pendente && !jaEditou);
+      const corLateral = aberto ? '#0f2a4a' : pendente ? '#d97706' : '#16a34a';
       const estado = l.estado === 'ok'
-        ? h('span', { style: 'color:#166534;' }, l.origem === 'editado' ? '✓ alterado' : l.origem === 'memorizado' ? '✓ lembrado' : '✓ pronto')
-        : h('span', { style: 'color:#92400e;' }, l.estado === 'escolher' ? 'Escolhe o destino' : (l.motivo || 'Preencher à mão'));
-      linhasTabela.push(h('tr', {},
-        h('td', { style: estilo.td + 'white-space:nowrap;' }, `${diaSemana(l.data)} ${fmtData(l.data)}`),
-        h('td', { style: estilo.td }, h('div', { style: 'color:#64748b;font-size:12px;' }, 'Gestor: ' + (origemTexto(l) || '—')), destinoTexto(l)),
-        h('td', { style: estilo.td + 'white-space:nowrap;' }, fmtH(l.horas)),
-        h('td', { style: estilo.td }, estado),
-        h('td', { style: estilo.td }, h('button', { type: 'button', title: 'Mudar o destino ou a nota desta linha', style: 'padding:3px 9px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font:inherit;',
-          onclick: () => { if (est.abertos.has(l.indice)) est.abertos.delete(l.indice); else est.abertos.add(l.indice); redesenhar(); } }, aberto ? 'Fechar' : 'Alterar'))));
-      if (aberto) linhasTabela.push(h('tr', {}, h('td', { colspan: '5', style: 'padding:4px 6px 10px;border-bottom:1px solid #f1f5f9;' }, editor(l))));
-      else linhasTabela.push(h('tr', {}, h('td', { colspan: '5', style: 'padding:0 6px 6px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:12px;' }, 'Nota: ' + l.nota)));
+        ? h('div', { style: 'color:#166534;' }, l.origem === 'editado' ? '✓ alterado' : l.origem === 'memorizado' ? '✓ lembrado' : '✓ pronto')
+        : h('div', { style: 'color:#92400e;' }, l.estado === 'escolher' ? '⚠ escolhe o destino' : (l.motivo || 'Preencher à mão'));
+      const botaoAlterar = h('button', { type: 'button', title: 'Mudar o destino ou a nota desta linha',
+        style: `margin-top:4px;padding:3px 10px;border:1px solid #0f2a4a;border-radius:6px;background:${aberto ? '#0f2a4a' : '#fff'};color:${aberto ? '#fff' : '#0f2a4a'};cursor:pointer;font:inherit;`,
+        onclick: () => { if (est.abertos.has(l.indice)) est.abertos.delete(l.indice); else est.abertos.add(l.indice); redesenhar(); } }, aberto ? 'Fechar' : 'Alterar');
+      cartoes.push(h('div', { style: `border:1px solid ${aberto ? '#0f2a4a' : '#e2e8f0'};border-left:6px solid ${corLateral};border-radius:8px;padding:10px 12px;margin:0 0 8px;background:${aberto ? '#eef4ff' : '#fff'};${aberto ? 'box-shadow:0 0 0 2px #bfd3f5;' : ''}` },
+        h('div', { style: 'display:flex;gap:12px;align-items:flex-start;justify-content:space-between;' },
+          h('div', { style: 'flex:1;min-width:0;' },
+            h('div', { style: 'color:#64748b;font-size:12px;' }, 'Vem do Gestor: ' + (origemTexto(l) || '—')),
+            destinoTexto(l)),
+          h('div', { style: 'text-align:right;white-space:nowrap;' }, h('div', { style: 'font-size:16px;font-weight:700;' }, fmtH(l.horas)), estado, botaoAlterar)),
+        h('div', { style: 'margin-top:6px;color:#64748b;font-size:12px;' }, 'Nota: ' + l.nota),
+        aberto ? h('div', { style: 'margin-top:10px;border-top:1px dashed #94a3b8;padding-top:10px;' },
+          h('div', { style: 'font-weight:700;color:#0f2a4a;margin-bottom:8px;' }, `${pendente && !jaEditou ? '⚠ Escolhe o destino desta linha' : '✎ A editar esta linha'}: ${diaSemana(l.data)} ${fmtData(l.data)} · ${fmtH(l.horas)} · ${origemTexto(l) || 'Gestor'}`),
+          editor(l)) : null));
     });
-
-    const tabela = h('table', { style: 'border-collapse:collapse;width:100%;font-size:13px;' },
-      h('thead', {}, h('tr', {}, ['Dia', 'Destino no orcprev', 'Horas', 'Estado', ''].map(t => h('th', { style: 'text-align:left;padding:5px 6px;border-bottom:2px solid #e2e8f0;' }, t)))),
-      h('tbody', {}, linhasTabela));
+    const lista = h('div', {}, cartoes);
 
     const diasComConflito = plano.dias.filter(d => d.manual > 0 && d.enviar > 0);
     const pendentes = plano.linhas.filter(l => l.estado !== 'ok').length;
@@ -476,7 +489,7 @@
       (pacote.avisos || []).map(a => aviso(a)),
       diasComConflito.length ? aviso(`Nestes dias já tens horas lançadas à mão no orcprev (não vou mexer nelas): ${diasComConflito.map(d => `${diaSemana(d.data)} ${fmtData(d.data)} (${fmtH(d.manual)})`).join(', ')}. Confirma que não ficam duplicadas.`) : null,
       h('div', { style: 'color:#64748b;margin:6px 0;' }, 'Podes mudar qualquer linha em "Alterar": enviar como projeto, serviço ou atividade (ex.: Outras atividades) e editar a nota. Só vale para este envio, a menos que marques "Lembrar".'),
-      plano.linhas.length ? tabela : aviso('O pacote não tem linhas para enviar.'),
+      plano.linhas.length ? lista : aviso('O pacote não tem linhas para enviar.'),
       pendentes ? aviso('As linhas por escolher não são enviadas, a menos que escolhas o destino.') : null
     ];
     const enviar = async () => {
