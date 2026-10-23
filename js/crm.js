@@ -1363,6 +1363,8 @@ const Crm = {
             <input type="text" class="crm-funil-nome" data-funil="tipos" data-id="${escapeAttr(t.id)}" data-campo="nome" value="${escapeAttr(t.nome)}">
             <label class="zoom-label" style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" data-funil="tipos" data-id="${escapeAttr(t.id)}" data-campo="ativo"${t.ativo !== false ? ' checked' : ''}> Ativo</label>
             <span class="hint">${usos('oportunidades', 'tipo_id', t.id)} oportunidades</span>
+            <button type="button" class="btn btn-sm btn-danger" data-crm-acao="funil-apagar-tipo" data-id="${escapeAttr(t.id)}" style="margin-left:auto;"${usos('oportunidades', 'tipo_id', t.id) || tipos.length < 2 ? ' disabled' : ''}
+              title="${usos('oportunidades', 'tipo_id', t.id) ? 'Tem oportunidades — desativa em vez de eliminar.' : (tipos.length < 2 ? 'É o único tipo.' : 'Eliminar este tipo, com as suas etapas e motivos de perda.')}">🗑 Eliminar tipo</button>
           </div>
           ${semMotivo ? '<p class="crm-atrasada" style="margin:4px 0;">⚠ Este tipo tem uma etapa "perdida" mas nenhum motivo de perda ativo.</p>' : ''}
           ${this.htmlDefeitosPrevisao(t)}
@@ -1424,6 +1426,17 @@ const Crm = {
         await this.gravar('etapas', { id: null, tipo_id: t.id, nome: 'Ganha', probabilidade: 100, categoria: 'ganha', ordem: 1, ativo: true });
         await this.gravar('etapas', { id: null, tipo_id: t.id, nome: 'Perdida', probabilidade: 0, categoria: 'perdida', ordem: 2, ativo: true });
         await this.gravar('motivos', { id: null, tipo_id: t.id, nome: 'Outro', ordem: 0, ativo: true });
+      } else if (nome === 'funil-apagar-tipo') {
+        // Só um tipo sem nenhuma oportunidade (as etapas e os motivos vão com ele). Com oportunidades, desativa-se.
+        const id = el.dataset.id, t = this.idx.tipo.get(id);
+        if (!t) return;
+        const emUso = this.d.oportunidades.filter(o => o.tipo_id === id).length;
+        if (emUso) { App.toast(`"${t.nome}" tem ${emUso} oportunidade(s) — desativa em vez de eliminar.`); return; }
+        if (this.d.tipos.length < 2) { App.toast('Tem de existir pelo menos um tipo de oportunidade.'); return; }
+        if (!confirm(`Eliminar o tipo "${t.nome}", com as suas etapas e motivos de perda? Não se pode desfazer.`)) return;
+        for (const e of this.d.etapas.filter(x => x.tipo_id === id)) await this.apagar('etapas', e.id);
+        for (const m of this.d.motivos.filter(x => x.tipo_id === id)) await this.apagar('motivos', m.id);
+        await this.apagar('tipos', id);
       } else if (nome === 'funil-novo') {
         const tipoId = el.dataset.tipo;
         const ordem = this.d[chave].filter(x => x.tipo_id === tipoId).reduce((m, x) => Math.max(m, x.ordem || 0), -1) + 1;
