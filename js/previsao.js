@@ -78,7 +78,7 @@ const Previsao = {
   // ganhas SEM projeto ligado (100%, assinaladas). Ganhas com projeto contam só através do projeto; perdidas ficam de fora.
   // Valor = valor da proposta vigente (reflexo dos orçamentos) se existir, senão o valor estimado.
   oportunidades(hojeISO, meses) {
-    const vazio = { linhas: [], defeitos: [], ganhasSemProjeto: [], semValor: [], planoIncompleto: [], estado: 'ok' };
+    const vazio = { linhas: [], defeitos: [], semFecho: [], ganhasSemProjeto: [], semValor: [], planoIncompleto: [], estado: 'ok' };
     if (this.filtros.cenario === 'contratado') return Object.assign(vazio, { estado: 'desligado' });
     if (!Crm.podeVer()) return Object.assign(vazio, { estado: 'sem-acesso' });
     if (!Crm.carregado) return Object.assign(vazio, { estado: Crm.erroCarga ? 'erro' : 'a-carregar' });
@@ -115,7 +115,10 @@ const Previsao = {
       };
       out.linhas.push(linha);
       if (cat === 'ganha') out.ganhasSemProjeto.push(linha);
-      if (ini.origem !== 'definido' || !op.duracao_meses) out.defeitos.push(linha);
+      // Sem início previsto não é problema: começa N meses depois do fecho (defeito do tipo). Só falta informação quando não há
+      // duração, ou quando não há sequer data prevista de fecho de onde partir.
+      if (!op.duracao_meses) out.defeitos.push(linha);
+      if (ini.origem === 'sem-fecho') out.semFecho.push(linha);
       if (r.temPlano && Math.abs(r.planoSoma - 100) > 0.01) out.planoIncompleto.push(linha);
     });
     return out;
@@ -195,7 +198,8 @@ const Previsao = {
     if (opsTodas.estado === 'erro') avisos.push('Não consegui ler o CRM — o mapa mostra só o contratado.');
     if (opsTodas.estado === 'sem-acesso') avisos.push('Sem acesso ao CRM — o mapa mostra só o contratado.');
     if (Crm.carregado && Crm.temPrevisao === false) avisos.push('Os campos de previsão das oportunidades ainda não existem na base de dados (corre <b>supabase/previsao_oportunidades.sql</b>): as oportunidades usam só os defeitos por tipo.');
-    if (comOps && opsTodas.defeitos.length) avisos.push(`${opsTodas.defeitos.length} oportunidade(s) usam o início e/ou a duração <b>por defeito</b> do tipo — abre-as e preenche "Previsão de execução" para o mapa ficar mais fiel: ${nomes(opsTodas.defeitos, 5)}.`);
+    if (comOps && opsTodas.defeitos.length) avisos.push(`${opsTodas.defeitos.length} oportunidade(s) sem <b>duração</b> definida usam a duração por defeito do tipo — abre-as e preenche "Previsão de execução" para o mapa ficar mais fiel: ${nomes(opsTodas.defeitos, 5)}.`);
+    if (comOps && opsTodas.semFecho.length) avisos.push(`${opsTodas.semFecho.length} oportunidade(s) sem <b>data prevista de fecho</b> (nem início previsto) contam a partir do mês seguinte: ${nomes(opsTodas.semFecho, 5)}.`);
     if (comOps && opsTodas.ganhasSemProjeto.length) avisos.push(`${opsTodas.ganhasSemProjeto.length} oportunidade(s) <b>ganhas ainda sem projeto</b> contam a 100%: ${nomes(opsTodas.ganhasSemProjeto, 4)}.`);
     if (comOps && opsTodas.semValor.length) avisos.push(`${opsTodas.semValor.length} oportunidade(s) abertas sem valor (nem proposta com orçamento) não entram: ${nomes(opsTodas.semValor, 4)}.`);
     if (comOps && opsTodas.planoIncompleto.length) avisos.push(`${opsTodas.planoIncompleto.length} oportunidade(s) com plano de faturas que não soma 100%: ${nomes(opsTodas.planoIncompleto, 4)}.`);
@@ -250,7 +254,7 @@ const Previsao = {
       const ab = this.expandidas.has(l.id);
       const pressup = this.pressupostos(l, cob);
       const valorCol = op ? l.valorPonderado : (rec ? (l.rec ? l.rec.porReconhecer : 0) : l.fat.total);
-      const marca = op ? (l.inicioOrigem !== 'definido' || !l.duracaoDefinida ? ' <span class="prev-tag p">defeito</span>' : '') : (l.suspenso ? ' <span class="prev-tag">suspenso</span>' : '') + (l.semFaturacao ? ' <span class="prev-tag">sem faturação</span>' : '');
+      const marca = op ? (!l.duracaoDefinida || l.inicioOrigem === 'sem-fecho' ? ' <span class="prev-tag p">defeito</span>' : '') : (l.suspenso ? ' <span class="prev-tag">suspenso</span>' : '') + (l.semFaturacao ? ' <span class="prev-tag">sem faturação</span>' : '');
       return `<tr class="item" data-prev-linha="${escapeAttr(l.id)}"><td>${op ? '🎯 ' : '🔒 '}${escapeHtml(l.nome)}${marca}</td><td>${escapeHtml(l.tipo)}</td><td>${escapeHtml(l.equipa)}</td>
         ${comOps ? `<td>${op ? Math.round(l.peso * 100) + '%' : '100%'}</td>` : ''}<td>${this.k(valorCol)}</td>${rec ? `<td class="${cob !== null && cob < 80 ? 'neg' : ''}">${cob === null ? '–' : cob + '%'}</td>` : ''}${cel}<td><b>${this.k(PrevisaoLogica.total(s, meses))}</b></td></tr>
         <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${nm + 4 + (comOps ? 1 : 0) + (rec ? 1 : 0)}">${pressup}</td></tr>`;
@@ -264,7 +268,7 @@ const Previsao = {
       let pressup;
       if (op) {
         const dataFim = PrevisaoLogica.addMeses(l.inicio, l.duracao - 1);
-        pressup = `${escapeHtml(l.etapa)}${l.categoria === 'ganha' ? ' (ganha, sem projeto)' : ''} · valor ${this.eur(l.valor)} × ${Math.round(l.peso * 100)}% = ${this.eur(l.valorPonderado)} · trabalho de ${this.rotuloMes(l.inicio)}/${l.inicio.slice(0, 4)} a ${this.rotuloMes(dataFim)}/${dataFim.slice(0, 4)} (${l.duracao} meses)${l.inicioOrigem !== 'definido' || !l.duracaoDefinida ? ' — valores por defeito' : ''} · ${l.temPlano ? 'plano de faturas: ' + l.plano.map(p => p.pct + '% em ' + this.rotuloMes(p.mes) + '/' + p.mes.slice(0, 4)).join(', ') : 'sem plano de faturas: a faturação acompanha o trabalho, com ${l.atrasoFat} mês(es) de atraso'}. <a href="#" data-prev-op="${escapeAttr(l.id)}">Abrir oportunidade</a>`;
+        pressup = `${escapeHtml(l.etapa)}${l.categoria === 'ganha' ? ' (ganha, sem projeto)' : ''} · valor ${this.eur(l.valor)} × ${Math.round(l.peso * 100)}% = ${this.eur(l.valorPonderado)} · trabalho de ${this.rotuloMes(l.inicio)}/${l.inicio.slice(0, 4)} a ${this.rotuloMes(dataFim)}/${dataFim.slice(0, 4)} (${l.duracao} meses)${!l.duracaoDefinida ? ' — duração por defeito do tipo' : ''}${l.inicioOrigem === 'sem-fecho' ? ' — sem data de fecho: começa no mês seguinte' : ''} · ${l.temPlano ? 'plano de faturas: ' + l.plano.map(p => p.pct + '% em ' + this.rotuloMes(p.mes) + '/' + p.mes.slice(0, 4)).join(', ') : `sem plano de faturas: a faturação acompanha o trabalho, com ${l.atrasoFat} mês(es) de atraso`}. <a href="#" data-prev-op="${escapeAttr(l.id)}">Abrir oportunidade</a>`;
       } else {
         pressup = l.rec
           ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}.`

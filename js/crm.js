@@ -534,7 +534,7 @@ const Crm = {
     const def = this.defeitosDoTipo(op.tipo_id);
     const ini = PrevisaoLogica.inicioDaOportunidade({ inicioPrevisto: op.inicio_previsto, dataFecho: op.data_prevista_fecho, aposFecho: def.apos, hojeISO: this.hoje() });
     const duracao = op.duracao_meses || def.duracao;
-    return { inicioMes: ini.mes, duracao, definido: ini.origem === 'definido' && !!op.duracao_meses, equipaId: op.equipa_id || null, plano: this.planoFaturasDaOp(op.id) };
+    return { inicioMes: ini.mes, duracao, definido: !!op.duracao_meses && ini.origem !== 'sem-fecho', equipaId: op.equipa_id || null, plano: this.planoFaturasDaOp(op.id) };
   },
   nomeProjetoDaOp(op) {
     const p = op.projeto_id && App.state.projetos[op.projeto_id];
