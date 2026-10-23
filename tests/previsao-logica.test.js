@@ -80,3 +80,13 @@ test('somar, acumular e total de séries mensais', () => {
   assert.deepEqual(P.acumular(s, meses), { '2026-10': 11, '2026-11': 13, '2026-12': 18, '2027-01': 18 });
   assert.equal(P.total(s, meses), 18);
 });
+
+test('tipo do projeto: o definido no projeto manda; senão o do CRM pelo nome; senão sem tipo', () => {
+  assert.deepEqual(P.tipoDeProjeto({ tipoProjeto: 'servicos', tipoCrmNome: 'Projetos de I&D' }), { codigo: 'servicos', rotulo: 'Serviços', origem: 'projeto' });
+  assert.deepEqual(P.tipoDeProjeto({ tipoProjeto: 'id' }), { codigo: 'id', rotulo: 'I&D', origem: 'projeto' });
+  assert.deepEqual(P.tipoDeProjeto({ tipoProjeto: '', tipoCrmNome: 'Projetos de I&D' }), { codigo: 'id', rotulo: 'I&D', origem: 'crm' });
+  assert.deepEqual(P.tipoDeProjeto({ tipoCrmNome: 'Serviços' }), { codigo: 'servicos', rotulo: 'Serviços', origem: 'crm' });
+  assert.deepEqual(P.tipoDeProjeto({ tipoCrmNome: 'Formação' }), { codigo: '', rotulo: 'Formação', origem: 'crm' });
+  assert.deepEqual(P.tipoDeProjeto({ tipoProjeto: 'xpto' }), { codigo: '', rotulo: 'Sem tipo', origem: 'nenhuma' });
+  assert.deepEqual(P.tipoDeProjeto({}), { codigo: '', rotulo: 'Sem tipo', origem: 'nenhuma' });
+});

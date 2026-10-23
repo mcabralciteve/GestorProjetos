@@ -11,6 +11,20 @@ const PrevisaoLogica = {
   _iso(dt) { return dt.toISOString().slice(0, 10); },
   r2(n) { return Math.round(n * 100) / 100; },
 
+  TIPOS_PROJETO: { servicos: 'Serviços', id: 'I&D' },
+  // Tipo efetivo de um projeto: o que está definido no próprio projeto; senão o do tipo da oportunidade ligada no CRM (pelo
+  // nome: "…I&D…" → I&D, "…Serviços…" → Serviços); senão "Sem tipo". "origem" diz de onde veio (para pedir a classificação).
+  tipoDeProjeto({ tipoProjeto, tipoCrmNome }) {
+    if (tipoProjeto && this.TIPOS_PROJETO[tipoProjeto]) return { codigo: tipoProjeto, rotulo: this.TIPOS_PROJETO[tipoProjeto], origem: 'projeto' };
+    const n = String(tipoCrmNome || '').trim();
+    if (n) {
+      if (/i\s*&\s*d|investiga/i.test(n)) return { codigo: 'id', rotulo: this.TIPOS_PROJETO.id, origem: 'crm' };
+      if (/servi/i.test(n)) return { codigo: 'servicos', rotulo: this.TIPOS_PROJETO.servicos, origem: 'crm' };
+      return { codigo: '', rotulo: n, origem: 'crm' };
+    }
+    return { codigo: '', rotulo: 'Sem tipo', origem: 'nenhuma' };
+  },
+
   // 'AAAA-MM' do mês de "hojeISO" e dos n-1 seguintes.
   mesesHorizonte(hojeISO, n) {
     const out = [];

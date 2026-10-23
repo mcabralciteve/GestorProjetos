@@ -168,6 +168,14 @@
           <select id="projTipoRef"><option value="giaf">GIAF</option><option value="interno">Interno (INT-AAAA-NNN)</option></select>
         </label>
         <div class="row-2">
+          <label><span class="rotulo-campo">Tipo de projeto <span class="nota">(para a Previsão)</span></span>
+            <select id="projTipoProjeto"><option value="">Por classificar</option><option value="servicos">Serviços</option><option value="id">I&amp;D</option></select>
+          </label>
+          <label class="check-ativo-projeto" style="align-self:end;padding-bottom:6px;" title="Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista">
+            <input type="checkbox" id="projSemFaturacao"> Sem faturação ao cliente
+          </label>
+        </div>
+        <div class="row-2">
           <label>Referência
             <input type="text" id="projIdInterno" placeholder="ex.: 2026/384" autocomplete="new-password" spellcheck="false" readonly>
           </label>
@@ -202,7 +210,7 @@
           <label>Horas vendidas
             <input type="number" min="0" id="projHorasVendidas" placeholder="0">
           </label>
-          <label>Valor vendido (€)
+          <label><span class="rotulo-campo">Valor vendido (€) <span class="nota">(I&amp;D: financiamento aprovado)</span></span>
             <input type="number" min="0" id="projValorVendido" placeholder="0">
           </label>
         </div>
@@ -1293,27 +1301,27 @@
 <script src="lib/jszip.min.js"></script>
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
-<script src="js/sync.js?v=20261019b"></script>
+<script src="js/sync.js?v=20261026a"></script>
 <script src="js/gantt.js?v=20260928c"></script>
 <script src="js/capacidade.js?v=20261002b"></script>
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
-<script src="js/backup.js?v=20261019a"></script>
+<script src="js/backup.js?v=20261026a"></script>
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009d"></script>
-<script src="js/crm.js?v=20261019a"></script>
+<script src="js/crm.js?v=20261026a"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
-<script src="js/previsao-logica.js?v=20261023a"></script>
-<script src="js/previsao.js?v=20261023a"></script>
+<script src="js/previsao-logica.js?v=20261026a"></script>
+<script src="js/previsao.js?v=20261026a"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261020a"></script>
-<script src="js/app.js?v=20261023b"></script>
+<script src="js/app.js?v=20261026a"></script>
 </body>
 </html>

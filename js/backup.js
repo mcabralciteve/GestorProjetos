@@ -58,6 +58,7 @@ const Backup = {
       data_inicio: p.dataInicio || null, data_fim: p.dataFim || null, horas_vendidas: p.horasVendidas || 0,
       valor_vendido: p.valorVendido || 0, estado: p.estado || 'Por iniciar', gestor_id: p.gestorId || null,
       tipo_referencia: p.tipoReferencia === 'interno' ? 'interno' : 'giaf',
+      tipo_projeto: p.tipoProjeto || '', sem_faturacao: !!p.semFaturacao,
       atualizado_em: p.versao || null
     }));
 

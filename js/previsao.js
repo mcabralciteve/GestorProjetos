@@ -6,6 +6,7 @@ const Previsao = {
   MESES: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
   filtros: { tipo: '', dept: '', equipa: '', horizonte: 12, serie: 'rec' },
   expandidas: new Set(),
+  classificarAberto: false,
   ligado: false,
 
   podeVer() { return App.souAdmin(); },
@@ -25,17 +26,21 @@ const Previsao = {
     }
   },
 
+  // Tipo efetivo: o definido no projeto; senão o da oportunidade ligada (CRM); senão "Sem tipo" (ver PrevisaoLogica.tipoDeProjeto).
   tipoDoProjeto(p) {
-    if (!Crm.carregado) return '';
-    const op = Crm.d.oportunidades.find(o => o.projeto_id === p.id);
-    const t = op && Crm.idx.tipo ? Crm.idx.tipo.get(op.tipo_id) : null;
-    return t ? t.nome : 'Sem tipo';
+    let tipoCrmNome = '';
+    if (Crm.carregado) {
+      const op = Crm.d.oportunidades.find(o => o.projeto_id === p.id);
+      const t = op && Crm.idx.tipo ? Crm.idx.tipo.get(op.tipo_id) : null;
+      tipoCrmNome = t ? t.nome : '';
+    }
+    return PrevisaoLogica.tipoDeProjeto({ tipoProjeto: p.tipoProjeto, tipoCrmNome });
   },
 
   // Uma linha por projeto com algo a prever (backlog ou faturas por emitir).
   calcular(hojeISO, meses) {
     const S = App.state;
-    const linhas = [], semDados = [];
+    const linhas = [], semDados = [], porClassificar = new Map();
     Object.values(S.projetos).forEach(p => {
       if (p.estado === 'Cancelado') return;
       const equipa = p.equipaId ? S.equipas.find(e => e.id === p.equipaId) : null;
@@ -46,18 +51,26 @@ const Previsao = {
         horasPorFazer: (t.recursoIds || []).reduce((s, rid) => s + Math.max(0, App.horasAlocadas(t, rid) - App.horasJaRegistadasTarefa(p, t, rid)), 0)
       }));
       const rec = PrevisaoLogica.reconhecimentoBacklog({ valorVendido: p.valorVendido, horasVendidas: p.horasVendidas, horasRegistadas, tarefas, hojeISO, meses });
-      const fat = PrevisaoLogica.faturacaoContratada({
-        faturas: (p.faturas || []).map(f => ({ dataPrevista: f.dataPrevista, valor: App.valorFatura(f, p), emitida: !!f.emitida })), hojeISO, meses
-      });
+      // Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista.
+      const fat = p.semFaturacao
+        ? { porMes: PrevisaoLogica.vazio(meses), emAtraso: 0, nEmAtraso: 0, foraDoHorizonte: 0, semData: 0, total: 0 }
+        : PrevisaoLogica.faturacaoContratada({
+          faturas: (p.faturas || []).map(f => ({ dataPrevista: f.dataPrevista, valor: App.valorFatura(f, p), emitida: !!f.emitida })), hojeISO, meses
+        });
+      const tipoEf = this.tipoDoProjeto(p);
       const base = {
-        id: p.id, nome: App.rotuloProjeto(p), tipo: this.tipoDoProjeto(p) || 'Sem tipo', equipaId: p.equipaId || '', equipa: equipa ? equipa.nome : 'Por atribuir',
+        id: p.id, nome: App.rotuloProjeto(p), tipo: tipoEf.rotulo, tipoOrigem: tipoEf.origem, semFaturacao: !!p.semFaturacao, equipaId: p.equipaId || '', equipa: equipa ? equipa.nome : 'Por atribuir',
         deptId: dept ? dept.id : '', dept: dept ? dept.nome : '', suspenso: p.ativo === false, estado: p.estado, valorVendido: p.valorVendido || 0,
         horasRegistadas, rec, fat
       };
-      if (!rec) { if (p.estado !== 'Concluído') semDados.push(base); if (fat.total > 0) linhas.push(base); return; }
-      if (rec.porReconhecer > 0 || fat.total > 0) linhas.push(base);
+      if (!rec) {
+        if (p.estado !== 'Concluído') { semDados.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
+        if (fat.total > 0) { linhas.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
+        return;
+      }
+      if (rec.porReconhecer > 0 || fat.total > 0) { linhas.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
     });
-    return { linhas, semDados };
+    return { linhas, semDados, porClassificar: [...porClassificar.values()] };
   },
 
   filtrar(linhas) {
@@ -96,7 +109,7 @@ const Previsao = {
     if (!el || !this.podeVer()) return;
     const hoje = DateUtil.todayISO();
     const meses = PrevisaoLogica.mesesHorizonte(hoje, this.filtros.horizonte);
-    const { linhas: todas, semDados } = this.calcular(hoje, meses);
+    const { linhas: todas, semDados, porClassificar } = this.calcular(hoje, meses);
     this.desenharFiltros(todas);
     const linhas = this.filtrar(todas);
     const P = AnaliseHoras.PALETA;
@@ -117,12 +130,12 @@ const Previsao = {
 
     // avisos
     const avisos = [];
-    if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${semDados.slice(0, 4).map(l => escapeHtml(l.nome)).join('; ')}${semDados.length > 4 ? '…' : ''}.`);
+    if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${semDados.slice(0, 4).map(l => escapeHtml(l.nome)).join('; ')}${semDados.length > 4 ? '…' : ''}. Num I&amp;D financiado, preenche o Valor vendido com o valor do financiamento (e as Horas vendidas) e marca "Sem faturação ao cliente".`);
     if (semCal > 49) avisos.push(`${this.kk(semCal)} de backlog não têm horas previstas no Gantt (ver "Cobertura" no detalhe) — por isso não aparecem em nenhum mês.`);
     if (nAtraso) avisos.push(`${nAtraso} fatura(s) por emitir (${this.kk(emAtraso)}) já passaram da data prevista — estão contadas no mês atual.`);
     if (semData > 0) avisos.push(`${this.kk(semData)} em faturas por emitir sem data prevista não entram no mapa.`);
     if (fora > 0) avisos.push(`${this.kk(fora)} em faturas estão previstas depois do horizonte escolhido.`);
-    document.getElementById('prevAvisos').innerHTML = avisos.map(a => `<div class="prev-aviso">⚠ ${a}</div>`).join('');
+    document.getElementById('prevAvisos').innerHTML = avisos.map(a => `<div class="prev-aviso">⚠ ${a}</div>`).join('') + this.htmlClassificar(porClassificar);
 
     // gráficos
     document.getElementById('prevGrafRec').innerHTML = this.barras(recSerie, meses, P[0], 'Reconhecimento previsto por mês');
@@ -159,13 +172,29 @@ const Previsao = {
       const cob = l.rec ? Math.round(l.rec.cobertura * 100) : null;
       const ab = this.expandidas.has(l.id);
       const pressup = l.rec
-        ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}.`
+        ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}.`
         : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`;
-      return `<tr class="item" data-prev-linha="${escapeAttr(l.id)}"><td>${escapeHtml(l.nome)}${l.suspenso ? ' <span class="prev-tag">suspenso</span>' : ''}</td><td>${escapeHtml(l.tipo)}</td><td>${escapeHtml(l.equipa)}</td>
+      return `<tr class="item" data-prev-linha="${escapeAttr(l.id)}"><td>${escapeHtml(l.nome)}${l.suspenso ? ' <span class="prev-tag">suspenso</span>' : ''}${l.semFaturacao ? ' <span class="prev-tag">sem faturação</span>' : ''}</td><td>${escapeHtml(l.tipo)}</td><td>${escapeHtml(l.equipa)}</td>
         <td>${this.k(rec ? (l.rec ? l.rec.porReconhecer : 0) : l.fat.total)}</td>${rec ? `<td class="${cob !== null && cob < 80 ? 'neg' : ''}">${cob === null ? '–' : cob + '%'}</td>` : ''}${cel}<td><b>${this.k(PrevisaoLogica.total(s, meses))}</b></td></tr>
         <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${nm + (rec ? 6 : 5)}">${pressup}</td></tr>`;
     }).join('');
     document.getElementById('prevDet').innerHTML = cabDet + `<tbody>${corpoDet || `<tr><td colspan="${nm + 5}">Sem projetos com algo a prever neste filtro.</td></tr>`}</tbody>`;
+  },
+
+  // Projetos cujo tipo não está definido no próprio projeto (vem do CRM ou falta): permite classificá-los aqui mesmo.
+  htmlClassificar(lista) {
+    if (!lista.length) return '';
+    const semSql = typeof Sync !== 'undefined' && Sync.temTipoProjeto === false;
+    const linhas = lista.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(l => {
+      const p = App.state.projetos[l.id] || {};
+      const opt = (v, r) => `<option value="${v}"${(p.tipoProjeto || '') === v ? ' selected' : ''}>${r}</option>`;
+      return `<tr><td>${escapeHtml(l.nome)}</td><td class="prev-sub">${l.tipoOrigem === 'crm' ? 'deduzido do CRM: ' + escapeHtml(l.tipo) : 'sem tipo'}</td>
+        <td><select data-prev-tipo="${escapeAttr(l.id)}"${semSql ? ' disabled' : ''}>${opt('', 'Por classificar')}${opt('servicos', 'Serviços')}${opt('id', 'I&amp;D')}</select></td>
+        <td><label style="display:inline-flex;gap:5px;align-items:center;"><input type="checkbox" data-prev-semfat="${escapeAttr(l.id)}"${p.semFaturacao ? ' checked' : ''}${semSql ? ' disabled' : ''}> sem faturação</label></td></tr>`;
+    }).join('');
+    return `<details class="prev-classificar"${this.classificarAberto ? ' open' : ''}><summary><b>${lista.length}</b> projeto(s) por classificar (tipo e faturação) — abrir</summary>
+      ${semSql ? '<p class="prev-sub" style="margin:6px 0;">Corre primeiro supabase/projeto_tipo.sql no Supabase para poderes classificar aqui.</p>' : '<p class="prev-sub" style="margin:6px 0;">Escolhe o tipo de cada projeto. Um I&amp;D financiado, sem faturação ao cliente, marca-se "sem faturação": continua a contar para o reconhecimento.</p>'}
+      <div class="table-scroll"><table class="prev-class">${linhas}</table></div></details>`;
   },
 
   desenharFiltros(todas) {
@@ -186,7 +215,19 @@ const Previsao = {
     if (!raiz) return;
     this.ligado = true;
     const f = this.filtros;
+    // Mantém aberta a lista de projetos por classificar enquanto se vai classificando (cada alteração volta a desenhar o ecrã).
+    raiz.addEventListener('toggle', ev => { if (ev.target.classList && ev.target.classList.contains('prev-classificar')) this.classificarAberto = ev.target.open; }, true);
     raiz.addEventListener('change', ev => {
+      const selTipo = ev.target.closest && ev.target.closest('[data-prev-tipo]');
+      const chkSem = ev.target.closest && ev.target.closest('[data-prev-semfat]');
+      if (selTipo || chkSem) {
+        const p = App.state.projetos[(selTipo || chkSem).dataset.prevTipo || (selTipo || chkSem).dataset.prevSemfat];
+        if (!p || !App.souAdmin()) return;
+        if (selTipo) p.tipoProjeto = selTipo.value || ''; else p.semFaturacao = !!chkSem.checked;
+        App.persist();
+        this.render();
+        return;
+      }
       const id = ev.target.id;
       if (id === 'prevTipo') f.tipo = ev.target.value;
       else if (id === 'prevDept') { f.dept = ev.target.value; f.equipa = ''; }

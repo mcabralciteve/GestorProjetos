@@ -503,6 +503,8 @@ const Crm = {
       valorVendido: base ? base.total : ((vigente && this.valorProposta(vigente)) || op.valor_estimado || 0),
       horasVendidas: base ? base.horas : ((vigente && vigente.horas_estimadas) || 0),
       refGiaf: this.refGiafDaOp(op) || (vigente ? vigente.referencia_giaf : ''),
+      // Tipo do projeto: o do tipo da oportunidade (I&D / Serviços), para a Previsão.
+      tipoProjeto: PrevisaoLogica.tipoDeProjeto({ tipoCrmNome: (this.idx.tipo.get(op.tipo_id) || {}).nome }).codigo,
       gestorRecursoId: op.responsavel_id || null,
       onCriado: async (projeto) => {
         try {

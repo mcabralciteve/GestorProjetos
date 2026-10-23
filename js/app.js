@@ -197,6 +197,8 @@ const App = {
       selProjeto: document.getElementById('selProjeto'),
       projIdInterno: document.getElementById('projIdInterno'),
       projTipoRef: document.getElementById('projTipoRef'),
+      projTipoProjeto: document.getElementById('projTipoProjeto'),
+      projSemFaturacao: document.getElementById('projSemFaturacao'),
       fProjTipoRef: document.getElementById('fProjTipoRef'),
       btnAuditoriaCodigos: document.getElementById('btnAuditoriaCodigos'),
       projEstado: document.getElementById('projEstado'),
@@ -739,6 +741,8 @@ const App = {
       if (p.gestorId === undefined) p.gestorId = null;
       if (p.equipaId === undefined) p.equipaId = null;
       if (p.tipoReferencia !== 'interno') p.tipoReferencia = 'giaf';
+      if (p.tipoProjeto === undefined) p.tipoProjeto = '';
+      if (p.semFaturacao === undefined) p.semFaturacao = false;
       if (p.ativo === undefined) p.ativo = true;
       if (p.orcprevRef === undefined) p.orcprevRef = '';
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
@@ -1237,6 +1241,8 @@ const App = {
       gestorId: gestorId || null,
       equipaId: null,
       tipoReferencia: 'giaf',
+      tipoProjeto: '',
+      semFaturacao: false,
       versao: new Date().toISOString(),
       tarefas: [],
       faturas: [],
@@ -1389,6 +1395,7 @@ const App = {
       if (opts.descricao) p.descricao = opts.descricao;
       if (opts.valorVendido) p.valorVendido = Number(opts.valorVendido) || 0;
       if (opts.horasVendidas) p.horasVendidas = Number(opts.horasVendidas) || 0;
+      if (opts.tipoProjeto) p.tipoProjeto = opts.tipoProjeto;
       p.tipoReferencia = selTipoRef.value === 'interno' ? 'interno' : 'giaf';
       if (p.tipoReferencia === 'interno') {
         p.idInterno = this.proximoCodigoInterno();
@@ -4752,6 +4759,8 @@ const App = {
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
       if (e.projTipoRef) e.projTipoRef.disabled = true;
+      if (e.projTipoProjeto) { e.projTipoProjeto.value = ''; e.projTipoProjeto.disabled = true; }
+      if (e.projSemFaturacao) { e.projSemFaturacao.checked = false; e.projSemFaturacao.disabled = true; }
       if (e.projAtivo) { e.projAtivo.checked = false; e.projAtivo.disabled = true; }
       if (e.projSuspensoAviso) e.projSuspensoAviso.style.display = 'none';
       e.projValorHoraMedio.textContent = '—';
@@ -4775,6 +4784,10 @@ const App = {
     e.projIdInterno.value = p.idInterno || '';
     // Interno: o código é gerado pela app, nunca escrito à mão. O tipo só o Administrador muda.
     if (e.projTipoRef) { e.projTipoRef.value = p.tipoReferencia === 'interno' ? 'interno' : 'giaf'; e.projTipoRef.disabled = !this.souAdmin(); }
+    // Tipo de projeto e "sem faturação ao cliente": só o Administrador (alimentam a Previsão); precisam de supabase/projeto_tipo.sql.
+    const semSqlTipo = typeof Sync !== 'undefined' && Sync.temTipoProjeto === false;
+    if (e.projTipoProjeto) { e.projTipoProjeto.value = p.tipoProjeto || ''; e.projTipoProjeto.disabled = !this.souAdmin() || semSqlTipo; e.projTipoProjeto.title = semSqlTipo ? 'Corre primeiro supabase/projeto_tipo.sql no Supabase.' : ''; }
+    if (e.projSemFaturacao) { e.projSemFaturacao.checked = !!p.semFaturacao; e.projSemFaturacao.disabled = !this.souAdmin() || semSqlTipo; }
     if (p.tipoReferencia === 'interno') e.projIdInterno.disabled = true;
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
@@ -10468,6 +10481,18 @@ const App = {
       if (!r.ok) { this.toast(r.mensagem); return; }
       if (r.aviso) this.toast(r.aviso);
       this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos();
+    });
+    if (e.projTipoProjeto) e.projTipoProjeto.addEventListener('change', () => {
+      const p = this.projetoAtivo();
+      if (!p || !this.souAdmin()) return;
+      p.tipoProjeto = e.projTipoProjeto.value || '';
+      this.persist(); this.renderTabelaProjetos();
+    });
+    if (e.projSemFaturacao) e.projSemFaturacao.addEventListener('change', () => {
+      const p = this.projetoAtivo();
+      if (!p || !this.souAdmin()) return;
+      p.semFaturacao = !!e.projSemFaturacao.checked;
+      this.persist(); this.renderInfoProjeto();
     });
     if (e.projTipoRef) e.projTipoRef.addEventListener('change', () => {
       const p = this.projetoAtivo();

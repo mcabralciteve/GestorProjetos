@@ -172,6 +172,8 @@ const Sync = {
     // Referência do projeto no orcprev (supabase/orcprev_integracao.sql) — só se a coluna já existir.
     if (this.temOrcprevProjetos) linhaProjeto.orcprev_ref = projeto.orcprevRef || '';
     if (this.temTipoReferencia !== false) linhaProjeto.tipo_referencia = projeto.tipoReferencia === 'interno' ? 'interno' : 'giaf';
+    // Tipo de projeto e "sem faturação" (supabase/projeto_tipo.sql) — só se as colunas já existirem.
+    if (this.temTipoProjeto) { linhaProjeto.tipo_projeto = projeto.tipoProjeto || ''; linhaProjeto.sem_faturacao = !!projeto.semFaturacao; }
     // Cópia do orçamento validado (Orçamentação, Fase 2) — só se as colunas já existirem (supabase/orcamentos_fase2.sql).
     if (this.temOrcamentoBase !== false) {
       linhaProjeto.orcamento_id = projeto.orcamentoBase ? projeto.orcamentoBase.orcamentoId : null;
@@ -304,6 +306,7 @@ const Sync = {
     }));
 
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
+    this.temTipoProjeto = proj.data.length === 0 || 'tipo_projeto' in proj.data[0];
     this.temOrcamentoBase = proj.data.length === 0 || 'orcamento_base' in proj.data[0];
     this.temOrcprevProjetos = proj.data.length === 0 || 'orcprev_ref' in proj.data[0];
     const projetos = {};
@@ -314,6 +317,7 @@ const Sync = {
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,
         orcamentoBase: p.orcamento_base || null, orcprevRef: p.orcprev_ref || '',
+        tipoProjeto: p.tipo_projeto || '', semFaturacao: !!p.sem_faturacao,
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],
         pontosSituacao: [], proximosPassos: []
       };
