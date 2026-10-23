@@ -77,3 +77,35 @@ test('pacote: formato, email em minúsculas, semana', () => {
   assert.deepEqual(p.semana, { inicio: '2026-10-19', fim: '2026-10-25' });
   assert.deepEqual(JSON.parse(L.textoDoPacote(p)), p);
 });
+
+test('alvoDe/codificarAlvo: projeto, consultoria, prototipagem e outras atividades', () => {
+  assert.deepEqual(L.alvoDe(''), { tipo: 'projeto', valor: '' });
+  assert.deepEqual(L.alvoDe(' 005323 '), { tipo: 'projeto', valor: '005323' });
+  assert.deepEqual(L.alvoDe('Consultoria : Alfa · Auditoria'), { tipo: 'servico', atividade: 'CONSULTING', valor: 'Alfa · Auditoria' });
+  assert.deepEqual(L.alvoDe('prototipagem:Beta'), { tipo: 'servico', atividade: 'PROTOTYPING', valor: 'Beta' });
+  assert.equal(L.alvoDe('atividade:OTHER').atividade, 'OTHER');
+  assert.equal(L.alvoDe('atividade:').atividade, 'OTHER');
+  assert.equal(L.codificarAlvo('projeto', ' X '), 'X');
+  assert.equal(L.codificarAlvo('consultoria', 'Alfa'), 'consultoria:Alfa');
+  assert.equal(L.codificarAlvo('prototipagem', 'Beta'), 'prototipagem:Beta');
+  assert.equal(L.codificarAlvo('outras', 'ignorado'), 'atividade:OTHER');
+  ['', 'X', 'consultoria:A', 'prototipagem:B', 'atividade:OTHER'].forEach(r => assert.equal(L.codificarAlvo(L.tipoDoAlvo(r), L.alvoDe(r).tipo === 'atividade' ? '' : L.alvoDe(r).valor), r));
+});
+
+test('projeto de consultoria → serviço do orcprev; sem serviço → "Outras atividades" com o nome do projeto na nota', () => {
+  projetos.c1 = { id: 'c1', idInterno: '2026/50', nome: 'Auditoria Alfa', orcprevRef: 'consultoria:Alfa · Auditoria' };
+  projetos.c2 = { id: 'c2', idInterno: '2026/51', nome: 'Estudo Beta', orcprevRef: 'atividade:OTHER' };
+  projetos.c3 = { id: 'c3', idInterno: '2026/52', nome: 'Estudo Gama', orcprevRef: 'atividade:OTHER' };
+  const s = L.linhasDaSemana(ctx([
+    reg({ projetoId: 'c1', projetoNome: 'Auditoria Alfa', projetoIdInterno: '2026/50', horas: 2, tarefaNome: 'Visita' }),
+    reg({ projetoId: 'c2', projetoNome: 'Estudo Beta', projetoIdInterno: '2026/51', horas: 1, tarefaNome: 'Relatório' }),
+    reg({ projetoId: 'c3', projetoNome: 'Estudo Gama', projetoIdInterno: '2026/52', horas: 1, tarefaNome: '' }),
+    reg({ horas: 1 })
+  ]));
+  assert.deepEqual(s.linhas.map(l => l.tipo), ['PROJECT', 'SERVICE', 'ACTIVITY']);
+  const sv = s.linhas[1];
+  assert.equal(sv.atividade, 'CONSULTING'); assert.deepEqual(sv.projeto, { ref: 'Alfa · Auditoria', nome: 'Auditoria Alfa', idInterno: '2026/50' });
+  const outras = s.linhas[2];
+  assert.equal(outras.atividade, 'OTHER'); assert.equal(outras.projeto, null); assert.equal(outras.horas, 2);
+  assert.equal(outras.nota, '[Gestor] Estudo Beta; Relatório; Estudo Gama');
+});

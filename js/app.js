@@ -204,7 +204,6 @@ const App = {
       projSuspensoAviso: document.getElementById('projSuspensoAviso'),
       projNome: document.getElementById('projNome'),
       projCliente: document.getElementById('projCliente'),
-      projOrcprev: document.getElementById('projOrcprev'),
       projDescricao: document.getElementById('projDescricao'),
       projInicio: document.getElementById('projInicio'),
       projFim: document.getElementById('projFim'),
@@ -4035,6 +4034,7 @@ const App = {
     this.renderTabelaDepartamentos();
     this.renderTabelaEquipas();
     this.renderTabelaTiposTrabalho();
+    this.renderQuadroOrcprev();
     this.renderTabelaFeriados();
     this.renderTabelaAusencias();
     this.renderCalendarioEquipaAusencias();
@@ -4102,7 +4102,7 @@ const App = {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = admin ? '' : 'none';
     });
-    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho', 'feriados', 'crmFunil'].includes(this.abaAtiva)) this.irParaAba('dashboard');
+    if (!admin && ['recursos', 'definicoes', 'tiposTrabalho', 'orcprev', 'feriados', 'crmFunil'].includes(this.abaAtiva)) this.irParaAba('dashboard');
     // "gestorDeAlgo" já inclui souAdmin() (ver souGestorDeAlgumProjeto) — não precisa de "!admin"
     // à parte em nenhuma destas condições.
     if (!gestorDeAlgo && !liderDeAlgo && (this.abaAtiva === 'capacidade' || this.abaAtiva === 'alocacoes')) this.irParaAba('dashboard');
@@ -4664,7 +4664,7 @@ const App = {
   renderInfoProjeto() {
     const p = this.projetoAtivo();
     const e = this.els;
-    const campos = [e.projIdInterno, e.projEstado, e.projNome, e.projCliente, e.projOrcprev, e.projDescricao, e.projInicio, e.projFim, e.projHorasVendidas, e.projValorVendido];
+    const campos = [e.projIdInterno, e.projEstado, e.projNome, e.projCliente, e.projDescricao, e.projInicio, e.projFim, e.projHorasVendidas, e.projValorVendido];
     this.renderGestorConsultores(p);
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
@@ -4696,8 +4696,6 @@ const App = {
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
     e.projCliente.value = p.cliente || '';
-    e.projOrcprev.value = p.orcprevRef || '';
-    if (Sync.temOrcprevProjetos === false) { e.projOrcprev.disabled = true; e.projOrcprev.title = 'Corre primeiro supabase/orcprev_integracao.sql no Supabase.'; } else e.projOrcprev.title = '';
     e.projDescricao.value = p.descricao;
     e.projInicio.value = p.dataInicio;
     e.projFim.value = p.dataFim;
@@ -5096,6 +5094,58 @@ const App = {
       tr.querySelector('button').addEventListener('click', () => this.eliminarTipoTrabalho(tt.id));
       tbody.appendChild(tr);
     });
+  },
+
+  // ---------- Configurações → orcprev: a que corresponde cada projeto do Gestor no orcprev ----------
+  // Guarda-se em projetos.orcprev_ref (texto; ver OrcprevLogica.alvoDe): projeto de I&D (nome/código), serviço de
+  // consultoria/prototipagem, ou "Outras atividades". O Gestor não vê a lista do orcprev (o orcprev não aceita pedidos
+  // deste site), por isso "Estado" só diz se a correspondência foi definida à mão ou fica "pelo nome" — é o importador,
+  // dentro do orcprev, que confirma se o nome existe e pergunta se houver dúvida.
+  filtroOrcprev: { texto: '', soPorDefinir: false, suspensos: false },
+  renderQuadroOrcprev() {
+    const tbody = document.getElementById('corpoTabelaOrcprev');
+    if (!tbody) return;
+    const semColuna = Sync.temOrcprevProjetos === false;
+    const aviso = document.getElementById('orcAvisoSql');
+    if (aviso) aviso.style.display = semColuna ? '' : 'none';
+    const f = this.filtroOrcprev;
+    const todos = Object.values(this.state.projetos).filter(p => f.suspensos || p.ativo !== false);
+    const visiveis = todos.filter(p => {
+      if (f.soPorDefinir && String(p.orcprevRef || '').trim()) return false;
+      if (!f.texto) return true;
+      return [p.nome, p.cliente, p.idInterno].some(t => String(t || '').toLowerCase().includes(f.texto));
+    }).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+    const porDefinir = todos.filter(p => !String(p.orcprevRef || '').trim()).length;
+    const resumo = document.getElementById('orcResumo');
+    if (resumo) resumo.textContent = `${todos.length - porDefinir} definidos · ${porDefinir} por definir (procuram pelo nome)`;
+    const PLACEHOLDER = { projeto: 'vazio = mesmo nome que no Gestor; ou código, ex.: 005323', consultoria: 'Cliente · Serviço, como no orcprev', prototipagem: 'Cliente · Serviço, como no orcprev', outras: '' };
+    tbody.innerHTML = '';
+    visiveis.forEach(p => {
+      const tipo = OrcprevLogica.tipoDoAlvo(p.orcprevRef);
+      const alvo = OrcprevLogica.alvoDe(p.orcprevRef);
+      const valor = alvo.tipo === 'atividade' ? '' : alvo.valor;
+      const definido = !!String(p.orcprevRef || '').trim();
+      const rotulo = `${p.idInterno ? escapeHtml(p.idInterno) + ' — ' : ''}<b>${escapeHtml(p.nome || '')}</b>${p.cliente ? ' <span class="hint">(' + escapeHtml(p.cliente) + ')</span>' : ''}${p.ativo === false ? ' <span class="badge-suspenso">Suspenso</span>' : ''}`;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${rotulo}</td>
+        <td><select data-campo="tipo" ${semColuna ? 'disabled' : ''}>
+          <option value="projeto">Projeto de I&amp;D</option><option value="consultoria">Serviço de consultoria</option>
+          <option value="prototipagem">Serviço de prototipagem</option><option value="outras">Outras atividades</option></select></td>
+        <td><input type="text" data-campo="valor" value="${escapeAttr(valor)}" placeholder="${escapeAttr(PLACEHOLDER[tipo])}" autocomplete="off" spellcheck="false" style="width:100%;min-width:220px;" ${semColuna || tipo === 'outras' ? 'disabled' : ''}></td>
+        <td class="hint">${definido ? '✓ definido' : 'pelo nome'}</td>`;
+      tr.querySelector('[data-campo="tipo"]').value = tipo;
+      const gravar = () => {
+        const t = tr.querySelector('[data-campo="tipo"]').value;
+        p.orcprevRef = OrcprevLogica.codificarAlvo(t, tr.querySelector('[data-campo="valor"]').value);
+        this.persist();
+        this.renderQuadroOrcprev();
+      };
+      tr.querySelector('[data-campo="tipo"]').addEventListener('change', gravar);
+      tr.querySelector('[data-campo="valor"]').addEventListener('change', gravar);
+      tbody.appendChild(tr);
+    });
+    if (!visiveis.length) tbody.innerHTML = '<tr><td colspan="4" class="hint">Nenhum projeto para mostrar com estes filtros.</td></tr>';
   },
 
   renderFiltroEquipaCap() {
@@ -9180,7 +9230,8 @@ const App = {
       const semEmail = !String(recurso.email || '').trim();
       const linhasHtml = sem.linhas.map(l => {
         const destino = l.tipo === 'PROJECT' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
-          : `${escapeHtml(OrcprevLogica.nomeAtividade(l.atividade))} <span class="hint">(atividade)</span>`;
+          : l.tipo === 'SERVICE' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + ` <span class="hint">→ ${l.atividade === 'PROTOTYPING' ? 'Prototipagem' : 'Consultoria'}${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
+            : `${escapeHtml(OrcprevLogica.nomeAtividade(l.atividade))} <span class="hint">(atividade)</span>`;
         return `<tr><td>${NOMES_DIA[new Date(l.data + 'T00:00:00Z').getUTCDay()]} ${fmtDia(l.data)}</td><td>${destino}</td><td style="text-align:right;">${fmtH(l.horas)} h</td></tr>`;
       }).join('');
       m.querySelector('#orcSemCorpo').innerHTML =
@@ -9527,7 +9578,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
@@ -10348,7 +10399,6 @@ const App = {
     if (e.projAtivo) e.projAtivo.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.atualizarProjetoAtivo(this.projetoAtivo().id, e.projAtivo.checked); });
     e.projNome.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().nome = e.projNome.value; this.persist(); this.renderProjetoSelect(); this.renderTabelaProjetos(); });
     e.projCliente.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().cliente = e.projCliente.value; this.persist(); this.renderTabelaProjetos(); });
-    e.projOrcprev.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().orcprevRef = e.projOrcprev.value.trim(); this.persist(); });
     e.projDescricao.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().descricao = e.projDescricao.value; this.persist(); });
     e.projInicio.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projInicio.value)) return; this.projetoAtivo().dataInicio = e.projInicio.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
     e.projFim.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projFim.value)) return; this.projetoAtivo().dataFim = e.projFim.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
@@ -10445,6 +10495,11 @@ const App = {
     if (btnDiaOrcprev) btnDiaOrcprev.addEventListener('click', () => this.abrirModalOrcprev());
     const btnAddTipoTrabalho = document.getElementById('btnAddTipoTrabalho');
     if (btnAddTipoTrabalho) btnAddTipoTrabalho.addEventListener('click', () => this.adicionarTipoTrabalho());
+    [['orcFiltroTexto', 'input', 'texto', e => e.target.value.toLowerCase().trim()], ['orcSoPorDefinir', 'change', 'soPorDefinir', e => e.target.checked],
+      ['orcMostrarSuspensos', 'change', 'suspensos', e => e.target.checked]].forEach(([id, evento, campo, valor]) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(evento, ev => { this.filtroOrcprev[campo] = valor(ev); this.renderQuadroOrcprev(); });
+    });
 
     document.getElementById('btnAddFatura').addEventListener('click', () => this.adicionarFatura());
     [e.fFatProjeto, e.fFatDe, e.fFatAte].forEach(el => el.addEventListener('change', () => this.aplicarFiltrosFaturacao()));

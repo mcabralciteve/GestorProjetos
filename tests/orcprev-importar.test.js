@@ -94,3 +94,50 @@ test('corpoGravacao: mesmo formato do ecrã do orcprev (projeto sem atividade; a
     { id: null, work_date: '2026-10-20', project_id: null, service_id: null, activity_code: 'INTERNAL_MEETINGS', hours: 1, note: '[Gestor] t' }
   ]); // "ALMA" ambíguo: não vai
 });
+
+const servicos = [
+  { id: 7, client_name: 'Alfa, Lda.', name: 'Auditoria energética', active: 1 },
+  { id: 8, client_name: 'Alfa, Lda.', name: 'Ensaios', active: 1 },
+  { id: 9, client_name: 'Beta SA', name: 'Ensaios', active: 1 },
+  { id: 10, client_name: 'Gama', name: 'Antigo', active: 0 }
+];
+
+test('casarServico: "Cliente · Serviço", nome ou cliente únicos; ambíguo e inativos não se adivinham', () => {
+  assert.equal(I.casarServico({ ref: 'Alfa, Lda. · Auditoria energética' }, servicos).id, 7);
+  assert.equal(I.casarServico({ ref: 'auditoria energetica' }, servicos).id, 7);
+  assert.equal(I.casarServico({ ref: 'Beta SA' }, servicos).id, 9); // só um serviço do cliente
+  const amb = I.casarServico({ ref: 'Ensaios' }, servicos);
+  assert.equal(amb.id, null); assert.equal(amb.como, 'ambiguo'); assert.deepEqual(amb.candidatos.map(x => x.id), [8, 9]);
+  assert.equal(I.casarServico({ ref: 'Alfa, Lda.' }, servicos).como, 'ambiguo'); // dois serviços do mesmo cliente
+  assert.equal(I.casarServico({ ref: 'Gama' }, servicos).como, 'ref-invalida'); // inativo não conta
+  assert.equal(I.casarServico({ ref: 'Alfa, Lda. · Ensaios' }, servicos).id, 8);
+});
+
+test('casarServico: sem referência usa memória e depois o nome do projeto do Gestor; escolha manda', () => {
+  assert.equal(I.casarServico({ nome: 'Auditoria energética', idInterno: '2026/5' }, servicos).id, 7);
+  assert.equal(I.casarServico({ nome: 'Qualquer', idInterno: '2026/5' }, servicos, { 's:2026/5': 9 }).como, 'memorizado');
+  assert.equal(I.casarServico({ ref: 'Ensaios' }, servicos, {}, 9).id, 9);
+  assert.equal(I.casarServico({ nome: 'Nada a ver' }, servicos).como, 'sem-correspondencia');
+});
+
+test('planear/corpoGravacao: serviço casado vai com service_id; sem serviços fica à mão', () => {
+  const lin = [{ data: '2026-10-19', tipo: 'SERVICE', atividade: 'CONSULTING', horas: 2, nota: '[Gestor] Visita', projeto: { ref: 'Alfa, Lda. · Auditoria energética', nome: 'Auditoria Alfa', idInterno: '2026/50' } }];
+  const d = dados([], { services: servicos, activities: [{ code: 'CONSULTING' }, { code: 'PROTOTYPING' }] });
+  const p = I.planear({ pacote: pacote(lin), dados: d, memoria: {}, escolhas: {} });
+  assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].servicoId, 7);
+  assert.deepEqual(I.corpoGravacao(p, d, pacote(lin)).entries, [{ id: null, work_date: '2026-10-19', project_id: null, service_id: 7, activity_code: 'CONSULTING', hours: 2, note: '[Gestor] Visita' }]);
+  const semServicos = I.planear({ pacote: pacote(lin), dados: dados([], { services: [], activities: [{ code: 'CONSULTING' }] }), memoria: {}, escolhas: {} });
+  assert.equal(semServicos.linhas[0].estado, 'manual'); assert.match(semServicos.linhas[0].motivo, /Outras atividades/);
+  const amb = I.planear({ pacote: pacote([Object.assign({}, lin[0], { projeto: { ref: 'Ensaios', nome: 'X', idInterno: '2026/9' } })]), dados: d, memoria: {}, escolhas: {} });
+  assert.equal(amb.linhas[0].estado, 'escolher');
+  const escolhido = I.planear({ pacote: pacote([Object.assign({}, lin[0], { projeto: { ref: 'Ensaios', nome: 'X', idInterno: '2026/9' } })]), dados: d, memoria: {}, escolhas: { 's:2026/9': 8 } });
+  assert.equal(escolhido.linhas[0].servicoId, 8);
+});
+
+test('atividade "Outras atividades" (OTHER) vai sem projeto nem serviço', () => {
+  const lin = [{ data: '2026-10-19', tipo: 'ACTIVITY', atividade: 'OTHER', horas: 1.5, nota: '[Gestor] Estudo Beta', projeto: null }];
+  const d = dados([]);
+  const p = I.planear({ pacote: pacote(lin), dados: d, memoria: {}, escolhas: {} });
+  assert.equal(p.linhas[0].estado, 'ok');
+  assert.deepEqual(I.corpoGravacao(p, d, pacote(lin)).entries[0], { id: null, work_date: '2026-10-19', project_id: null, service_id: null, activity_code: 'OTHER', hours: 1.5, note: '[Gestor] Estudo Beta' });
+});

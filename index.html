@@ -115,6 +115,7 @@
   <div class="tabs-grupo" data-grupo="configuracoes">
     <button class="tab-btn" data-tab="recursos">Pessoas</button>
     <button class="tab-btn" data-tab="tiposTrabalho">Tipos de Trabalho</button>
+    <button class="tab-btn" data-tab="orcprev">orcprev</button>
     <button class="tab-btn" data-tab="crmFunil" id="tabBtnCrmFunil">Funil CRM</button>
     <button class="tab-btn" data-tab="definicoes">Definições</button>
   </div>
@@ -184,9 +185,6 @@
         </label>
         <label>Cliente
           <input type="text" id="projCliente" placeholder="Nome do cliente">
-        </label>
-        <label>Projeto no orcprev <span class="nota">(opcional — código ou nome; vazio = procura pelo nome deste projeto)</span>
-          <input type="text" id="projOrcprev" placeholder="ex.: 005323 ou TEXP@CT" autocomplete="off" spellcheck="false">
         </label>
         <label>Descrição
           <textarea id="projDescricao" rows="2" placeholder="Descrição / objetivo"></textarea>
@@ -787,6 +785,35 @@
   </div>
 </section>
 
+<!-- ===================== TAB: ORCPREV (correspondência de projetos) ===================== -->
+<section class="tab-panel" id="tab-orcprev">
+  <div class="pagina">
+    <div class="pagina-head">
+      <h2>Correspondência com o orcprev</h2>
+    </div>
+    <p class="pagina-sub">Para as horas irem do Gestor para o orcprev (Registo do Dia → ⇄ orcprev), cada projeto do Gestor tem de corresponder a algo no orcprev: um <b>projeto de I&amp;D</b>, um <b>serviço</b> de consultoria/prototipagem, ou <b>Outras atividades</b> (para serviços que ainda não existem lá). Escreve o nome <i>tal como aparece no orcprev</i> (maiúsculas, acentos e pontuação não importam) ou, nos projetos, o código. Deixar em branco = procura-se um projeto/serviço do orcprev com o mesmo nome que aqui. Se não houver certeza, o importador pergunta antes de enviar — nunca adivinha.</p>
+    <p id="orcAvisoSql" class="hint" style="color:var(--vermelho);display:none;">Corre primeiro supabase/orcprev_integracao.sql no Supabase para poderes gravar a correspondência.</p>
+    <div class="filters" style="display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:8px;">
+      <label class="zoom-label">Procurar <input type="search" id="orcFiltroTexto" placeholder="projeto, cliente ou referência" autocomplete="off"></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="orcSoPorDefinir"> Só por definir</label>
+      <label style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="orcMostrarSuspensos"> Mostrar suspensos</label>
+      <span id="orcResumo" class="hint" style="margin-left:auto;"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="tabela-crud" id="tabelaOrcprev">
+        <thead><tr>
+          <th>Projeto no Gestor</th>
+          <th>Corresponde, no orcprev, a</th>
+          <th>Nome ou código no orcprev</th>
+          <th>Estado</th>
+        </tr></thead>
+        <tbody id="corpoTabelaOrcprev"></tbody>
+      </table>
+    </div>
+    <p class="hint">Os tipos de trabalho (Reuniões, Formação…) ligam-se às atividades do orcprev em Configurações → Tipos de Trabalho.</p>
+  </div>
+</section>
+
 <!-- ===================== TAB: DEFINIÇÕES ===================== -->
 <section class="tab-panel" id="tab-definicoes">
   <div class="pagina">
@@ -1244,7 +1271,7 @@
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261016b"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
-<script src="js/orcprev-logica.js?v=20261019b"></script>
-<script src="js/app.js?v=20261019b"></script>
+<script src="js/orcprev-logica.js?v=20261020a"></script>
+<script src="js/app.js?v=20261020a"></script>
 </body>
 </html>

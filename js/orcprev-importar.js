@@ -10,7 +10,8 @@
 //  - reenviar a mesma semana substitui APENAS as linhas que vieram do Gestor (nota começa por "[Gestor]");
 //    o que a pessoa lançou à mão no orcprev nunca é apagado nem alterado;
 //  - projetos que não se conseguem casar com certeza ficam por escolher (nunca se adivinha);
-//  - atividades que o orcprev só aceita com serviço/projeto (ex.: Prototipagem, Consultoria) ficam para preencher à mão.
+//  - consultoria/prototipagem só se enviam quando o serviço do orcprev se identifica com certeza (ou a pessoa o escolhe);
+//    sem serviços no orcprev, ficam para preencher à mão (ou muda-se a correspondência para "Outras atividades" no Gestor).
 // A lógica pura (sem DOM) está testada em tests/orcprev-importar.test.js.
 (function (raiz) {
   'use strict';
@@ -74,6 +75,32 @@
       return resultado(lista.filter(p => this.normalizar(p.name) === nome), 'nome');
     },
 
+    // Procura o serviço do orcprev (cliente + nome) que corresponde ao texto escrito no Gestor.
+    // Aceita "Cliente · Serviço", só o nome do serviço ou só o cliente — desde que seja único. Mesmo formato de resultado
+    // que casarProjeto (id, como, candidatos); a escolha memorizada usa a chave "s:" + projeto do Gestor.
+    casarServico(proj, servicos, memoria, escolhaId) {
+      const lista = (servicos || []).filter(x => Number(x.active) !== 0);
+      const porId = id => lista.find(x => Number(x.id) === Number(id));
+      const unico = (c, como) => c.length === 1 ? { id: c[0].id, como, candidatos: [] } : { id: null, como: c.length ? 'ambiguo' : 'sem-correspondencia', candidatos: c };
+      const procurar = texto => {
+        const n = this.normalizar(texto);
+        if (!n) return null;
+        const passos = [
+          [x => this.normalizar((x.client_name || '') + (x.name || '')) === n, 'completo'],
+          [x => this.normalizar(x.name) === n, 'nome'],
+          [x => this.normalizar(x.client_name) === n, 'cliente']
+        ];
+        for (const [fn, como] of passos) { const c = lista.filter(fn); if (c.length) return unico(c, como); }
+        return null;
+      };
+      if (escolhaId && porId(escolhaId)) return { id: porId(escolhaId).id, como: 'escolhido', candidatos: [] };
+      const ref = String((proj && proj.ref) || '').trim();
+      if (ref) return procurar(ref) || { id: null, como: 'ref-invalida', candidatos: [] };
+      const mem = memoria && memoria['s:' + this.chaveProjeto(proj)];
+      if (mem && porId(mem)) return { id: porId(mem).id, como: 'memorizado', candidatos: [] };
+      return procurar(proj && proj.nome) || { id: null, como: 'sem-correspondencia', candidatos: [] };
+    },
+
     // Junta o pacote do Gestor com o que o orcprev já tem nessa semana.
     //   dados     resposta de GET /api/timesheet?week_start=...
     //   escolhas  { [chaveProjeto]: idProjetoOrcprev } escolhidas agora na pré-visualização
@@ -95,6 +122,14 @@
           return Object.assign(base, { chave, projetoId: m.id, projetoNomeOrcprev: proj ? proj.name : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
         }
         if (!atividades.has(l.atividade)) return Object.assign(base, { estado: 'manual', motivo: 'Atividade desconhecida no orcprev.' });
+        if (l.tipo === 'SERVICE') {
+          const servicos = (dados.services || []).filter(x => Number(x.active) !== 0);
+          const chave = this.chaveProjeto(l.projeto);
+          if (!servicos.length) return Object.assign(base, { chave, estado: 'manual', motivo: 'Não há serviços no orcprev — cria o serviço lá (Serviços TimeSheet) ou muda a correspondência para "Outras atividades".' });
+          const m = this.casarServico(l.projeto, servicos, memoria, escolhas && escolhas['s:' + chave]);
+          const sv = m.id ? servicos.find(x => Number(x.id) === Number(m.id)) : null;
+          return Object.assign(base, { chave, chaveEscolha: 's:' + chave, servicoId: m.id, servicoNomeOrcprev: sv ? `${sv.client_name || ''} · ${sv.name || ''}` : '', como: m.como, candidatos: m.candidatos, estado: m.id ? 'ok' : 'escolher' });
+        }
         if (comServico.has(l.atividade) || ATIVIDADES_COM_PROJETO.includes(l.atividade)) {
           return Object.assign(base, { estado: 'manual', motivo: 'O orcprev pede um serviço/projeto nesta atividade — preenche-a à mão.' });
         }
@@ -126,7 +161,7 @@
         entries: plano.linhas.filter(l => l.estado === 'ok').map(l => ({
           id: null, work_date: l.data,
           project_id: l.tipo === 'PROJECT' ? Number(l.projetoId) : null,
-          service_id: null,
+          service_id: l.tipo === 'SERVICE' ? Number(l.servicoId) : null,
           activity_code: l.tipo === 'PROJECT' ? null : l.atividade,
           hours: l.horas, note: l.nota
         })),
@@ -231,11 +266,15 @@
     const nok = plano.linhas.filter(l => l.estado === 'ok').length;
 
     const projetosOrdenados = (dados.projects || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt'));
+    const servicosAtivos = (dados.services || []).filter(x => Number(x.active) !== 0);
     const seletor = l => {
-      const sel = h('select', { style: 'max-width:230px;padding:3px;', onchange: ev => { if (ev.target.value) { escolhas[l.chave] = Number(ev.target.value); ecraPrevia(pacote, escolhas); } } },
-        h('option', { value: '' }, l.como === 'ambiguo' ? 'Há vários — escolhe…' : l.como === 'ref-invalida' ? 'Referência inválida — escolhe…' : 'Escolhe o projeto…'),
-        (l.candidatos.length ? l.candidatos : projetosOrdenados).map(p => h('option', { value: String(p.id) }, `${p.name}${p.project_code ? ' (' + p.project_code + ')' : ''} — ${p.status_name || ''}`)));
-      return sel;
+      const servico = l.tipo === 'SERVICE';
+      const chaveEsc = servico ? l.chaveEscolha : l.chave;
+      const opcoes = servico ? (l.candidatos.length ? l.candidatos : servicosAtivos).map(x => h('option', { value: String(x.id) }, `${x.client_name || ''} · ${x.name || ''}`))
+        : (l.candidatos.length ? l.candidatos : projetosOrdenados).map(p => h('option', { value: String(p.id) }, `${p.name}${p.project_code ? ' (' + p.project_code + ')' : ''} — ${p.status_name || ''}`));
+      return h('select', { style: 'max-width:230px;padding:3px;', onchange: ev => { if (ev.target.value) { escolhas[chaveEsc] = Number(ev.target.value); ecraPrevia(pacote, escolhas); } } },
+        h('option', { value: '' }, l.como === 'ambiguo' ? 'Há vários — escolhe…' : l.como === 'ref-invalida' ? 'Referência inválida — escolhe…' : servico ? 'Escolhe o serviço…' : 'Escolhe o projeto…'),
+        opcoes);
     };
 
     const tabela = h('table', { style: 'border-collapse:collapse;width:100%;font-size:13px;' },
@@ -244,6 +283,7 @@
         h('td', { style: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;white-space:nowrap;' }, `${diaSemana(l.data)} ${fmtData(l.data)}`),
         h('td', { style: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;' },
           l.tipo === 'PROJECT' ? [h('b', {}, l.projeto && l.projeto.nome || '(sem nome)'), l.projetoNomeOrcprev && Imp.normalizar(l.projetoNomeOrcprev) !== Imp.normalizar(l.projeto.nome) ? h('div', { style: 'color:#64748b;' }, '→ ' + l.projetoNomeOrcprev) : null]
+            : l.tipo === 'SERVICE' ? [h('b', {}, l.projeto && l.projeto.nome || '(sem nome)'), h('div', { style: 'color:#64748b;' }, (l.atividade === 'PROTOTYPING' ? 'Prototipagem' : 'Consultoria') + (l.servicoNomeOrcprev ? ' → ' + l.servicoNomeOrcprev : ''))]
             : [h('b', {}, ((dados.activities || []).find(a => a.code === l.atividade) || {}).name || l.atividade), h('div', { style: 'color:#64748b;' }, 'Atividade')]),
         h('td', { style: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;white-space:nowrap;' }, fmtH(l.horas)),
         h('td', { style: 'padding:5px 6px;border-bottom:1px solid #f1f5f9;' },
@@ -268,7 +308,11 @@
         const corpoPedido = Imp.corpoGravacao(plano, dados, pacote);
         const r = await api('/timesheet-bulk-save', { method: 'POST', body: JSON.stringify(corpoPedido) });
         const mem = lerMemoria();
-        plano.linhas.forEach(l => { if (l.estado === 'ok' && l.tipo === 'PROJECT' && escolhas[l.chave]) mem[l.chave] = escolhas[l.chave]; });
+        plano.linhas.forEach(l => {
+          if (l.estado !== 'ok') return;
+          if (l.tipo === 'PROJECT' && escolhas[l.chave]) mem[l.chave] = escolhas[l.chave];
+          if (l.tipo === 'SERVICE' && escolhas[l.chaveEscolha]) mem[l.chaveEscolha] = escolhas[l.chaveEscolha];
+        });
         gravarMemoria(mem);
         moldura('Importar horas do Gestor',
           [aviso(`Gravado no orcprev: ${r && r.inserted != null ? r.inserted : corpoPedido.entries.length} linha(s) novas${r && r.deleted ? `, ${r.deleted} substituídas` : ''}.`, 'ok'),

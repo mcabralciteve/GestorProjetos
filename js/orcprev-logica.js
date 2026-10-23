@@ -9,7 +9,10 @@
 //    total do dia ficar o mais perto possível do que a pessoa registou;
 //  - o que o Gestor envia vai marcado com "[Gestor]" na nota — é assim que um reenvio da mesma semana SUBSTITUI
 //    o que veio do Gestor sem tocar no que a pessoa tenha lançado à mão no orcprev;
-//  - tipos de trabalho sem atividade do orcprev definida NÃO são enviados (fica o aviso, nunca se adivinha).
+//  - tipos de trabalho sem atividade do orcprev definida NÃO são enviados (fica o aviso, nunca se adivinha);
+//  - um projeto do Gestor pode corresponder, no orcprev, a um PROJETO (de I&D), a um SERVIÇO de consultoria/prototipagem
+//    ou a uma ATIVIDADE (ex.: "Outras atividades", para serviços que ainda não existem lá). A correspondência guarda-se
+//    como texto em projetos.orcprev_ref (ver alvoDe/codificarAlvo).
 const OrcprevLogica = {
   MARCA: '[Gestor]',
   PASSO: 0.25,
@@ -41,6 +44,37 @@ const OrcprevLogica = {
   nomeAtividade(codigo) {
     const a = this.ATIVIDADES.find(x => x[0] === codigo);
     return a ? a[1] : codigo;
+  },
+
+  // ---------- correspondência projeto do Gestor → orcprev (texto em projetos.orcprev_ref) ----------
+  //   ""                          → projeto do orcprev com o mesmo nome (automático)
+  //   "005323" ou "TEXP@CT"       → projeto do orcprev, por código ou nome
+  //   "consultoria: Cliente · X"  → serviço de consultoria do orcprev
+  //   "prototipagem: Cliente · X" → serviço de prototipagem do orcprev
+  //   "atividade:OTHER"           → atividade (sem projeto) — "Outras atividades"
+  alvoDe(ref) {
+    const t = String(ref || '').trim();
+    const m = /^(consultoria|prototipagem|atividade)\s*:\s*(.*)$/i.exec(t);
+    if (!m) return { tipo: 'projeto', valor: t };
+    const k = m[1].toLowerCase(), v = m[2].trim();
+    if (k === 'consultoria') return { tipo: 'servico', atividade: 'CONSULTING', valor: v };
+    if (k === 'prototipagem') return { tipo: 'servico', atividade: 'PROTOTYPING', valor: v };
+    return { tipo: 'atividade', atividade: (v || 'OTHER').toUpperCase(), valor: v };
+  },
+  // Inverso de alvoDe, a partir do que se escolhe no quadro: tipo = 'projeto' | 'consultoria' | 'prototipagem' | 'outras'.
+  codificarAlvo(tipo, valor) {
+    const v = String(valor || '').trim();
+    if (tipo === 'consultoria') return 'consultoria:' + v;
+    if (tipo === 'prototipagem') return 'prototipagem:' + v;
+    if (tipo === 'outras') return 'atividade:OTHER';
+    return v;
+  },
+  // Para o quadro: qual dos quatro tipos é este texto.
+  tipoDoAlvo(ref) {
+    const a = this.alvoDe(ref);
+    if (a.tipo === 'servico') return a.atividade === 'PROTOTYPING' ? 'prototipagem' : 'consultoria';
+    if (a.tipo === 'atividade') return 'outras';
+    return 'projeto';
   },
 
   // ---------- datas (ISO "AAAA-MM-DD", sempre em UTC para não haver saltos de hora de verão) ----------
@@ -93,9 +127,21 @@ const OrcprevLogica = {
         const proj = (r.projetoId && projetoPorId && projetoPorId(r.projetoId)) || null;
         const idInterno = r.projetoIdInterno || (proj && proj.idInterno) || '';
         const nome = r.projetoNome || (proj && proj.nome) || '';
-        chave = `${r.data}|P|${r.projetoId || idInterno || nome}`;
-        grupo = grupos.get(chave) || { data: r.data, tipo: 'PROJECT', atividade: null, horas: 0, notas: new Set(),
-          projeto: { ref: (proj && proj.orcprevRef) || '', nome, idInterno } };
+        const alvo = this.alvoDe(proj && proj.orcprevRef);
+        if (alvo.tipo === 'atividade') {
+          // Vai como atividade, sem projeto: o nome do projeto do Gestor fica na nota para se saber de onde vêm as horas.
+          chave = `${r.data}|A|${alvo.atividade}`;
+          grupo = grupos.get(chave) || { data: r.data, tipo: 'ACTIVITY', atividade: alvo.atividade, horas: 0, notas: new Set(), projeto: null };
+          if (nome) grupo.notas.add(nome);
+        } else if (alvo.tipo === 'servico') {
+          chave = `${r.data}|S|${alvo.atividade}|${alvo.valor || r.projetoId || nome}`;
+          grupo = grupos.get(chave) || { data: r.data, tipo: 'SERVICE', atividade: alvo.atividade, horas: 0, notas: new Set(),
+            projeto: { ref: alvo.valor, nome, idInterno } };
+        } else {
+          chave = `${r.data}|P|${r.projetoId || idInterno || nome}`;
+          grupo = grupos.get(chave) || { data: r.data, tipo: 'PROJECT', atividade: null, horas: 0, notas: new Set(),
+            projeto: { ref: alvo.valor, nome, idInterno } };
+        }
       } else if (!tipo.orcprevAtividade) {
         semAtividade.set(tipo.nome, (semAtividade.get(tipo.nome) || 0) + horas);
         return;
@@ -124,7 +170,7 @@ const OrcprevLogica = {
       const nota = (this.MARCA + (texto ? ' ' + texto : '')).slice(0, this.NOTA_MAX);
       return { data: g.data, tipo: g.tipo, atividade: g.atividade, projeto: g.projeto, horas: g.horas, nota };
     }).sort((a, b) => a.data.localeCompare(b.data)
-      || (a.tipo === b.tipo ? 0 : a.tipo === 'PROJECT' ? -1 : 1)
+      || (this._ordemTipo(a.tipo) - this._ordemTipo(b.tipo))
       || String((a.projeto && a.projeto.nome) || a.atividade || '').localeCompare(String((b.projeto && b.projeto.nome) || b.atividade || ''), 'pt'));
 
     const avisos = [];
@@ -133,6 +179,7 @@ const OrcprevLogica = {
     const totalEnvio = linhas.reduce((s, l) => s + l.horas, 0);
     return { inicio, fim, linhas, avisos, totalGestor, totalEnvio };
   },
+  _ordemTipo(t) { return t === 'PROJECT' ? 0 : t === 'SERVICE' ? 1 : 2; },
   _fmt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); },
 
   // O texto que se copia (JSON) — o importador lê exatamente isto.
