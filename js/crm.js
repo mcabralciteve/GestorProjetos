@@ -256,8 +256,21 @@ const Crm = {
         if (novo) { novo.focus(); try { novo.setSelectionRange(posicao, posicao); } catch (e) { /* tipo sem seleção */ } }
       }
     };
-    el.addEventListener('change', ev => { if (ev.target.tagName !== 'INPUT' || ev.target.type !== 'text') filtro(ev); });
-    el.addEventListener('input', ev => { if (ev.target.tagName === 'INPUT' && ev.target.type === 'text') filtro(ev); });
+    el.addEventListener('change', ev => {
+      const ed = ev.target.closest('[data-op-ed]');
+      if (ed) { this.editarOpDaLista(ed); return; }
+      if (ev.target.tagName !== 'INPUT' || ev.target.type !== 'text') filtro(ev);
+    });
+    // Contas: a lista completa só entra no <select> quando a pessoa o abre (evita milhares de <option> na lista).
+    const encherContas = ev => {
+      const s = ev.target.closest && ev.target.closest('select[data-lazy="contas"]');
+      if (!s || s._cheio) return;
+      s._cheio = true;
+      s.innerHTML = this.opcoes(this.contasOrdenadas(), s.value, c => c.nome);
+    };
+    el.addEventListener('mousedown', encherContas);
+    el.addEventListener('focusin', encherContas);
+    el.addEventListener('input', ev => { if (ev.target.tagName === 'INPUT' && ev.target.type === 'text' && !ev.target.dataset.opEd) filtro(ev); });
     // Arrastar cartões do quadro de oportunidades entre etapas.
     el.addEventListener('dragstart', ev => {
       const card = ev.target.closest('[data-op-id]');
@@ -356,16 +369,11 @@ const Crm = {
       return this.contem(f.texto, op.titulo, conta && conta.nome, op.referencia_giaf);
     });
   },
-  renderOportunidades(el) {
-    const f = this.filtros.op;
-    const tipos = this.tiposAtivos();
-    if (!tipos.length) { el.innerHTML = this.vazioHtml('Ainda não há tipos de oportunidade. O Administrador define-os em Configurações → Funil CRM.'); return; }
-    // O quadro precisa de UM tipo (cada tipo tem as suas etapas); na lista pode ver-se tudo.
-    if (f.vista === 'quadro' && !this.idx.tipo.get(f.tipoId)) f.tipoId = tipos[0].id;
+  htmlKpisOps() {
     const baseKpi = this.opsFiltradas(true);
     const r = CrmLogica.resumoFunil(baseKpi, this.idx.etapa);
     const conv = CrmLogica.taxaConversao(baseKpi, this.idx.etapa);
-    const kpis = `<div class="crm-kpis">
+    return `<div class="crm-kpis">
       <div class="crm-kpi"><b>${r.abertas.n}</b><span>em curso</span></div>
       <div class="crm-kpi"><b>${this.euro(r.abertas.valor)}</b><span>valor em curso</span></div>
       <div class="crm-kpi"><b>${this.euro(r.abertas.ponderado)}</b><span>valor ponderado</span></div>
@@ -373,6 +381,14 @@ const Crm = {
       <div class="crm-kpi"><b>${r.perdidas.n}</b><span>perdidas</span></div>
       <div class="crm-kpi"><b>${conv === null ? '—' : Math.round(conv * 100) + '%'}</b><span>conversão</span></div>
     </div>`;
+  },
+  renderOportunidades(el) {
+    const f = this.filtros.op;
+    const tipos = this.tiposAtivos();
+    if (!tipos.length) { el.innerHTML = this.vazioHtml('Ainda não há tipos de oportunidade. O Administrador define-os em Configurações → Funil CRM.'); return; }
+    // O quadro precisa de UM tipo (cada tipo tem as suas etapas); na lista pode ver-se tudo.
+    if (f.vista === 'quadro' && !this.idx.tipo.get(f.tipoId)) f.tipoId = tipos[0].id;
+    const kpis = this.htmlKpisOps();
     const tipoSel = `<label class="zoom-label">Tipo <select data-crm-filtro="op.tipoId">${f.vista === 'lista' ? '<option value="">Todos</option>' : ''}${this.opcoes(tipos, f.tipoId, t => t.nome)}</select></label>`;
     const estadoSel = f.vista === 'lista'
       ? `<label class="zoom-label">Estado <select data-crm-filtro="op.estado">${['abertas', 'ganhas', 'perdidas', 'todas'].map(v => `<option value="${v}"${f.estado === v ? ' selected' : ''}>${{ abertas: 'Em curso', ganhas: 'Ganhas', perdidas: 'Perdidas', todas: 'Todas' }[v]}</option>`).join('')}</select></label>` : '';
@@ -425,19 +441,86 @@ const Crm = {
       titulo: o => o.titulo, conta: nomeConta, tipo: o => (this.idx.tipo.get(o.tipo_id) || {}).nome || '',
       etapa: o => { const e = this.idx.etapa.get(o.etapa_id), t = this.idx.tipo.get(o.tipo_id); return e ? ((t ? t.ordem || 0 : 0) * 1000 + (e.ordem || 0)) : null; },
       valor: o => Number(o.valor_estimado) || 0, prob: o => CrmLogica.probabilidadeDe(o, this.idx.etapa), ponderado: o => CrmLogica.valorPonderado(o, this.idx.etapa),
-      fecho: o => o.data_prevista_fecho || '', resp: o => o.responsavel_id ? this.recursoNome(o.responsavel_id) : ''
+      fecho: o => o.data_prevista_fecho || '', resp: o => o.responsavel_id ? this.recursoNome(o.responsavel_id) : '',
+      inicio: o => o.inicio_previsto || '', duracao: o => o.duracao_meses ? Number(o.duracao_meses) : null,
+      area: o => { const e = App.state.equipas.find(x => x.id === o.equipa_id); return e ? e.nome : ''; }
     });
     if (!ops.length) return this.vazioHtml('Nenhuma oportunidade com estes filtros.');
-    return `<div class="table-scroll"><table class="tabela-crud"><thead><tr>
-      ${this.th('ops', 'titulo', 'Título')}${this.th('ops', 'conta', 'Conta')}${this.th('ops', 'tipo', 'Tipo')}${this.th('ops', 'etapa', 'Etapa')}${this.th('ops', 'valor', 'Valor')}${this.th('ops', 'prob', 'Prob.')}${this.th('ops', 'ponderado', 'Ponderado')}${this.th('ops', 'fecho', 'Fecho previsto')}${this.th('ops', 'resp', 'Responsável')}</tr></thead><tbody>
-      ${ops.map(op => {
-        const conta = this.idx.conta.get(op.conta_id), etapa = this.idx.etapa.get(op.etapa_id), tipo = this.idx.tipo.get(op.tipo_id);
-        return `<tr class="crm-linha" data-crm-acao="abrir-op" data-id="${escapeAttr(op.id)}">
-          <td><b>${escapeHtml(op.titulo)}</b></td><td>${escapeHtml(conta ? conta.nome : '—')}</td><td>${escapeHtml(tipo ? tipo.nome : '—')}</td>
-          <td>${escapeHtml(etapa ? etapa.nome : '—')}</td><td>${this.euro(op.valor_estimado)}</td>
-          <td>${Math.round(CrmLogica.probabilidadeDe(op, this.idx.etapa))}%</td><td>${this.euro(CrmLogica.valorPonderado(op, this.idx.etapa))}</td>
-          <td>${this.data(op.data_prevista_fecho)}</td><td>${escapeHtml(this.recursoNome(op.responsavel_id))}</td></tr>`;
-      }).join('')}</tbody></table></div>`;
+    // Lista editável: cada campo grava ao sair (change), sem abrir a ficha. Barras de scroll vertical e horizontal; o
+    // cabeçalho e a coluna do título ficam fixos. A conta só carrega a lista completa quando se abre (são centenas).
+    const prev = this.temPrevisao !== false;
+    const equipas = App.state.equipas.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const respBase = this.responsaveis();
+    const optResp = id => this.opcoes(!id || respBase.some(r => r.id === id) ? respBase : respBase.concat([{ id, nome: this.recursoNome(id) }]), id, r => r.nome, '—');
+    const optArea = id => '<option value="">Por atribuir</option>' + equipas.map(e => `<option value="${escapeAttr(e.id)}"${e.id === id ? ' selected' : ''}>${escapeHtml(e.nome)}</option>`).join('');
+    const etapasPorTipo = new Map();
+    const optEtapa = op => {
+      if (!etapasPorTipo.has(op.tipo_id)) etapasPorTipo.set(op.tipo_id, CrmLogica.etapasDoTipo(this.d.etapas, op.tipo_id));
+      const lista = etapasPorTipo.get(op.tipo_id), atual = this.idx.etapa.get(op.etapa_id);
+      return this.opcoes(atual && !lista.some(e => e.id === atual.id) ? lista.concat([atual]) : lista, op.etapa_id, e => e.nome);
+    };
+    const hoje = this.hoje();
+    const linhas = ops.map(op => {
+      const conta = this.idx.conta.get(op.conta_id), tipo = this.idx.tipo.get(op.tipo_id), id = escapeAttr(op.id);
+      const def = this.defeitosDoTipo(op.tipo_id);
+      const ini = PrevisaoLogica.inicioDaOportunidade({ inicioPrevisto: op.inicio_previsto, dataFecho: op.data_prevista_fecho, aposFecho: def.apos, hojeISO: hoje });
+      const dicaIni = op.inicio_previsto ? 'Início previsto do trabalho' : `Em branco: o trabalho começa em ${ini.mes} (${def.apos} mês(es) depois do fecho previsto)`;
+      return `<tr data-op-linha="${id}">
+        <td class="crm-col-fixa"><input type="text" data-op-ed="titulo" data-id="${id}" value="${escapeAttr(op.titulo)}" style="min-width:230px;font-weight:600;"></td>
+        <td><select data-op-ed="conta_id" data-id="${id}" data-lazy="contas" style="min-width:210px;"><option value="${escapeAttr(op.conta_id)}" selected>${escapeHtml(conta ? conta.nome : '—')}</option></select></td>
+        <td>${escapeHtml(tipo ? tipo.nome : '—')}</td>
+        <td><select data-op-ed="etapa_id" data-id="${id}" style="min-width:170px;">${optEtapa(op)}</select></td>
+        <td><input type="number" min="0" step="any" data-op-ed="valor_estimado" data-id="${id}" value="${Number(op.valor_estimado) || 0}" style="width:100px;text-align:right;"></td>
+        <td data-op-calc="prob">${Math.round(CrmLogica.probabilidadeDe(op, this.idx.etapa))}%</td>
+        <td data-op-calc="pond" style="white-space:nowrap;">${this.euro(CrmLogica.valorPonderado(op, this.idx.etapa))}</td>
+        <td><input type="date" data-op-ed="data_prevista_fecho" data-id="${id}" value="${escapeAttr(op.data_prevista_fecho || '')}" style="width:140px;"></td>
+        ${prev ? `<td><input type="month" data-op-ed="inicio_previsto" data-id="${id}" value="${escapeAttr(op.inicio_previsto ? String(op.inicio_previsto).slice(0, 7) : '')}" title="${escapeAttr(dicaIni)}" style="width:130px;"></td>
+        <td><input type="number" min="1" max="120" step="1" data-op-ed="duracao_meses" data-id="${id}" value="${op.duracao_meses || ''}" placeholder="${def.duracao}" title="Meses. Em branco: ${def.duracao} (por defeito do tipo)" style="width:70px;text-align:right;"></td>
+        <td><select data-op-ed="equipa_id" data-id="${id}" style="min-width:110px;">${optArea(op.equipa_id)}</select></td>` : ''}
+        <td><select data-op-ed="responsavel_id" data-id="${id}" style="min-width:140px;">${optResp(op.responsavel_id)}</select></td>
+        <td><button type="button" class="btn btn-sm" data-crm-acao="abrir-op" data-id="${id}" title="Abrir a ficha completa (propostas, interações, follow-ups, plano de faturas)">Abrir</button></td></tr>`;
+    }).join('');
+    let thTitulo = this.th('ops', 'titulo', 'Título');
+    thTitulo = /class="ord-/.test(thTitulo) ? thTitulo.replace('class="', 'class="crm-col-fixa ') : thTitulo.replace('<th ', '<th class="crm-col-fixa" ');
+    return `<div class="table-scroll crm-lista-ed"><table class="tabela-crud crm-tabela-ed"><thead><tr>
+      ${thTitulo}${this.th('ops', 'conta', 'Conta')}${this.th('ops', 'tipo', 'Tipo')}${this.th('ops', 'etapa', 'Etapa')}${this.th('ops', 'valor', 'Valor (€)')}${this.th('ops', 'prob', 'Prob.')}${this.th('ops', 'ponderado', 'Ponderado')}${this.th('ops', 'fecho', 'Fecho previsto')}${prev ? `${this.th('ops', 'inicio', 'Início previsto')}${this.th('ops', 'duracao', 'Duração (meses)')}${this.th('ops', 'area', 'Área responsável')}` : ''}${this.th('ops', 'resp', 'Responsável')}<th></th></tr></thead><tbody>${linhas}</tbody></table></div>
+      <p class="hint" style="margin:6px 0 0;">${ops.length} oportunidade(s). Os campos editam-se aqui mesmo e gravam ao sair do campo; "Abrir" mostra a ficha completa. Mudar a etapa para ganha ou perdida pede os dados habituais.</p>`;
+  },
+
+  // ---------- Edição direta na lista de oportunidades ----------
+  async editarOpDaLista(c) {
+    const op = this.idx.op.get(c.dataset.id);
+    if (!op) return;
+    const campo = c.dataset.opEd, v = c.value;
+    if (campo === 'etapa_id') {
+      // Ganha/perdida abrem o seu modal; até confirmar, a caixa volta à etapa atual.
+      c.value = op.etapa_id;
+      this.moverEtapa(op.id, v);
+      return;
+    }
+    const patch = {};
+    if (campo === 'titulo') { if (!v.trim()) { App.toast('O título não pode ficar vazio.'); c.value = op.titulo; return; } patch.titulo = v.trim(); }
+    else if (campo === 'conta_id') { if (!v) { c.value = op.conta_id; return; } patch.conta_id = v; patch.contacto_id = null; }
+    else if (campo === 'valor_estimado') patch.valor_estimado = Math.max(0, Number(v) || 0);
+    else if (campo === 'data_prevista_fecho') patch.data_prevista_fecho = v || null;
+    else if (campo === 'inicio_previsto') patch.inicio_previsto = v ? v + '-01' : null;
+    else if (campo === 'duracao_meses') patch.duracao_meses = v ? Math.max(1, Math.min(120, Math.round(Number(v)))) : null;
+    else if (campo === 'equipa_id' || campo === 'responsavel_id') patch[campo] = v || null;
+    else return;
+    c.disabled = true;
+    try {
+      const gravada = await this.gravar('oportunidades', Object.assign({}, op, patch));
+      c.disabled = false;
+      if (campo === 'duracao_meses') c.value = gravada.duracao_meses || '';
+      if (campo === 'valor_estimado') c.value = Number(gravada.valor_estimado) || 0;
+      // Só o que depende do valor: ponderado da linha e os totais do topo (a ordem só muda ao voltar a ordenar).
+      const linha = c.closest('tr'), pond = linha && linha.querySelector('[data-op-calc="pond"]');
+      if (pond) pond.textContent = this.euro(CrmLogica.valorPonderado(gravada, this.idx.etapa));
+      const kpis = document.querySelector('.crm-kpis');
+      if (kpis) kpis.outerHTML = this.htmlKpisOps();
+      c.classList.add('crm-ed-gravado');
+      setTimeout(() => c.classList.remove('crm-ed-gravado'), 900);
+    } catch (err) { c.disabled = false; this.avisoErro(err); this.renderAtual(); }
   },
 
   // ---------- Mudança de etapa (quadro e formulário) ----------
