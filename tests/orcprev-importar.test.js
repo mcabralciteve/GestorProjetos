@@ -75,8 +75,8 @@ test('planear: atividade simples vai; atividade com serviço/projeto fica à mã
     lp('ALMA', { horas: 1.5 })
   ];
   const p = I.planear({ pacote: pacote(linhas), dados: dados(), memoria: {}, escolhas: {} });
-  assert.deepEqual(p.linhas.map(l => l.estado), ['ok', 'manual', 'ok', 'manual', 'escolher']); // Preparação de candidaturas é uma atividade simples
-  assert.equal(p.totalEnviar, 2); assert.equal(p.totalPendente, 4.5);
+  assert.deepEqual(p.linhas.map(l => l.estado), ['ok', 'manual', 'escolher', 'manual', 'escolher']); // candidaturas: o orcprev pede projeto, escolhe-se em "Alterar"
+  assert.equal(p.totalEnviar, 1); assert.equal(p.totalPendente, 5.5);
   // depois de escolher o projeto, passa a ok
   const p2 = I.planear({ pacote: pacote(linhas), dados: dados(), memoria: {}, escolhas: { '2026/1': 3 } });
   assert.equal(p2.linhas[4].estado, 'ok'); assert.equal(p2.linhas[4].projetoId, 3);
@@ -164,7 +164,8 @@ test('reajuste: corrigir uma linha que casou com o projeto errado; a nota editad
   assert.equal(p.linhas[0].projetoId, 1); assert.equal(p.linhas[0].nota, '[Gestor] Texto meu');
   const vazia = I.planear({ pacote: pacote([lp('TEXP@CT')]), dados: d, memoria: {}, edicoes: { 0: { destino: 'projeto', id: 1, nota: '   ' } } });
   assert.equal(vazia.linhas[0].nota, '[Gestor]'); // sem a marca, o reenvio não saberia substituir esta linha
-  assert.equal(I.montarNota('x'.repeat(500)).length, 200);
+  assert.equal(I.montarNota('x'.repeat(3000)).length, 1000);
+  assert.equal(I.montarNota('x'.repeat(500)).length, 509); // ainda cabe: nada é cortado
 });
 
 test('reajuste: serviço escolhido; destino inválido fica por escolher; editor aberto sem mudanças não conta', () => {
@@ -191,31 +192,52 @@ test('lembrar: guarda o destino por projeto do Gestor e aplica-o nos envios segu
   assert.equal(I.planear({ pacote: pacote([comRef]), dados: d, memoria: mem, edicoes: {} }).linhas[0].tipo, 'PROJECT');
 });
 
-// ---------- Preparação de candidaturas: atividade simples, sem projeto ----------
-const dadosCand = (extra) => dados([], Object.assign({ activities: [{ code: 'PROPOSAL_DRAFT' }, { code: 'APPLICATION_PREP', name: 'Preparação de candidaturas' }, { code: 'PROTOTYPING' }, { code: 'OTHER' }], service_activity_codes: ['PROTOTYPING'] }, extra));
+// ---------- Preparação de candidaturas (atividade que leva projeto) ----------
+const dadosCand = (extra) => dados([], Object.assign({ activities: [{ code: 'APPLICATION_PREP', name: 'Preparação de candidaturas' }, { code: 'OTHER' }] }, extra));
 
-test('candidatura: vai como atividade simples, sem project_id, com a nota do Gestor', () => {
-  const lin = [lp('', { tipo: 'ACTIVITY', atividade: 'APPLICATION_PREP', projeto: null, horas: 2, nota: '[Gestor] Formulário' })];
+test('candidatura: casa o projeto e envia project_id + activity_code APPLICATION_PREP', () => {
+  const lin = [lp('', { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projeto: { ref: '005323', nome: 'Candidatura X', idInterno: '2026/60' }, horas: 3, nota: '[Gestor] Formulário' })];
   const d = dadosCand();
   const p = I.planear({ pacote: pacote(lin), dados: d, memoria: {}, edicoes: {} });
-  assert.equal(p.linhas[0].estado, 'ok');
-  assert.deepEqual(I.corpoGravacao(p, d, pacote(lin)).entries[0], { id: null, work_date: '2026-10-19', project_id: null, service_id: null, activity_code: 'APPLICATION_PREP', hours: 2, note: '[Gestor] Formulário' });
+  assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].tipo, 'APPLICATION'); assert.equal(p.linhas[0].projetoId, 2);
+  assert.deepEqual(I.corpoGravacao(p, d, pacote(lin)).entries[0], { id: null, work_date: '2026-10-19', project_id: 2, service_id: null, activity_code: 'APPLICATION_PREP', hours: 3, note: '[Gestor] Formulário' });
 });
 
-test('candidatura: linha de projeto reajustada para esta atividade leva tarefa, projeto e cliente na nota; pacotes antigos (APPLICATION) também funcionam', () => {
+test('candidatura: tipo de trabalho com esta atividade fica por escolher o projeto (não "à mão"); escolhido em "Alterar" segue', () => {
+  const lin = [lp('', { tipo: 'ACTIVITY', atividade: 'APPLICATION_PREP', projeto: null, horas: 2, nota: '[Gestor]' })];
   const d = dadosCand();
-  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'APPLICATION_PREP' } } });
-  assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].tipo, 'ACTIVITY');
-  assert.equal(p.linhas[0].nota, '[Gestor] Reunião com cliente — Roadmapping Digital (Alfa, Lda.)');
-  const antigo = [lp('', { tipo: 'APPLICATION', atividade: 'APPLICATION_PREP', projeto: { ref: 'x', nome: 'Cand', idInterno: '2026/60' }, nota: '[Gestor] y' })];
-  const q = I.planear({ pacote: pacote(antigo), dados: d, memoria: {}, edicoes: {} });
-  assert.equal(q.linhas[0].estado, 'ok'); assert.equal(I.corpoGravacao(q, d, pacote(antigo)).entries[0].project_id, null);
-  // memória antiga {t:'candidatura'} passa a atividade simples
-  const m = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: { 'd:2026/1': { t: 'candidatura', id: 5 } }, edicoes: {} });
-  assert.equal(m.linhas[0].tipo, 'ACTIVITY'); assert.equal(m.linhas[0].atividade, 'APPLICATION_PREP');
+  const antes = I.planear({ pacote: pacote(lin), dados: d, memoria: {}, edicoes: {} });
+  assert.equal(antes.linhas[0].estado, 'escolher'); assert.equal(antes.linhas[0].tipo, 'APPLICATION');
+  const depois = I.planear({ pacote: pacote(lin), dados: d, memoria: {}, edicoes: { 0: { destino: 'candidatura', id: 1 } } });
+  assert.equal(depois.linhas[0].estado, 'ok'); assert.equal(I.corpoGravacao(depois, d, pacote(lin)).entries[0].project_id, 1);
 });
 
-test('sublista Atividade: todas as do orcprev pela sua ordem, menos as que pedem serviço', () => {
-  assert.deepEqual(I.atividadesEscolhiveis(dadosCand()).map(a => a.code), ['PROPOSAL_DRAFT', 'APPLICATION_PREP', 'OTHER']);
-  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: dadosCand(), memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'PROTOTYPING' } } }).linhas[0].estado, 'escolher'); // pede serviço
+test('candidatura: qualquer linha de projeto pode ser reajustada para candidatura; sem a atividade no orcprev não deixa', () => {
+  const d = dadosCand();
+  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'candidatura', id: 2 } } });
+  assert.equal(p.linhas[0].tipo, 'APPLICATION'); assert.equal(p.linhas[0].atividade, 'APPLICATION_PREP'); assert.equal(p.linhas[0].nota, '[Gestor] Reunião com cliente');
+  const semAtividade = I.planear({ pacote: pacote([linhaProj()]), dados: dados([], { activities: [{ code: 'OTHER' }] }), memoria: {}, edicoes: { 0: { destino: 'candidatura', id: 2 } } });
+  assert.equal(semAtividade.linhas[0].estado, 'escolher');
+  assert.deepEqual(I.atividadesComProjeto(d), ['APPLICATION_PREP']);
+  assert.deepEqual(I.atividadesLivres(d).map(a => a.code), ['OTHER']); // as livres nunca incluem as que pedem projeto ou serviço
+  const mem = I.memorizar({}, p, { 0: { destino: 'candidatura', id: 2, lembrar: true } });
+  assert.deepEqual(mem['d:2026/1'], { t: 'candidatura', id: 2 });
+});
+
+test('sublista Atividade: todas as do orcprev pela sua ordem, menos as de serviço; "Preparação de candidaturas" leva projeto', () => {
+  const d = dados([], { activities: [{ code: 'PROPOSAL_DRAFT' }, { code: 'APPLICATION_PREP' }, { code: 'TRAINING_GIVE' }, { code: 'PROTOTYPING' }, { code: 'CONSULTING' }, { code: 'OTHER' }], service_activity_codes: ['PROTOTYPING', 'CONSULTING'] });
+  assert.deepEqual(I.atividadesEscolhiveis(d).map(a => a.code), ['PROPOSAL_DRAFT', 'APPLICATION_PREP', 'TRAINING_GIVE', 'OTHER']);
+  // escolher a atividade APPLICATION_PREP na sublista + o projeto = candidatura com projeto
+  const p = I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'APPLICATION_PREP', id: 2 } } });
+  assert.equal(p.linhas[0].tipo, 'APPLICATION'); assert.equal(p.linhas[0].estado, 'ok'); assert.equal(p.linhas[0].projetoId, 2);
+  assert.deepEqual(I.corpoGravacao(p, d, pacote([linhaProj()])).entries[0], { id: null, work_date: '2026-10-19', project_id: 2, service_id: null, activity_code: 'APPLICATION_PREP', hours: 2, note: '[Gestor] Reunião com cliente' });
+  // sem projeto escolhido ainda: por escolher
+  assert.equal(I.planear({ pacote: pacote([linhaProj()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'APPLICATION_PREP', id: null } } }).linhas[0].estado, 'escolher');
+});
+
+test('a nota que vem do Gestor (com as suas notas) segue tal e qual para o orcprev; reajustar o destino não as perde', () => {
+  const l = linhaProj({ tarefas: ['Reunião: falámos do orçamento'], nota: '[Gestor] Reunião: falámos do orçamento' });
+  const d = dados([], { activities: [{ code: 'OTHER' }] });
+  const p = I.planear({ pacote: pacote([l]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'OTHER' } } });
+  assert.equal(p.linhas[0].nota, '[Gestor] Reunião: falámos do orçamento — Roadmapping Digital (Alfa, Lda.)');
 });

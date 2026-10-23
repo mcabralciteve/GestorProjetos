@@ -16,7 +16,7 @@
 const OrcprevLogica = {
   MARCA: '[Gestor]',
   PASSO: 0.25,
-  NOTA_MAX: 200,
+  NOTA_MAX: 1000, // as notas escritas no Gestor passam todas; só um texto enorme é cortado (com "…")
   FORMATO: 'gestor-orcprev',
   VERSAO: 1,
 
@@ -52,7 +52,7 @@ const OrcprevLogica = {
   //   "consultoria: Cliente · X"  → serviço de consultoria do orcprev
   //   "prototipagem: Cliente · X" → serviço de prototipagem do orcprev
   //   "atividade:OTHER"           → atividade (sem projeto) — "Outras atividades"
-  //   "atividade:APPLICATION_PREP" → "Preparação de candidaturas" (atividade simples, sem projeto)
+  //   "candidatura: 005323"       → "Preparação de candidaturas" (atividade que leva um projeto do orcprev)
   alvoDe(ref) {
     const t = String(ref || '').trim();
     const m = /^(consultoria|prototipagem|atividade|candidatura)\s*:\s*(.*)$/i.exec(t);
@@ -60,7 +60,7 @@ const OrcprevLogica = {
     const k = m[1].toLowerCase(), v = m[2].trim();
     if (k === 'consultoria') return { tipo: 'servico', atividade: 'CONSULTING', valor: v };
     if (k === 'prototipagem') return { tipo: 'servico', atividade: 'PROTOTYPING', valor: v };
-    if (k === 'candidatura') return { tipo: 'atividade', atividade: 'APPLICATION_PREP', valor: '' }; // forma antiga
+    if (k === 'candidatura') return { tipo: 'candidatura', atividade: 'APPLICATION_PREP', valor: v };
     return { tipo: 'atividade', atividade: (v || 'OTHER').toUpperCase(), valor: v };
   },
   // Inverso de alvoDe, a partir do que se escolhe no quadro: tipo = 'projeto' | 'consultoria' | 'prototipagem' | 'outras'.
@@ -68,7 +68,7 @@ const OrcprevLogica = {
     const v = String(valor || '').trim();
     if (tipo === 'consultoria') return 'consultoria:' + v;
     if (tipo === 'prototipagem') return 'prototipagem:' + v;
-    if (tipo === 'candidatura') return 'atividade:APPLICATION_PREP';
+    if (tipo === 'candidatura') return 'candidatura:' + v;
     if (tipo === 'outras') return 'atividade:OTHER';
     return v;
   },
@@ -76,7 +76,8 @@ const OrcprevLogica = {
   tipoDoAlvo(ref) {
     const a = this.alvoDe(ref);
     if (a.tipo === 'servico') return a.atividade === 'PROTOTYPING' ? 'prototipagem' : 'consultoria';
-    if (a.tipo === 'atividade') return a.atividade === 'APPLICATION_PREP' ? 'candidatura' : 'outras';
+    if (a.tipo === 'atividade') return 'outras';
+    if (a.tipo === 'candidatura') return 'candidatura';
     return 'projeto';
   },
 
@@ -136,6 +137,10 @@ const OrcprevLogica = {
           // Vai como atividade, sem projeto: o nome do projeto do Gestor fica na nota para se saber de onde vêm as horas.
           chave = `${r.data}|A|${alvo.atividade}`;
           grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'ACTIVITY', atividade: alvo.atividade, projeto: null });
+        } else if (alvo.tipo === 'candidatura') {
+          chave = `${r.data}|C|${r.projetoId || idInterno || nome}`;
+          grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'APPLICATION', atividade: 'APPLICATION_PREP',
+            projeto: { ref: alvo.valor, nome, idInterno } });
         } else if (alvo.tipo === 'servico') {
           chave = `${r.data}|S|${alvo.atividade}|${alvo.valor || r.projetoId || nome}`;
           grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'SERVICE', atividade: alvo.atividade,
@@ -159,8 +164,11 @@ const OrcprevLogica = {
         if (r.cliente) grupo.clientes.add(String(r.cliente).trim());
       }
       grupo.horas += horas;
+      // "tarefas" leva, por registo, "Tarefa: nota que escreveste no Gestor" (ou só um dos dois): as notas passam todas para o orcprev.
       const t = nomeTarefa ? String(nomeTarefa(r) || '').trim() : '';
-      if (t) grupo.tarefas.add(t);
+      const n = String(r.notas || '').replace(/\s+/g, ' ').trim();
+      const detalhe = t && n ? `${t}: ${n}` : (t || n);
+      if (detalhe) grupo.tarefas.add(detalhe);
       grupos.set(chave, grupo);
     });
 
@@ -192,7 +200,7 @@ const OrcprevLogica = {
   // O importador (js/orcprev-importar.js) repete esta regra quando a pessoa muda o destino de uma linha.
   textoNota(l, tipoFinal) {
     const tarefas = (l.tarefas || []).join('; ');
-    if (tipoFinal === 'PROJECT') return tarefas;
+    if (tipoFinal === 'PROJECT' || tipoFinal === 'APPLICATION') return tarefas;
     const projetos = l.projetos || [], clientes = l.clientes || [];
     const ctx = [];
     if (projetos.length) ctx.push(projetos.join('; '));
@@ -201,9 +209,10 @@ const OrcprevLogica = {
   },
   montarNota(texto) {
     const t = String(texto || '').trim();
-    return (this.MARCA + (t ? ' ' + t : '')).slice(0, this.NOTA_MAX);
+    const nota = this.MARCA + (t ? ' ' + t : '');
+    return nota.length > this.NOTA_MAX ? nota.slice(0, this.NOTA_MAX - 1) + '…' : nota;
   },
-  _ordemTipo(t) { return t === 'PROJECT' ? 0 : t === 'SERVICE' ? 1 : 2; },
+  _ordemTipo(t) { return t === 'PROJECT' ? 0 : t === 'APPLICATION' ? 1 : t === 'SERVICE' ? 2 : 3; },
   _fmt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); },
 
   // O texto que se copia (JSON) — o importador lê exatamente isto.

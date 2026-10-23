@@ -58,9 +58,10 @@ test('tipo com atividade vai como atividade; tipo sem atividade não é enviado 
 });
 
 test('horas a zero ou negativas ignoram-se; notas longas são cortadas', () => {
-  const s = L.linhasDaSemana(ctx([reg({ horas: 0 }), reg({ horas: 3, tarefaNome: 'x'.repeat(500) })]));
+  const s = L.linhasDaSemana(ctx([reg({ horas: 0 }), reg({ horas: 3, tarefaNome: 'x'.repeat(3000) })]));
   assert.equal(s.linhas.length, 1);
-  assert.equal(s.linhas[0].nota.length, 200);
+  assert.equal(s.linhas[0].nota.length, 1000);
+  assert.ok(s.linhas[0].nota.endsWith('…'));
   assert.ok(s.linhas[0].nota.startsWith('[Gestor] x'));
 });
 
@@ -121,16 +122,27 @@ test('cada linha leva tarefas, projetos e clientes — para o importador poder r
   delete projetos.p1.cliente;
 });
 
-test('Preparação de candidaturas: atividade simples, sem projeto no orcprev; o projeto e o cliente vão na nota', () => {
-  assert.deepEqual(L.alvoDe('atividade:APPLICATION_PREP'), { tipo: 'atividade', atividade: 'APPLICATION_PREP', valor: 'APPLICATION_PREP' });
-  assert.equal(L.alvoDe('candidatura: 005400').atividade, 'APPLICATION_PREP'); // forma antiga
-  assert.equal(L.codificarAlvo('candidatura', 'ignorado'), 'atividade:APPLICATION_PREP');
-  assert.equal(L.tipoDoAlvo('atividade:APPLICATION_PREP'), 'candidatura');
-  assert.equal(L.tipoDoAlvo('atividade:OTHER'), 'outras');
-  projetos.k1 = { id: 'k1', idInterno: '2026/60', nome: 'Candidatura AI Factory', cliente: 'Alfa', orcprevRef: 'atividade:APPLICATION_PREP' };
+test('candidatura: projeto do Gestor que corresponde a "Preparação de candidaturas" do orcprev', () => {
+  assert.deepEqual(L.alvoDe('Candidatura: 005400'), { tipo: 'candidatura', atividade: 'APPLICATION_PREP', valor: '005400' });
+  assert.equal(L.codificarAlvo('candidatura', ' AI FACTORY '), 'candidatura:AI FACTORY');
+  assert.equal(L.tipoDoAlvo('candidatura:X'), 'candidatura');
+  projetos.k1 = { id: 'k1', idInterno: '2026/60', nome: 'Candidatura AI Factory', orcprevRef: 'candidatura:AI FACTORY' };
   const s = L.linhasDaSemana(ctx([reg({ projetoId: 'k1', projetoNome: 'Candidatura AI Factory', projetoIdInterno: '2026/60', horas: 3, tarefaNome: 'Formulário' }), reg({ horas: 1 })]));
-  assert.deepEqual(s.linhas.map(l => [l.tipo, l.atividade]), [['PROJECT', null], ['ACTIVITY', 'APPLICATION_PREP']]);
-  assert.equal(s.linhas[1].projeto, null);
-  assert.equal(s.linhas[1].nota, '[Gestor] Formulário — Candidatura AI Factory (Alfa)');
-  delete projetos.k1;
+  assert.deepEqual(s.linhas.map(l => l.tipo), ['PROJECT', 'APPLICATION']);
+  assert.equal(s.linhas[1].atividade, 'APPLICATION_PREP');
+  assert.deepEqual(s.linhas[1].projeto, { ref: 'AI FACTORY', nome: 'Candidatura AI Factory', idInterno: '2026/60' });
+  assert.equal(s.linhas[1].nota, '[Gestor] Formulário'); // o projeto identifica-se no orcprev: basta o que foi feito
+});
+
+test('as notas escritas no Gestor passam para a nota do orcprev (junto da tarefa a que pertencem)', () => {
+  const s = L.linhasDaSemana(ctx([
+    reg({ horas: 1, tarefaNome: 'Análise', notas: 'revi o   relatório\nfinal' }),
+    reg({ horas: 1, tarefaNome: 'Reunião', notas: '' }),
+    reg({ horas: 1, tarefaNome: '', notas: 'só uma nota' }),
+    reg({ horas: 1, tarefaNome: 'Análise', notas: 'revi o relatório final' }) // repetida: não duplica
+  ]));
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise: revi o relatório final; Reunião; só uma nota');
+  // num serviço / atividade, a nota leva também o projeto e o cliente
+  const o = L.linhasDaSemana(ctx([reg({ projetoId: 'c2', projetoNome: 'Estudo Beta', projetoIdInterno: '2026/51', horas: 1, tarefaNome: 'Relatório', notas: 'entregue ao cliente' })]));
+  assert.equal(o.linhas[0].nota, '[Gestor] Relatório: entregue ao cliente — Estudo Beta');
 });
