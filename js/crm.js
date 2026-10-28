@@ -398,10 +398,10 @@ const Crm = {
       ${estadoSel}
       <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="op.texto" value="${escapeAttr(f.texto)}" placeholder="Título ou conta…"></label>
       <span class="crm-barra-fim">
-        <button type="button" class="chip-projeto${f.vista === 'quadro' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="quadro">▦ Quadro</button>
-        <button type="button" class="chip-projeto${f.vista === 'lista' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="lista">☰ Lista</button>
-        <button type="button" class="btn" data-crm-acao="importar-oportunidades">⬆ Importar</button>
-        <button type="button" class="btn btn-primary" data-crm-acao="nova-op">+ Nova oportunidade</button>
+        <button type="button" class="ib${f.vista === 'quadro' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="quadro" data-tip="Quadro: colunas por etapa, arrasta os cartões" aria-label="Vista em quadro">${Icones.svg('layout-kanban')}</button>
+        <button type="button" class="ib${f.vista === 'lista' ? ' ativo' : ''}" data-crm-acao="vista" data-valor="lista" data-tip="Lista editável" aria-label="Vista em lista">${Icones.svg('list')}</button>
+        <button type="button" class="ib" data-crm-acao="importar-oportunidades" data-tip="Importar oportunidades de um ficheiro" aria-label="Importar oportunidades">${Icones.svg('upload')}</button>
+        <button type="button" class="ib ib-pri" data-crm-acao="nova-op" data-tip="Criar uma oportunidade" aria-label="Nova oportunidade">${Icones.svg('plus')}<span>Nova oportunidade</span></button>
       </span>
     </div>`;
     el.innerHTML = kpis + barra + (f.vista === 'quadro' ? this.htmlQuadro() : this.htmlListaOps());
@@ -1042,7 +1042,7 @@ const Crm = {
       <div class="filters crm-barra">
         <label class="zoom-label">Estado <select data-crm-filtro="propostas.estado"><option value="">Todos</option>${Object.entries(this.ESTADOS_PROPOSTA).map(([k, v]) => `<option value="${k}"${f.estado === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="propostas.texto" value="${escapeAttr(f.texto)}" placeholder="Referência, oportunidade ou conta…"></label>
-        <span class="crm-barra-fim"><button type="button" class="btn btn-primary" data-crm-acao="nova-proposta">+ Nova proposta</button></span>
+        <span class="crm-barra-fim"><button type="button" class="ib ib-pri" data-crm-acao="nova-proposta" data-tip="Criar uma proposta" aria-label="Nova proposta">${Icones.svg('plus')}<span>Nova proposta</span></button></span>
       </div>
       ${lista.length ? this.htmlTabelaPropostas(lista, true) : this.vazioHtml('Nenhuma proposta com estes filtros.')}`;
   },
@@ -1194,7 +1194,7 @@ const Crm = {
         <label class="zoom-label">Estado <select data-crm-filtro="tarefas.estado"><option value="pendentes"${f.estado === 'pendentes' ? ' selected' : ''}>Pendentes</option><option value="concluidas"${f.estado === 'concluidas' ? ' selected' : ''}>Concluídos</option><option value="todas"${f.estado === 'todas' ? ' selected' : ''}>Todos</option></select></label>
         <label class="zoom-label">Ordenar por <select data-crm-filtro="tarefas.ordem">${[['prazo', 'Prazo'], ['descricao', 'Descrição'], ['oportunidade', 'Oportunidade'], ['conta', 'Conta'], ['resp', 'Responsável']].map(([k, v]) => `<option value="${k}"${f.ordem === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="zoom-label">Sentido <select data-crm-filtro="tarefas.dir"><option value="asc"${f.dir === 'asc' ? ' selected' : ''}>Crescente</option><option value="desc"${f.dir === 'desc' ? ' selected' : ''}>Decrescente</option></select></label>
-        <span class="crm-barra-fim"><button type="button" class="btn btn-primary" data-crm-acao="nova-tarefa">+ Novo follow-up</button></span>
+        <span class="crm-barra-fim"><button type="button" class="ib ib-pri" data-crm-acao="nova-tarefa" data-tip="Criar um follow-up" aria-label="Novo follow-up">${Icones.svg('plus')}<span>Novo follow-up</span></button></span>
       </div>${blocos || this.vazioHtml('Nada por fazer. 🎉')}`;
     // Os "links" são âncoras: não saltar para o topo da página.
     el.querySelectorAll('a[data-crm-acao]').forEach(a => a.addEventListener('click', ev => ev.preventDefault()));
@@ -1237,10 +1237,10 @@ const Crm = {
         <label class="zoom-label">Responsável <select data-crm-filtro="contas.resp">${this.optResponsaveis(f.resp, 'Todos', true)}</select></label>
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contas.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, NIF ou setor…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contas.length} contas</span>
-          ${nDup ? `<button type="button" class="btn" data-crm-acao="duplicados" title="Contas com o mesmo NIF ou nome">⚠ Duplicados (${nDup})</button>` : ''}
-          <button type="button" class="btn" data-crm-acao="contas-projetos" title="Cria contas para os clientes que já aparecem nos projetos">Dos projetos</button>
-          <button type="button" class="btn" data-crm-acao="importar-contas">⬆ Importar</button>
-          <button type="button" class="btn btn-primary" data-crm-acao="nova-conta">+ Nova conta</button></span>
+          ${nDup ? `<button type="button" class="ib ib-txt" data-crm-acao="duplicados" data-tip="Contas com o mesmo NIF ou nome" aria-label="Duplicados: ${nDup}">${Icones.svg('alert-triangle')}<span>${nDup}</span></button>` : ''}
+          <button type="button" class="ib ib-txt" data-crm-acao="contas-projetos" data-tip="Cria contas para os clientes que já aparecem nos projetos" aria-label="Criar contas a partir dos projetos">${Icones.svg('download')}<span>Dos projetos</span></button>
+          <button type="button" class="ib" data-crm-acao="importar-contas" data-tip="Importar contas de um ficheiro" aria-label="Importar contas">${Icones.svg('upload')}</button>
+          <button type="button" class="ib ib-pri" data-crm-acao="nova-conta" data-tip="Criar uma conta" aria-label="Nova conta">${Icones.svg('plus')}<span>Nova conta</span></button></span>
       </div>
       ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr>${this.th('contas', 'nome', 'Conta')}${this.th('contas', 'nif', 'NIF')}${this.th('contas', 'estado', 'Estado')}${this.th('contas', 'setor', 'Setor')}${this.th('contas', 'resp', 'Responsável')}${this.th('contas', 'contactos', 'Contactos')}${this.th('contas', 'opn', 'Oport. em curso')}${this.th('contas', 'valor', 'Valor em curso')}</tr></thead><tbody>
         ${lista.map(c => {
@@ -1427,8 +1427,8 @@ const Crm = {
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="contactos.texto" value="${escapeAttr(f.texto)}" placeholder="Nome, conta, email, cargo…"></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${this.d.contactos.length} contactos</span>
-          <button type="button" class="btn" data-crm-acao="importar-contactos">⬆ Importar</button>
-          <button type="button" class="btn btn-primary" data-crm-acao="novo-contacto">+ Novo contacto</button></span>
+          <button type="button" class="ib" data-crm-acao="importar-contactos" data-tip="Importar contactos de um ficheiro" aria-label="Importar contactos">${Icones.svg('upload')}</button>
+          <button type="button" class="ib ib-pri" data-crm-acao="novo-contacto" data-tip="Criar um contacto" aria-label="Novo contacto">${Icones.svg('plus')}<span>Novo contacto</span></button></span>
       </div>
       ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr>${this.th('contactos', 'nome', 'Nome')}${this.th('contactos', 'conta', 'Conta')}${this.th('contactos', 'cargo', 'Cargo')}${this.th('contactos', 'papel', 'Papel')}${this.th('contactos', 'email', 'Email')}${this.th('contactos', 'telefone', 'Telefone')}${this.th('contactos', 'rgpd', 'RGPD')}</tr></thead><tbody>
         ${lista.map(c => { const conta = this.idx.conta.get(c.conta_id); return `<tr class="crm-linha" data-crm-acao="abrir-contacto" data-id="${escapeAttr(c.id)}">

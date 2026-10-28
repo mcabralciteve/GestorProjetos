@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261101c">
+<link rel="stylesheet" href="css/style.css?v=20261101d">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -908,11 +908,11 @@
       </div>
       <span id="diaMsg" class="hint" style="color:var(--vermelho);display:block;margin-bottom:8px;"></span>
       <div class="cal-topbar">
-        <button type="button" class="btn btn-sm" id="btnDiaAnt">‹</button>
-        <button type="button" class="btn btn-sm" id="btnDiaHoje">Hoje</button>
-        <button type="button" class="btn btn-sm" id="btnDiaSeg">›</button>
+        <button type="button" id="btnDiaAnt" class="ib" data-icone="chevron-left" data-tip="Dia anterior" aria-label="Dia anterior"></button>
+        <button type="button" id="btnDiaHoje" class="ib ib-txt" data-icone="calendar-event" data-tip="Voltar a hoje" aria-label="Voltar a hoje"><span>Hoje</span></button>
+        <button type="button" id="btnDiaSeg" class="ib" data-icone="chevron-right" data-tip="Dia seguinte" aria-label="Dia seguinte"></button>
         <strong id="diaDataLabel"></strong>
-        <button type="button" class="btn btn-sm" id="btnDiaOrcprev" title="Copiar as horas de uma semana para as importar no orcprev, sem as preencher duas vezes">⇄ orcprev</button>
+        <button type="button" id="btnDiaOrcprev" class="ib ib-txt" data-icone="arrows-exchange" data-tip="Copiar as horas de uma semana para as importar no orcprev, sem as preencher duas vezes" aria-label="orcprev: copiar horas"><span>orcprev</span></button>
         <span id="diaResumo" style="margin-left:auto;font-size:12.5px;"></span>
       </div>
       <div id="diaGrelha" class="calendario-registos"></div>
@@ -926,9 +926,9 @@
         <label class="zoom-label">Projeto <select id="fCalProjeto"><option value="">Todos</option></select></label>
       </div>
       <div class="cal-topbar">
-        <button type="button" class="btn btn-sm" id="btnCalMesAnt">‹</button>
-        <button type="button" class="btn btn-sm" id="btnCalHoje">Hoje</button>
-        <button type="button" class="btn btn-sm" id="btnCalMesSeg">›</button>
+        <button type="button" id="btnCalMesAnt" class="ib" data-icone="chevron-left" data-tip="Mês anterior" aria-label="Mês anterior"></button>
+        <button type="button" id="btnCalHoje" class="ib ib-txt" data-icone="calendar-event" data-tip="Voltar ao mês atual" aria-label="Voltar ao mês atual"><span>Hoje</span></button>
+        <button type="button" id="btnCalMesSeg" class="ib" data-icone="chevron-right" data-tip="Mês seguinte" aria-label="Mês seguinte"></button>
         <strong id="calMesLabel"></strong>
       </div>
       <div id="calendarioRegistos" class="calendario-registos"></div>
@@ -943,10 +943,10 @@
       <h2>📊 Análise de horas</h2>
       <div style="display:flex;gap:8px;align-items:center;">
         <div class="conta-menu-wrap">
-          <button class="btn btn-sm" id="btnAnaliseGraficos" title="Escolhe os gráficos que queres ver">⚙ Gráficos</button>
+          <button type="button" id="btnAnaliseGraficos" class="ib" data-icone="chart-bar" data-tip="Escolhe os gráficos que queres ver" aria-label="Gráficos"></button>
           <div class="conta-menu" id="painelAnaliseGraficos" style="min-width:320px;padding:6px 0;"></div>
         </div>
-        <button class="btn btn-primary btn-sm" id="btnAnaliseExportar">⬇ Exportar registos (Excel)…</button>
+        <button type="button" id="btnAnaliseExportar" class="ib ib-pri" data-icone="download" data-tip="Exportar registos (Excel)…" aria-label="Exportar registos (Excel)…"><span>Exportar</span></button>
       </div>
     </div>
     <p class="pagina-sub">Onde as equipas registam horas — por equipa, pessoa, projeto ou tipo de trabalho. Clica numa barra para filtrar por ela. Só leitura; o Administrador vê tudo, um Team Leader/Diretor vê as suas equipas.</p>
@@ -967,7 +967,7 @@
       <label class="zoom-label">Pessoa <select id="anPessoa"><option value="">Todas</option></select></label>
       <label class="zoom-label">Tipo <select id="anTipo"><option value="">Todos</option></select></label>
       <label class="zoom-label">Projeto <select id="anProjeto"><option value="">Todos</option></select></label>
-      <button class="btn btn-sm" id="btnAnaliseLimpar">Limpar filtros</button>
+      <button type="button" id="btnAnaliseLimpar" class="ib" data-icone="filter-off" data-tip="Limpar filtros" aria-label="Limpar filtros"></button>
     </div>
     <div id="anKpis" class="an-kpis"></div>
     <div class="an-grelha an-grelha3" id="anGraficos">
@@ -1044,8 +1044,8 @@
       <label class="zoom-label">De <input type="date" id="fRegDe"></label>
       <label class="zoom-label">Até <input type="date" id="fRegAte"></label>
       <label class="zoom-label">Pesquisar <input type="text" id="fRegTexto" placeholder="tarefa, notas…"></label>
-      <button id="btnLimparFiltrosRegisto" class="btn btn-sm">Limpar filtros</button>
-      <button id="btnExportRegistosCsv" class="btn btn-sm" title="Exportar os registos filtrados para CSV (abre no Excel)">⬇ CSV</button>
+      <button type="button" id="btnLimparFiltrosRegisto" class="ib" data-icone="filter-off" data-tip="Limpar filtros" aria-label="Limpar filtros"></button>
+      <button type="button" id="btnExportRegistosCsv" class="ib" data-icone="file-spreadsheet" data-tip="Exportar os registos filtrados para CSV (abre no Excel)" aria-label="Exportar para CSV"></button>
     </div>
     <div class="legend-row" id="statsRegisto"></div>
     <div class="table-scroll">
@@ -1076,7 +1076,7 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>Faturação</h2>
-      <button id="btnAddFatura" class="btn btn-primary btn-sm" title="Adiciona ao projeto selecionado no filtro abaixo (ou ao projeto ativo no Gantt, se o filtro estiver em 'Todos')">+ Fatura</button>
+      <button type="button" id="btnAddFatura" class="ib ib-pri" data-icone="plus" data-tip="Adiciona ao projeto selecionado no filtro abaixo (ou ao projeto ativo no Gantt, se o filtro estiver em 'Todos')" aria-label="Adicionar fatura"><span>Fatura</span></button>
     </div>
     <p class="pagina-sub">Plano de faturação de cada projeto — quantas faturas, montante ou percentagem de cada uma, e data prevista. Regista aqui também a emissão (data, responsável e o nº da fatura emitida no GIAF). As faturas previstas aparecem identificadas no Gantt do respetivo projeto.</p>
 
@@ -1087,9 +1087,9 @@
       <label class="zoom-label">De <input type="date" id="fFatDe"></label>
       <label class="zoom-label">Até <input type="date" id="fFatAte"></label>
       <label class="zoom-label">Nº Fatura (GIAF) <input type="text" id="fFatNumRegisto" placeholder="ex.: FT 2026/123"></label>
-      <button id="btnLimparFiltrosFaturacao" class="btn btn-sm">Limpar filtros</button>
-      <button id="btnExportFaturasCsv" class="btn btn-sm" title="Exportar as faturas filtradas para CSV (abre no Excel)">⬇ CSV</button>
-      <button id="btnRelatorioHoras" class="btn btn-sm" title="Escolhe um projeto (e opcionalmente De/Até) para gerar um relatório de horas pronto a entregar ao cliente">📄 Relatório de Horas</button>
+      <button type="button" id="btnLimparFiltrosFaturacao" class="ib" data-icone="filter-off" data-tip="Limpar filtros" aria-label="Limpar filtros"></button>
+      <button type="button" id="btnExportFaturasCsv" class="ib" data-icone="file-spreadsheet" data-tip="Exportar as faturas filtradas para CSV (abre no Excel)" aria-label="Exportar para CSV"></button>
+      <button type="button" id="btnRelatorioHoras" class="ib" data-icone="file-text" data-tip="Relatório de horas: escolhe um projeto (e opcionalmente De/Até) para gerar um relatório pronto a entregar ao cliente" aria-label="Relatório de horas"></button>
     </div>
 
     <div class="table-scroll">
@@ -1134,7 +1134,7 @@
       <label class="zoom-label">Direção <select id="finDept"><option value="">Todas</option></select></label>
       <label class="zoom-label">Área <select id="finEquipa"><option value="">Todas</option></select></label>
       <label class="zoom-label">Projeto <select id="finProjeto"><option value="">Todos</option></select></label>
-      <button class="btn btn-sm" id="btnFinanceiroLimpar">Limpar filtros</button>
+      <button type="button" id="btnFinanceiroLimpar" class="ib" data-icone="filter-off" data-tip="Limpar filtros" aria-label="Limpar filtros"></button>
     </div>
     <div id="finKpis" class="an-kpis"></div>
     <div class="card"><h3 style="margin-top:0;">Evolução mensal acumulada</h3><div id="finGrafico"></div><div id="finLegenda" class="an-legenda"></div></div>
@@ -1150,7 +1150,7 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>🔮 Previsão: reconhecimento e faturação</h2>
-      <button class="btn btn-primary btn-sm" id="btnPrevExportar" title="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel">⬇ Exportar (Excel)</button>
+      <button type="button" id="btnPrevExportar" class="ib ib-pri" data-icone="download" data-tip="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel" aria-label="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel"><span>Exportar</span></button>
     </div>
     <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b> e, conforme o cenário, das <b>oportunidades</b> do CRM ponderadas pela probabilidade da etapa. O reconhecimento do contratado reparte o valor que falta reconhecer pelas horas que faltam no plano de cada projeto; o das oportunidades, o valor ponderado pela duração prevista. Só leitura; só o Administrador.</p>
     <div id="previsaoCorpo">
@@ -1165,7 +1165,7 @@
         <label class="zoom-label">Direção <select id="prevDept"><option value="">Todas</option></select></label>
         <label class="zoom-label">Área <select id="prevEquipa"><option value="">Todas</option></select></label>
         <label class="zoom-label">Horizonte <select id="prevHorizonte"></select></label>
-        <button class="btn btn-sm" id="btnPrevLimpar">Limpar filtros</button>
+        <button type="button" id="btnPrevLimpar" class="ib" data-icone="filter-off" data-tip="Limpar filtros" aria-label="Limpar filtros"></button>
       </div>
       <div id="prevKpis" class="an-kpis"></div>
       <div id="prevAvisos"></div>
@@ -1318,14 +1318,14 @@
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009d"></script>
-<script src="js/crm.js?v=20261031b"></script>
+<script src="js/crm.js?v=20261101c"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261031a"></script>
-<script src="js/icones.js?v=20261101b"></script>
+<script src="js/icones.js?v=20261101c"></script>
 <script src="js/agendamento-logica.js?v=20261101a"></script>
 <script src="js/previsao-logica.js?v=20261030a"></script>
 <script src="js/previsao.js?v=20261030b"></script>
