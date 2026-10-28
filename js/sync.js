@@ -196,7 +196,9 @@ const Sync = {
       inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || [],
       negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null,
       // supabase/tarefas_modo_data.sql: 'auto' | 'fixa' | vazio. Antes de correr o SQL a base de dados ignora este campo.
-      modo_data: t.modoData === 'auto' || t.modoData === 'fixa' ? t.modoData : null
+      modo_data: t.modoData === 'auto' || t.modoData === 'fixa' ? t.modoData : null,
+      // supabase/tarefas_progresso_auto.sql: % de conclusão calculada pelas horas. Antes de correr o SQL é ignorado.
+      prog_auto: !!t.progAuto
     }));
     const linhasTarefaRecursos = [];
     tarefas.forEach(t => {
@@ -333,7 +335,8 @@ const Sync = {
         id: t.id, parentId: t.parent_id, nome: t.nome, inicio: t.inicio, fim: t.fim,
         progresso: t.progresso, recursoIds: [], alocacoesHoras: {}, predecessores: t.predecessores || [],
         negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null,
-        modoData: t.modo_data === 'auto' || t.modo_data === 'fixa' ? t.modo_data : null
+        modoData: t.modo_data === 'auto' || t.modo_data === 'fixa' ? t.modo_data : null,
+        progAuto: !!t.prog_auto
       };
       tarefaPorId[t.id] = tarefa;
       if (projetos[t.projeto_id]) projetos[t.projeto_id].tarefas.push(tarefa);

@@ -378,10 +378,12 @@ alter table public.proximos_passos add constraint proximos_passos_estado_check c
 alter table public.tarefas add column if not exists modo_data text;
 alter table public.tarefas drop constraint if exists tarefas_modo_data_check;
 alter table public.tarefas add constraint tarefas_modo_data_check check (modo_data is null or modo_data in ('auto', 'fixa'));
+-- % de conclusão calculada pelas horas (supabase/tarefas_progresso_auto.sql).
+alter table public.tarefas add column if not exists prog_auto boolean not null default false;
 
 create or replace function public.gravar_filhos_projeto(
   p_projeto_id uuid,
-  p_tarefas jsonb,           -- [{id,parent_id,nome,ordem,inicio,fim,progresso,predecessores,negrito,italico,cor,modo_data}]
+  p_tarefas jsonb,           -- [{id,parent_id,nome,ordem,inicio,fim,progresso,predecessores,negrito,italico,cor,modo_data,prog_auto}]
   p_tarefa_recursos jsonb,   -- [{tarefa_id,recurso_id,horas}]
   p_faturas jsonb,           -- [{id,data_prevista,tipo,percentagem,valor,emitida,data_emissao,emitido_por,numero_registo}]
   p_pontos_situacao jsonb,   -- [{id,data,feedback,criado_por,criado_em}]
@@ -413,13 +415,14 @@ begin
 
   -- Tarefas em duas fases (como já era do lado da app): parent_id fica de fora na primeira
   -- inserção porque pode referenciar outra tarefa do mesmo lote, ainda por criar.
-  insert into tarefas (id, projeto_id, parent_id, nome, ordem, inicio, fim, progresso, predecessores, negrito, italico, cor, modo_data)
+  insert into tarefas (id, projeto_id, parent_id, nome, ordem, inicio, fim, progresso, predecessores, negrito, italico, cor, modo_data, prog_auto)
   select
     (x->>'id')::uuid, p_projeto_id, null, x->>'nome', coalesce((x->>'ordem')::int, 0),
     (x->>'inicio')::date, (x->>'fim')::date, coalesce((x->>'progresso')::int, 0),
     coalesce(x->'predecessores', '[]'::jsonb),
     coalesce((x->>'negrito')::boolean, false), coalesce((x->>'italico')::boolean, false), x->>'cor',
-    case when x->>'modo_data' in ('auto', 'fixa') then x->>'modo_data' else null end
+    case when x->>'modo_data' in ('auto', 'fixa') then x->>'modo_data' else null end,
+    coalesce((x->>'prog_auto')::boolean, false)
   from jsonb_array_elements(coalesce(p_tarefas, '[]'::jsonb)) as x;
 
   update tarefas t set parent_id = (x->>'parent_id')::uuid

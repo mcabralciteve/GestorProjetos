@@ -1298,6 +1298,7 @@ const App = {
       alocacoesHoras: {},
       predecessores: [],
       modoData: null,
+      progAuto: false,
       negrito: false,
       italico: false,
       cor: null
@@ -2128,6 +2129,7 @@ const App = {
         : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.inicio), dias - 1));
     } else if (campo === 'progresso') {
       t.progresso = Math.max(0, Math.min(100, parseInt(valor, 10) || 0));
+      if (t.progAuto) { t.progAuto = false; this.toast('% de conclusão passou a manual. Para voltar a calcular pelas horas, usa o botão A.'); }
     } else if (campo === 'nome') {
       this.religarRegistosAoRenomear(p, t, valor);
       t.nome = valor;
@@ -3753,6 +3755,45 @@ const App = {
     }, 0);
     return diretas + semCorrespondencia;
   },
+  // ---------- % de conclusão automática (regras em js/progresso-logica.js) ----------
+  horasPrevistasTarefa(t) {
+    return t.recursoIds.reduce((soma, rid) => soma + this.horasAlocadas(t, rid), 0);
+  },
+  // O automático só faz sentido com horas previstas escritas de propósito: por omissão a tarefa conta tempo inteiro
+  // (8h por dia útil), e comparar as horas reais com isso daria uma percentagem sem significado.
+  temPrevistasExplicitas(t) {
+    return t.recursoIds.length > 0 && t.recursoIds.every(rid => this.horasRecursoExplicita(t, rid) !== null);
+  },
+  // Põe em t.progresso o valor calculado das tarefas em modo automático (o valor fica gravado como as manuais, e os
+  // restantes ecrãs — Gantt, portefólio, capacidade — leem-no sem saberem de modos).
+  aplicarProgressoAuto(p) {
+    let mudou = false;
+    p.tarefas.forEach(t => {
+      if (!t.progAuto || this.temFilhos(p, t.id) || !this.temPrevistasExplicitas(t)) return;
+      const v = ProgressoLogica.auto(this.horasReaisTarefa(p, t), this.horasPrevistasTarefa(t));
+      if (v !== null && v !== t.progresso) { t.progresso = v; mudou = true; }
+    });
+    if (mudou) this.recomputarResumos(p);
+  },
+  alternarProgAuto(id) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, id);
+    if (!t || this.temFilhos(p, t.id)) return;
+    if (t.progAuto) {
+      t.progAuto = false;
+      this.toast('% de conclusão manual: o valor atual ficou fixo e podes editá-lo.');
+    } else {
+      if (!this.temPrevistasExplicitas(t)) {
+        this.toast('Para calcular pelas horas, indica primeiro as horas previstas de cada consultor (Associar). Sem isso a tarefa conta tempo inteiro.');
+        return;
+      }
+      t.progAuto = true;
+      this.aplicarProgressoAuto(p);
+      this.toast('% automática: horas reais ÷ previstas, no máximo 99%. O 100% marca-se à mão.');
+    }
+    this.persist();
+    this.renderTudo();
+  },
   // ---------- Portefólio ----------
   progressoGeralProjeto(p) {
     const raizes = p.tarefas.filter(t => t.parentId === null);
@@ -3789,6 +3830,8 @@ const App = {
       const reais = this.horasReaisTarefa(p, t);
       const progresso = t.progresso || 0;
       if (progresso >= 100) { total += reais; return; }
+      // Em automático a % já é reais ÷ previstas: extrapolar daria sempre as previstas, e não captaria o estouro.
+      if (t.progAuto && this.temPrevistasExplicitas(t)) { total += ProgressoLogica.eacAuto(reais, this.horasPrevistasTarefa(t)); return; }
       if (reais > 0 && progresso > 0) { total += reais / (progresso / 100); return; }
       total += t.recursoIds.reduce((soma, rid) => soma + this.horasAlocadas(t, rid), 0);
     });
@@ -3989,6 +4032,7 @@ const App = {
       this.relaxarPredecessoras(p);
     }
     this.recomputarResumos(p);
+    this.aplicarProgressoAuto(p);
   },
   recomputarResumos(p) {
     const raizes = p.tarefas.filter(t => t.parentId === null);
@@ -4070,6 +4114,8 @@ const App = {
   },
 
   renderTudo() {
+    // As horas reais podem ter mudado desde a última vez: atualiza a % das tarefas em modo automático.
+    Object.values(this.state.projetos).forEach(pr => { if ((pr.tarefas || []).some(t => t.progAuto)) this.aplicarProgressoAuto(pr); });
     this.aplicarPermissoesUI();
     this.renderNotificacoes();
     this.renderDashboard();
@@ -8675,6 +8721,7 @@ const App = {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo projeto para começar.</td></tr>';
       return;
     }
+    this.aplicarProgressoAuto(p);
     const lista = this.flatten(p);
     const hojeISO = DateUtil.todayISO();
     lista.forEach(({ tarefa: t, nivel }) => {
@@ -8723,7 +8770,7 @@ const App = {
         inicio: `<td><input type="date" value="${t.inicio}" data-campo="inicio" ${(filhos || !podeEditar) ? 'disabled' : ''}></td>`,
         fim: `<td><input type="date" value="${t.fim}" data-campo="fim" ${(filhos || !podeEditar) ? 'disabled' : ''} style="${atrasada ? 'color:#dc2626;font-weight:600' : ''}"></td>`,
         dias: `<td><input type="number" min="1" value="${duracao}" data-campo="duracao" ${(filhos || !podeEditar) ? 'disabled' : ''} style="width:40px"></td>`,
-        prog: `<td><input type="number" min="0" max="100" value="${t.progresso}" data-campo="progresso" ${(filhos || !podeEditar) ? 'disabled' : ''} style="width:44px"></td>`,
+        prog: `<td class="col-prog-cell"><input type="number" min="0" max="100" value="${t.progresso}" data-campo="progresso" ${(filhos || !podeEditar) ? 'disabled' : ''} style="width:44px">${(filhos || !podeEditar) ? '' : `<button type="button" class="prog-modo${t.progAuto ? ' ativo' : ''}" data-acao="progmodo" aria-pressed="${t.progAuto ? 'true' : 'false'}" title="${t.progAuto ? 'Automático: horas reais ÷ previstas (máx. 99%). Clica para passar a manual.' : 'Manual. Clica para calcular pelas horas reais ÷ previstas.'}">A</button>`}</td>`,
         horasReais: `<td title="Soma dos registos de horas ligados a esta tarefa">${horasReais > 0 ? horasReais.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) + 'h' : '<span style="color:var(--cinza-500)">—</span>'}</td>`,
         recursos: `<td class="rec-cell" data-acao="recursos">${nomesRec || '<span style="color:var(--cinza-500)">+ associar</span>'}</td>`,
         pred: `<td class="pred-cell-wrap" data-acao="pred">${filhos ? '<span style="color:var(--cinza-500)">n/d</span>' : (chipsPred || '<span style="color:var(--cinza-500)">+ ligar</span>')}</td>`
@@ -8748,6 +8795,8 @@ const App = {
         tr.querySelector('[data-acao="recursos"]').addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalRecursos(t.id); });
         const predCell = tr.querySelector('[data-acao="pred"]');
         if (predCell && !filhos) predCell.addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalPredecessoras(t.id); });
+        const btnProgModo = tr.querySelector('[data-acao="progmodo"]');
+        if (btnProgModo) btnProgModo.addEventListener('click', (e) => { e.stopPropagation(); this.alternarProgAuto(t.id); });
         const btnFormatar = tr.querySelector('[data-acao="formatar"]');
         if (btnFormatar) btnFormatar.addEventListener('click', (e) => { e.stopPropagation(); this.abrirModalFormatoTarefa(t.id); });
       }

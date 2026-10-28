@@ -70,7 +70,8 @@ const Backup = {
           id: t.id, projeto_id: p.id, parent_id: t.parentId || null, nome: t.nome, inicio: t.inicio, fim: t.fim,
           progresso: t.progresso || 0, ordem: idx, predecessores: JSON.stringify(t.predecessores || []),
           negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null,
-          modo_data: t.modoData === 'auto' || t.modoData === 'fixa' ? t.modoData : null
+          modo_data: t.modoData === 'auto' || t.modoData === 'fixa' ? t.modoData : null,
+          prog_auto: !!t.progAuto
         });
         (t.recursoIds || []).forEach(rid => {
           const horas = (t.alocacoesHoras && t.alocacoesHoras[rid] !== undefined) ? t.alocacoesHoras[rid] : null;
