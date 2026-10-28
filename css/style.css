@@ -363,6 +363,28 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
   flex-shrink:0;
 }
 .spacer{flex:1;}
+/* Botões de ícone (estilo Office) das barras do Gantt: legenda ao passar o rato em data-tip; ver js/icones.js. */
+.gantt-topbar,#tab-gantt .toolbar{position:relative;z-index:20;}
+#tab-gantt .toolbar{gap:2px;flex-wrap:wrap;}
+.ib{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--azul-esc);cursor:pointer;font-size:12px;font-weight:600;flex-shrink:0;transition:background .12s ease,border-color .12s ease;}
+.ib .ico{flex-shrink:0;}
+.ib:hover:not(:disabled){background:var(--cinza-100);border-color:var(--cinza-300);}
+.ib:focus-visible{outline:2px solid var(--azul);outline-offset:1px;}
+.ib:disabled{opacity:.35;cursor:default;}
+.ib-pri{width:auto;padding:0 12px 0 9px;margin-right:4px;background:var(--grad-soft);border-color:transparent;color:#fff;box-shadow:0 3px 10px rgba(42,106,154,.28);}
+.ib-pri:hover:not(:disabled){background:var(--grad-soft);border-color:transparent;filter:brightness(1.08);}
+.ib-danger{color:var(--vermelho);}
+.ib-danger:hover:not(:disabled){background:#fdecec;border-color:var(--vermelho);}
+.ib-sep{margin-left:10px;}
+.ib-sep::before{content:'';position:absolute;left:-6px;top:6px;bottom:6px;width:1px;background:var(--cinza-300);}
+.ib-toggle input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;}
+.ib-toggle:has(input:checked){background:color-mix(in srgb,var(--azul) 16%,transparent);border-color:var(--azul);color:var(--azul);}
+.ib-toggle:has(input:focus-visible){outline:2px solid var(--azul);outline-offset:1px;}
+.gantt-topbar [data-tip]:hover::after,#tab-gantt .toolbar [data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);left:0;z-index:60;width:max-content;max-width:260px;white-space:normal;text-align:left;font-size:12px;font-weight:400;line-height:1.35;color:#fff;background:#1f2a37;padding:5px 9px;border-radius:6px;pointer-events:none;}
+.ib-tip-r[data-tip]:hover::after,.zoom-label[data-tip-r]:hover::after,.ib-toggle[data-tip]:hover::after{left:auto;right:0;}
+#tab-gantt .toolbar .zoom-label{position:relative;gap:4px;}
+#tab-gantt .toolbar .zoom-label .ico{color:var(--cinza-700);}
+#tab-gantt .toolbar .zoom-slider{width:90px;}
 .zoom-label{display:flex;flex-direction:row;align-items:center;gap:6px;font-size:12px;color:var(--cinza-700);}
 .zoom-label #zoomLabel,.zoom-label #zoomLabelPortGantt{min-width:52px;color:var(--cinza-900);font-weight:600;}
 .zoom-slider{width:140px;accent-color:var(--azul);cursor:pointer;}

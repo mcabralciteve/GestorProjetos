@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261101a">
+<link rel="stylesheet" href="css/style.css?v=20261101c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -144,13 +144,13 @@
       <option value="">Todos os gestores</option>
     </select>
     <select id="selProjeto" title="Escolher projeto"></select>
-    <button id="btnNovoProjeto" class="btn">+ Novo Projeto</button>
-    <button id="btnDuplicarProjeto" class="btn" title="Duplicar projeto atual">Duplicar</button>
-    <button id="btnEliminarProjeto" class="btn btn-danger" title="Eliminar projeto atual">Eliminar</button>
+    <button id="btnNovoProjeto" class="ib ib-sep" data-icone="folder-plus" data-tip="Novo projeto" aria-label="Novo projeto"></button>
+    <button id="btnDuplicarProjeto" class="ib" data-icone="copy" data-tip="Duplicar o projeto atual" aria-label="Duplicar o projeto atual"></button>
+    <button id="btnEliminarProjeto" class="ib ib-danger" data-icone="trash" data-tip="Eliminar o projeto atual" aria-label="Eliminar o projeto atual"></button>
     <span class="spacer"></span>
-    <button id="btnExportCsv" class="btn btn-sm" title="Exportar as tarefas para CSV (abre no Excel)">⬇ CSV</button>
-    <button id="btnExportImagem" class="btn btn-sm" title="Exportar o Gantt como imagem PNG">⬇ Imagem</button>
-    <button id="btnExportPdf" class="btn btn-sm" title="Abrir a vista de impressão do Gantt para guardar como PDF">⬇ PDF</button>
+    <button id="btnExportCsv" class="ib" data-icone="file-spreadsheet" data-tip="Exportar as tarefas para CSV (abre no Excel)" aria-label="Exportar para CSV"></button>
+    <button id="btnExportImagem" class="ib" data-icone="photo" data-tip="Exportar o Gantt como imagem PNG" aria-label="Exportar como imagem"></button>
+    <button id="btnExportPdf" class="ib ib-tip-r" data-icone="file-type-pdf" data-tip="Abrir a vista de impressão do Gantt para guardar como PDF" aria-label="Exportar para PDF"></button>
   </div>
 
   <div class="layout" id="layoutGantt">
@@ -258,22 +258,22 @@
 
     <main class="conteudo">
       <div class="toolbar">
-        <button id="btnAddTarefa" class="btn btn-primary btn-sm">+ Tarefa</button>
-        <button id="btnAddSubtarefa" class="btn btn-sm">+ Subtarefa</button>
-        <button id="btnAddRecorrente" class="btn btn-sm" title="Cria várias tarefas/subtarefas iguais, repetidas ao longo do projeto">🔁 Recorrente</button>
-        <button id="btnSubir" class="btn btn-sm" title="Mover para cima entre as tarefas irmãs">↑ Subir</button>
-        <button id="btnDescer" class="btn btn-sm" title="Mover para baixo entre as tarefas irmãs">↓ Descer</button>
-        <button id="btnOrdenarData" class="btn btn-sm" title="Reordena todas as tarefas do projeto (e as sub-tarefas dentro de cada grupo) pela data de início">⇅ Ordenar por data</button>
-        <button id="btnIndent" class="btn btn-sm" title="Tornar subtarefa da tarefa acima">→ Indentar</button>
-        <button id="btnOutdent" class="btn btn-sm" title="Promover a tarefa de topo">← Promover</button>
-        <button id="btnAssociarLote" class="btn btn-sm" title="Associa um consultor (e as horas) a todas as tarefas selecionadas de uma vez">👤 Associar</button>
-        <button id="btnDelTarefa" class="btn btn-sm btn-danger">🗑 Eliminar</button>
-        <button id="btnDesfazer" class="btn btn-sm" title="Desfazer (Ctrl+Z)" disabled>↶ Desfazer</button>
-        <button id="btnRefazer" class="btn btn-sm" title="Refazer (Ctrl+Y)" disabled>↷ Refazer</button>
+        <button id="btnAddTarefa" class="ib ib-pri" data-icone="plus" data-tip="Adicionar tarefa" aria-label="Adicionar tarefa"><span>Tarefa</span></button>
+        <button id="btnAddSubtarefa" class="ib" data-icone="corner-down-right" data-tip="Adicionar subtarefa à tarefa selecionada" aria-label="Adicionar subtarefa"></button>
+        <button id="btnAddRecorrente" class="ib" data-icone="repeat" data-tip="Recorrente: cria várias tarefas/subtarefas iguais, repetidas ao longo do projeto" aria-label="Tarefas recorrentes"></button>
+        <button id="btnSubir" class="ib ib-sep" data-icone="arrow-up" data-tip="Subir: mover para cima entre as tarefas irmãs" aria-label="Subir"></button>
+        <button id="btnDescer" class="ib" data-icone="arrow-down" data-tip="Descer: mover para baixo entre as tarefas irmãs" aria-label="Descer"></button>
+        <button id="btnOrdenarData" class="ib" data-icone="sort-ascending" data-tip="Ordenar por data: reordena todas as tarefas do projeto (e as subtarefas dentro de cada grupo) pela data de início" aria-label="Ordenar por data"></button>
+        <button id="btnIndent" class="ib ib-sep" data-icone="indent-increase" data-tip="Indentar: tornar subtarefa da tarefa acima" aria-label="Indentar"></button>
+        <button id="btnOutdent" class="ib" data-icone="indent-decrease" data-tip="Promover a tarefa de topo" aria-label="Promover"></button>
+        <button id="btnAssociarLote" class="ib ib-sep" data-icone="user-plus" data-tip="Associar: dá um consultor (e as horas) a todas as tarefas selecionadas de uma vez" aria-label="Associar consultor"></button>
+        <button id="btnDesfazer" class="ib ib-sep" data-icone="arrow-back-up" data-tip="Desfazer (Ctrl+Z)" aria-label="Desfazer" disabled></button>
+        <button id="btnRefazer" class="ib" data-icone="arrow-forward-up" data-tip="Refazer (Ctrl+Y)" aria-label="Refazer" disabled></button>
+        <button id="btnDelTarefa" class="ib ib-danger ib-sep" data-icone="trash" data-tip="Eliminar as tarefas selecionadas" aria-label="Eliminar tarefas"></button>
         <span class="spacer"></span>
-        <label class="zoom-label" title="Ao mover uma tarefa (arrastar a barra ou mudar a data de início), as tarefas que dependem dela (predecessoras) deslocam-se o mesmo número de dias, mantendo as folgas entre elas."><input type="checkbox" id="chkMoverDependentes" checked> Mover dependentes</label>
-        <label class="zoom-label">Zoom: <span id="zoomLabel">Semanas</span>
-          <input type="range" id="selZoom" class="zoom-slider" min="2" max="60" step="1" value="14" title="Arrasta para ajustar o zoom do Gantt">
+        <label class="ib ib-toggle" data-icone="link" data-tip="Mover dependentes: ao mover uma tarefa (arrastar a barra ou mudar a data de início), as que dependem dela deslocam-se o mesmo número de dias, mantendo as folgas entre elas." aria-label="Mover dependentes"><input type="checkbox" id="chkMoverDependentes" checked></label>
+        <label class="zoom-label" data-tip="Zoom do Gantt: arrasta para ajustar" data-icone="zoom-in" data-tip-r="1"><span id="zoomLabel">Semanas</span>
+          <input type="range" id="selZoom" class="zoom-slider" min="2" max="60" step="1" value="14" aria-label="Zoom do Gantt">
         </label>
       </div>
 
@@ -1325,6 +1325,7 @@
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
 <script src="js/pessoas-logica.js?v=20261031a"></script>
+<script src="js/icones.js?v=20261101b"></script>
 <script src="js/agendamento-logica.js?v=20261101a"></script>
 <script src="js/previsao-logica.js?v=20261030a"></script>
 <script src="js/previsao.js?v=20261030b"></script>
