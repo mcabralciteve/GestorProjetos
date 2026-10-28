@@ -162,10 +162,20 @@ const Capacidade = {
   // Cada tarefa contribui as horas que lhe cabem neste dia, distribuídas apenas pelos dias
   // disponíveis da sua própria duração (ver horasNoDia/horasTarefaNoDia) — não uma fração fixa de
   // todos os dias do calendário entre o início e o fim da tarefa.
-  alocacaoDiaria(date, recursoId) {
+  // "filtroProjeto" (opcional): função projeto → booleano; só soma as tarefas dos projetos que passam (ver filtroTipoProjeto).
+  alocacaoDiaria(date, recursoId, filtroProjeto) {
     return this.tarefasAtivasNoDia(date, recursoId).reduce((soma, x) => {
+      if (filtroProjeto && !filtroProjeto(x.projeto)) return soma;
       return soma + this.horasTarefaNoDia(x.projeto, x.tarefa, recursoId, date);
     }, 0);
+  },
+  // Filtro por tipo de projeto para a análise de horas da Capacidade: null = totalidade (inclui os projetos ainda por
+  // classificar); caso contrário uma função projeto → booleano (tipoProjeto 'servicos' | 'id', ver Projeto → Tipo).
+  filtroTipoProjeto(modo) {
+    if (modo === 'servicos') return p => p.tipoProjeto === 'servicos';
+    if (modo === 'id') return p => p.tipoProjeto === 'id';
+    if (modo === 'servicos+id') return p => p.tipoProjeto === 'servicos' || p.tipoProjeto === 'id';
+    return null;
   },
 
   // Total de horas livres deste recurso em todo o período [inicioISO, fimISO] — soma, dia a dia, a
@@ -347,13 +357,13 @@ const Capacidade = {
   // "intervalosPrecalculados" evita recalcular intervalosCriticos (caro) uma vez por mês — quem
   // chama isto num ciclo por vários meses do MESMO recurso deve calcular uma vez só e passar aqui
   // (ver renderCapacidade em app.js).
-  resumoPeriodo(recurso, inicio, fim, intervalosPrecalculados) {
+  resumoPeriodo(recurso, inicio, fim, intervalosPrecalculados, filtroProjeto) {
     let capacidade = 0, alocado = 0;
     const datasConflitoDisponibilidade = [];
     for (let d = new Date(inicio); d <= fim; d = DateUtil.addDays(d, 1)) {
       if (this.ehFimDeSemana(d)) continue;
       const cap = this.capacidadeDiaria(d, recurso);
-      const aloc = this.alocacaoDiaria(d, recurso.id);
+      const aloc = this.alocacaoDiaria(d, recurso.id, filtroProjeto);
       capacidade += cap;
       alocado += aloc;
       if (cap === 0 && aloc > 0) datasConflitoDisponibilidade.push(DateUtil.toISO(d));
@@ -367,9 +377,9 @@ const Capacidade = {
       diasConflitoDisponibilidade: datasConflitoDisponibilidade.length, datasConflitoDisponibilidade
     };
   },
-  resumoMes(recurso, ano, mes, intervalosPrecalculados) {
+  resumoMes(recurso, ano, mes, intervalosPrecalculados, filtroProjeto) {
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-    return this.resumoPeriodo(recurso, new Date(ano, mes, 1), new Date(ano, mes, diasNoMes), intervalosPrecalculados);
+    return this.resumoPeriodo(recurso, new Date(ano, mes, 1), new Date(ano, mes, diasNoMes), intervalosPrecalculados, filtroProjeto);
   },
   mesesEntre(inicio, fim) {
     const out = [];

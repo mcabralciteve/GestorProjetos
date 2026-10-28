@@ -52,7 +52,10 @@ const App = {
   LIMITE_HISTORICO: 5,
   abaAtiva: 'dashboard',
   filtroGestorGantt: '',
-  filtroEquipaCap: '',
+  filtroEquipasCap: new Set(),   // ids das equipas escolhidas na Capacidade (vazio = todas)
+  tipoCap: 'total',              // 'total' | 'servicos' | 'id' | 'servicos+id'
+  vistaCap: 'pct',               // 'pct' | 'horas' | 'ambos'
+  _dadosCap: null,               // o que está no ecrã da Capacidade (para exportar)
   filtrosRegisto: { pessoa: '', projeto: '', de: '', ate: '', texto: '', ligacao: '' },
   paginaRegistos: 1,
   TAMANHO_PAGINA_REGISTOS: 20,
@@ -253,7 +256,11 @@ const App = {
       corpoTabelaDepartamentos: document.getElementById('corpoTabelaDepartamentos'),
       corpoTabelaFeriados: document.getElementById('corpoTabelaFeriados'),
       corpoTabelaAusencias: document.getElementById('corpoTabelaAusencias'),
-      selEquipaCap: document.getElementById('selEquipaCap'),
+      btnEquipasCap: document.getElementById('btnEquipasCap'),
+      painelEquipasCap: document.getElementById('painelEquipasCap'),
+      selTipoCap: document.getElementById('selTipoCap'),
+      selVistaCap: document.getElementById('selVistaCap'),
+      btnCapExportar: document.getElementById('btnCapExportar'),
       selGestorFiltroGantt: document.getElementById('selGestorFiltroGantt'),
       fProjGestor: document.getElementById('fProjGestor'),
       fProjCliente: document.getElementById('fProjCliente'),
@@ -1063,7 +1070,7 @@ const App = {
     this.filtroEquipaDia = org.equipaId;
     this.filtrosRegisto.pessoa = meuRecurso.nome;
     this.diaRegistoPessoa = meuRecurso.nome;
-    if (meuRecurso.equipaId) this.filtroEquipaCap = meuRecurso.equipaId;
+    if (meuRecurso.equipaId) this.filtroEquipasCap = new Set([String(meuRecurso.equipaId)]);
     // Só faz sentido para o Administrador (é o único que vê este filtro — ver renderProjetoSelect)
     // e só se ele próprio gerir algum projeto; senão fica "Todos os gestores", como já era.
     if (this.souAdmin() && Object.values(this.state.projetos).some(p => p.gestorId === meuRecurso.id)) {
@@ -3173,7 +3180,7 @@ const App = {
     if (!confirm('Eliminar esta equipa? Os consultores associados ficam sem equipa atribuída.')) return;
     this.state.equipas = this.state.equipas.filter(eq => eq.id !== id);
     this.state.recursos.forEach(r => { if (r.equipaId === id) r.equipaId = null; });
-    if (this.filtroEquipaCap === String(id)) this.filtroEquipaCap = '';
+    this.filtroEquipasCap.delete(String(id));
     this.persist();
     this.renderTabelaEquipas();
     this.renderTabelaRecursosCentral();
@@ -4823,7 +4830,8 @@ const App = {
   irParaCapacidadeDoRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
     if (!r) return;
-    if (this.els.selEquipaCap) this.els.selEquipaCap.value = r.equipaId || '';
+    this.filtroEquipasCap = new Set(r.equipaId ? [String(r.equipaId)] : []);
+    this.renderFiltroEquipaCap();
     this.irParaAba('capacidade');
     this.renderCapacidade();
     requestAnimationFrame(() => {
@@ -5353,13 +5361,17 @@ const App = {
     if (!visiveis.length) tbody.innerHTML = '<tr><td colspan="4" class="hint">Nenhum projeto para mostrar com estes filtros.</td></tr>';
   },
 
+  // Seletor de várias equipas (caixas de seleção num painel); sem nenhuma marcada = todas.
   renderFiltroEquipaCap() {
-    const sel = this.els.selEquipaCap;
-    if (!sel) return;
-    const valorAtual = this.filtroEquipaCap;
-    sel.innerHTML = '<option value="">Todas</option>' + this.state.equipas.map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
-    sel.value = valorAtual;
-    if (sel.value !== valorAtual) { this.filtroEquipaCap = ''; sel.value = ''; }
+    const painel = this.els.painelEquipasCap, btn = this.els.btnEquipasCap;
+    if (!painel || !btn) return;
+    const existentes = new Set(this.state.equipas.map(eq => String(eq.id)));
+    Array.from(this.filtroEquipasCap).forEach(id => { if (!existentes.has(id)) this.filtroEquipasCap.delete(id); });
+    const sel = this.filtroEquipasCap;
+    painel.innerHTML = `<label class="multi-op"><input type="checkbox" data-eq="" ${sel.size === 0 ? 'checked' : ''}> <b>Todas</b></label>`
+      + this.state.equipas.map(eq => `<label class="multi-op"><input type="checkbox" data-eq="${escapeAttr(String(eq.id))}" ${sel.has(String(eq.id)) ? 'checked' : ''}> ${escapeHtml(eq.nome)}</label>`).join('');
+    const nomes = this.state.equipas.filter(eq => sel.has(String(eq.id))).map(eq => eq.nome);
+    btn.textContent = 'Equipas: ' + (!nomes.length ? 'todas' : nomes.length <= 2 ? nomes.join(', ') : nomes.length + ' selecionadas') + ' ▾';
   },
 
   // ---------- Tab: Feriados & Ausências ----------
@@ -6120,14 +6132,44 @@ const App = {
     e.heatmapCapBody.innerHTML = '';
     e.gridCapacidade.innerHTML = '';
 
-    this.filtroEquipaCap = e.selEquipaCap.value;
+    this.tipoCap = e.selTipoCap.value || 'total';
+    this.vistaCap = e.selVistaCap.value || 'pct';
+    this._dadosCap = null;
     // Um Gestor (não-admin) só vê aqui a sua própria equipa de gestão — o mesmo âmbito já usado
-    // pelos cartões de equipa do Dashboard (ver recursosDaMinhaEquipaGestao). O filtro de equipa
-    // (selEquipaCap) aplica-se por cima disto, nunca alarga o que já está limitado aqui.
+    // pelos cartões de equipa do Dashboard (ver recursosDaMinhaEquipaGestao). O filtro de equipas
+    // aplica-se por cima disto, nunca alarga o que já está limitado aqui.
     const recursosBase = this.recursosAtivos(this.recursosDaMinhaEquipaGestao());
-    const recursosFiltrados = this.filtroEquipaCap
-      ? recursosBase.filter(r => String(r.equipaId || '') === this.filtroEquipaCap)
+    const recursosFiltrados = this.filtroEquipasCap.size
+      ? recursosBase.filter(r => this.filtroEquipasCap.has(String(r.equipaId || '')))
       : recursosBase;
+    // Horas só dos projetos de um tipo (Serviços / I&D)? Então a % é a fatia da capacidade ocupada por esse tipo —
+    // não se avalia como sobre/subutilização (isso só faz sentido para a totalidade), por isso as células ficam neutras.
+    const filtroProjeto = Capacidade.filtroTipoProjeto(this.tipoCap);
+    const parcial = !!filtroProjeto;
+    const classe = (res) => parcial ? (res.alocado > 0 ? 'neutro' : 'vazio') : Capacidade.classeResumo(res);
+    const fmtH = (h) => Math.round(h).toLocaleString('pt-PT') + 'h';
+    const fmtPct = (res) => isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠';
+    const textoCelula = (res) => {
+      if (!(res.capacidade > 0 || res.alocado > 0)) return '—';
+      if (this.vistaCap === 'horas') return fmtH(res.alocado);
+      if (this.vistaCap === 'ambos') return fmtH(res.alocado) + ' · ' + fmtPct(res);
+      return fmtPct(res);
+    };
+    if (parcial) {
+      const leg = document.getElementById('legendaCapacidade');
+      if (leg) leg.innerHTML = '<span><span class="legend-swatch" style="background:#d6e6f4;"></span> Fatia da capacidade ocupada por este tipo de projetos</span><span><span class="legend-swatch" style="background:#f4f5f7;"></span> Sem horas deste tipo</span>';
+    }
+    const infoParcial = document.getElementById('infoCapParcial');
+    if (infoParcial) {
+      if (parcial) {
+        const semTipo = Object.values(this.state.projetos).filter(p => p.ativo !== false && !p.tipoProjeto).length;
+        infoParcial.hidden = false;
+        infoParcial.textContent = `Só conta as horas dos projetos de ${{ servicos: 'Serviços', id: 'I&D', 'servicos+id': 'Serviços e I&D' }[this.tipoCap]}; a capacidade é sempre a total de cada consultor.`
+          + (semTipo ? ` ${semTipo} projeto(s) ativo(s) ainda sem tipo só entram na Totalidade (define-o em Projeto → Tipo).` : '');
+      } else infoParcial.hidden = true;
+    }
+    const totaisMes = meses.map(() => ({ alocado: 0, capacidade: 0 }));
+    const linhasCap = [];
 
     if (this.state.recursos.length === 0) {
       e.gridCapacidade.innerHTML = '<p style="color:var(--cinza-500)">Sem consultores definidos. Adiciona no separador "Pessoas".</p>';
@@ -6142,18 +6184,19 @@ const App = {
       // Calculado uma vez por recurso (não uma vez por mês) — é o mesmo conjunto de conflitos
       // reais em todo o horizonte, ver nota grande em Capacidade.intervalosCriticos.
       const intervalosCriticos = Capacidade.intervalosCriticos(r);
-      const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes, intervalosCriticos)));
+      const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes, intervalosCriticos, filtroProjeto)));
+      resumos.forEach((res, i) => { totaisMes[i].alocado += res.alocado; totaisMes[i].capacidade += res.capacidade; });
+      linhasCap.push({ nome: r.nome, equipa: (this.state.equipas.find(eq => eq.id === r.equipaId) || {}).nome || '', resumos });
 
       const tr = document.createElement('tr');
       tr.dataset.recursoId = r.id; // usado por App.irParaCapacidadeDoRecurso (vindo do Dashboard) para realçar a linha
       const celulas = resumos.map(res => {
-        const cls = Capacidade.classeResumo(res);
-        const temContexto = res.capacidade > 0 || res.alocado > 0;
-        const texto = !temContexto ? '—' : (isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠');
+        const cls = classe(res);
+        const texto = textoCelula(res);
         let dica = '';
         if (res.diasSobreAlocado > 0) dica += ` — ⚠ sobre-alocado(a) em ${this.formatarIntervalosConflito(res.intervalosSobreAlocados)}`;
         if (res.diasConflitoDisponibilidade > 0) dica += ` — ⚠ conflito com ausência/feriado em ${this.formatarDatasConflito(res.datasConflitoDisponibilidade)}`;
-        return `<td class="occ-${cls}" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade${dica}">${texto}</td>`;
+        return `<td class="occ-${cls}" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade (${fmtPct(res)})${dica}">${texto}</td>`;
       }).join('');
       tr.innerHTML = `<th>${escapeHtml(r.nome)}</th>${celulas}`;
       e.heatmapCapBody.appendChild(tr);
@@ -6168,20 +6211,20 @@ const App = {
       const admin = this.souAdmin();
       const vejoValoresDesteRecurso = admin || this.souDiretorDe(equipa ? equipa.departamentoId : null);
       const revenueTotal = vejoValoresDesteRecurso ? resumos.reduce((s, res) => s + res.alocado, 0) * (r.precoVenda || 0) : 0;
-      const projetos = Capacidade.projetosDoRecurso(r.id);
+      const projetos = Capacidade.projetosDoRecurso(r.id).filter(pr => !filtroProjeto || filtroProjeto(pr.projeto));
       const datasConflito = resumos.reduce((acc, res) => acc.concat(res.datasConflitoDisponibilidade), []);
-      const clsMesAtual = Capacidade.classeResumo(mesAtual);
+      const clsMesAtual = classe(mesAtual);
       const card = document.createElement('div');
       card.className = 'card-capacidade';
       card.innerHTML = `
         <div class="cap-head">
           <div><b>${escapeHtml(r.nome)}</b><div class="cap-papel">${escapeHtml(r.papel || '')}${equipa ? ' · ' + escapeHtml(equipa.nome) : ''}</div></div>
-          <div class="cap-pct cap-${clsMesAtual}">${(mesAtual.capacidade > 0 || mesAtual.alocado > 0) ? (isFinite(mesAtual.pct) ? Math.round(mesAtual.pct * 100) + '%' : '⚠') : '—'}</div>
+          <div class="cap-pct cap-${clsMesAtual}">${this.vistaCap === 'horas' ? ((mesAtual.capacidade > 0 || mesAtual.alocado > 0) ? fmtH(mesAtual.alocado) : '—') : ((mesAtual.capacidade > 0 || mesAtual.alocado > 0) ? fmtPct(mesAtual) : '—')}</div>
         </div>
         <div class="cap-bar"><div class="cap-bar-fill cap-${clsMesAtual}" style="width:${Math.min(isFinite(mesAtual.pct) ? mesAtual.pct * 100 : 100, 100)}%"></div></div>
         <div class="cap-meta">${escapeHtml(mesAtual.label)}: ${mesAtual.alocado.toFixed(0)}h alocadas / ${mesAtual.capacidade.toFixed(0)}h disponíveis</div>
         <div class="cap-meses">
-          ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${Capacidade.classeResumo(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
+          ${resumos.map(res => `<div class="cap-mes-barra" title="${escapeHtml(res.label)}: ${isFinite(res.pct) ? Math.round(res.pct * 100) : 0}%"><div class="cap-mes-fill cap-${classe(res)}" style="height:${Math.max(Math.min(res.pct * 100, 100), res.alocado > 0 ? 6 : 0)}%"></div></div>`).join('')}
         </div>
         ${vejoValoresDesteRecurso ? `<div class="cap-revenue">Revenue previsto (${nMeses}m): <b>${revenueTotal.toLocaleString('pt-PT', { maximumFractionDigits: 0 })} €</b></div>` : ''}
         ${intervalosCriticos.length ? `<div class="cap-alerta">⚠ Sobre-alocado em: ${this.formatarIntervalosConflito(intervalosCriticos, 10)}</div>` : ''}
@@ -6193,6 +6236,66 @@ const App = {
       if (vejoValoresDesteRecurso) card.querySelector('[data-acao="ver-tarefas"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
       e.gridCapacidade.appendChild(card);
     });
+    // Linha de totais das equipas/consultores que estão no ecrã.
+    const totaisRes = totaisMes.map(t => Object.assign({}, t, { pct: t.capacidade > 0 ? t.alocado / t.capacidade : (t.alocado > 0 ? Infinity : 0) }));
+    const trTotal = document.createElement('tr');
+    trTotal.className = 'cap-total';
+    trTotal.innerHTML = `<th>Total (${recursosFiltrados.length})</th>` + totaisRes.map(res =>
+      `<td class="occ-total" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade (${fmtPct(res)})">${textoCelula(res)}</td>`).join('');
+    e.heatmapCapBody.appendChild(trTotal);
+    this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap) };
+  },
+  // Exporta para Excel exatamente o que está no ecrã da Capacidade: por consultor e por mês, as horas alocadas, a
+  // capacidade e a ocupação — sempre as três, seja qual for a vista (Percentagem/Horas/Horas e %).
+  async exportarCapacidadeExcel() {
+    const d = this._dadosCap;
+    if (!d || !d.linhas.length) { this.toast('Não há nada para exportar com estes filtros.'); return; }
+    const btn = this.els.btnCapExportar;
+    if (btn) btn.disabled = true;
+    try {
+      if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
+      const r1 = (n) => Math.round(n * 10) / 10;
+      const nomeTipo = { total: 'Totalidade', servicos: 'Serviços', id: 'I&D', 'servicos+id': 'Serviços + I&D' }[d.tipo];
+      const nomesEq = this.state.equipas.filter(eq => d.equipasIds.includes(String(eq.id))).map(eq => eq.nome);
+      const cab = ['Consultor', 'Equipa'];
+      d.meses.forEach(m => cab.push(`${m.label} · Alocadas (h)`, `${m.label} · Capacidade (h)`, `${m.label} · Ocupação`));
+      const linhaDe = (nome, equipa, resumos) => {
+        const l = [nome, equipa];
+        resumos.forEach(res => l.push(r1(res.alocado), r1(res.capacidade), res.capacidade > 0 ? res.alocado / res.capacidade : (res.alocado > 0 ? null : 0)));
+        return l;
+      };
+      const aoa = [
+        ['Capacidade & Alocação'],
+        [`Horas de: ${nomeTipo} · Equipas: ${nomesEq.length ? nomesEq.join(', ') : 'todas'} · Gerado em ${new Date().toLocaleDateString('pt-PT')}`],
+        [],
+        cab
+      ];
+      d.linhas.forEach(l => aoa.push(linhaDe(l.nome, l.equipa, l.resumos)));
+      aoa.push(linhaDe(`Total (${d.linhas.length})`, '', d.totais));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      // As colunas de "Ocupação" levam formato de percentagem (o valor é a fração: 0,85 = 85%).
+      const linhaCab = 3, ultima = aoa.length - 1;
+      for (let R = linhaCab + 1; R <= ultima; R++) {
+        for (let i = 0; i < d.meses.length; i++) {
+          const ref = XLSX.utils.encode_cell({ r: R, c: 2 + i * 3 + 2 });
+          if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = '0%';
+        }
+      }
+      ws['!cols'] = cab.map((c, i) => ({ wch: i === 0 ? 26 : i === 1 ? 16 : 16 }));
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: linhaCab, c: 0 }, e: { r: ultima - 1, c: cab.length - 1 } }) };
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Capacidade');
+      const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const sufixo = { total: 'Total', servicos: 'Servicos', id: 'ID', 'servicos+id': 'Servicos_ID' }[d.tipo];
+      this.descarregarBlob(blob, `Capacidade_${sufixo}_${d.meses[0].ano}-${String(d.meses[0].mes + 1).padStart(2, '0')}.xlsx`);
+      this.toast('Capacidade exportada para Excel.');
+    } catch (err) {
+      console.error(err);
+      this.toast('Erro ao gerar o Excel: ' + err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   },
 
   // ---------- Tab: Registo de Horas ----------
@@ -10696,7 +10799,21 @@ const App = {
     if (e.btnSubmeterFerias) e.btnSubmeterFerias.addEventListener('click', () => this.submeterCalendarioFerias());
     if (e.btnSubmeterDecisoesFerias) e.btnSubmeterDecisoesFerias.addEventListener('click', () => this.submeterDecisoesFerias());
     e.selHorizonteCap.addEventListener('change', () => this.renderCapacidade());
-    e.selEquipaCap.addEventListener('change', () => this.renderCapacidade());
+    e.btnEquipasCap.addEventListener('click', (ev) => { ev.stopPropagation(); e.painelEquipasCap.hidden = !e.painelEquipasCap.hidden; });
+    e.painelEquipasCap.addEventListener('click', (ev) => ev.stopPropagation());
+    document.addEventListener('click', () => { e.painelEquipasCap.hidden = true; });
+    e.painelEquipasCap.addEventListener('change', (ev) => {
+      const cb = ev.target.closest('input[data-eq]');
+      if (!cb) return;
+      if (cb.dataset.eq === '') this.filtroEquipasCap.clear();
+      else if (cb.checked) this.filtroEquipasCap.add(cb.dataset.eq);
+      else this.filtroEquipasCap.delete(cb.dataset.eq);
+      this.renderFiltroEquipaCap();
+      this.renderCapacidade();
+    });
+    e.selTipoCap.addEventListener('change', () => this.renderCapacidade());
+    e.selVistaCap.addEventListener('change', () => this.renderCapacidade());
+    e.btnCapExportar.addEventListener('click', () => this.exportarCapacidadeExcel());
     e.selMesInicioCap.addEventListener('change', () => this.renderCapacidade());
     document.getElementById('btnCapMesAnt').addEventListener('click', () => this.navegarMesCap(-1));
     document.getElementById('btnCapMesSeg').addEventListener('click', () => this.navegarMesCap(1));

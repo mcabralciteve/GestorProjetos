@@ -775,6 +775,18 @@ td.occ-subutilizado{background:#f3e3b6;color:#6b4f0f;font-family:var(--font-mono
 td.occ-aviso,td.occ-conflito{background:#f6ddc4;color:#7a3a10;font-family:var(--font-mono,monospace);font-weight:700;}
 td.occ-critico{background:#f1cfc9;color:#6e241c;font-family:var(--font-mono,monospace);font-weight:700;}
 td.occ-vazio{background:var(--cinza-100);color:var(--cinza-500);font-family:var(--font-mono,monospace);}
+/* Vista parcial (só Serviços / só I&D): a % é a fatia da capacidade ocupada por esse tipo, por isso não se avalia como sobre/subutilização. */
+td.occ-neutro{background:#d6e6f4;color:#1d4466;font-family:var(--font-mono,monospace);}
+td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);font-weight:700;font-family:var(--font-mono,monospace);border-top:2px solid var(--cinza-300);}
+:root[data-tema="escuro"] td.occ-neutro{background:#1d3550;color:#a9cdee;}
+.cap-pct.cap-neutro{color:var(--azul);}
+.cap-bar-fill.cap-neutro,.cap-mes-fill.cap-neutro{background:var(--azul);}
+.cap-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end;}
+.multi-filtro{position:relative;}
+.multi-painel{position:absolute;top:calc(100% + 4px);left:0;z-index:50;min-width:220px;max-height:320px;overflow:auto;padding:6px;background:var(--branco);border:1px solid var(--cinza-300);border-radius:8px;box-shadow:0 8px 24px rgba(15,30,50,.18);}
+.multi-painel[hidden]{display:none;}
+.multi-op{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;}
+.multi-op:hover{background:var(--cinza-100);}
 
 .grid-capacidade{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:14px;}
 .card-capacidade{border:1px solid var(--cinza-200);border-radius:var(--radius);background:var(--branco);padding:16px;box-shadow:var(--shadow);}

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261101e">
+<link rel="stylesheet" href="css/style.css?v=20261101f">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -631,10 +631,24 @@
   <div class="pagina">
     <div class="pagina-head">
       <h2>Capacidade &amp; Alocação</h2>
-      <div style="display:flex;gap:10px;">
-        <label class="zoom-label">Equipa:
-          <select id="selEquipaCap">
-            <option value="">Todas</option>
+      <div class="cap-filtros">
+        <div class="multi-filtro">
+          <button type="button" class="btn btn-sm" id="btnEquipasCap" aria-haspopup="true">Equipas: todas ▾</button>
+          <div class="multi-painel" id="painelEquipasCap" hidden></div>
+        </div>
+        <label class="zoom-label">Horas de:
+          <select id="selTipoCap" title="Só conta as horas dos projetos deste tipo (Projeto → Tipo). A capacidade é sempre a total de cada consultor.">
+            <option value="total">Totalidade</option>
+            <option value="servicos">Serviços</option>
+            <option value="id">I&amp;D</option>
+            <option value="servicos+id">Serviços + I&amp;D</option>
+          </select>
+        </label>
+        <label class="zoom-label">Mostrar:
+          <select id="selVistaCap">
+            <option value="pct">Percentagem</option>
+            <option value="horas">Horas</option>
+            <option value="ambos">Horas e %</option>
           </select>
         </label>
         <label class="zoom-label">Horizonte:
@@ -650,8 +664,10 @@
           <button id="btnCapMesSeg" class="btn btn-sm" title="Mês seguinte">▶</button>
           <button id="btnCapHoje" class="btn btn-sm" title="Voltar ao mês atual">Hoje</button>
         </label>
+        <button type="button" id="btnCapExportar" class="ib ib-pri" data-icone="upload" data-tip="Exportar para Excel o que está no ecrã (equipas, tipo de horas e período)" aria-label="Exportar para Excel"><span>Excel</span></button>
       </div>
     </div>
+    <p class="pagina-sub" id="infoCapParcial" hidden></p>
     <p class="pagina-sub">Alocação = horas nominais das tarefas atribuídas a cada consultor, em todos os projetos carregados. Capacidade = dias úteis × 8h (100% alocáveis a projetos), já a descontar fins de semana, feriados e ausências. Sobre-alocação = mais tarefas atribuídas do que capacidade disponível no mesmo período.</p>
 
     <div class="legend-row" id="legendaCapacidade"></div>
@@ -1311,7 +1327,7 @@
 <script src="js/auth.js?v=20260928c"></script>
 <script src="js/sync.js?v=20261101b"></script>
 <script src="js/gantt.js?v=20261101a"></script>
-<script src="js/capacidade.js?v=20261002b"></script>
+<script src="js/capacidade.js?v=20261101a"></script>
 <script src="js/portfolio-gantt.js?v=20260928c"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20261101b"></script>
@@ -1333,6 +1349,6 @@
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261031e"></script>
-<script src="js/app.js?v=20261101b"></script>
+<script src="js/app.js?v=20261101d"></script>
 </body>
 </html>
