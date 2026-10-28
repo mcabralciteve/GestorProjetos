@@ -201,7 +201,9 @@ const Gantt = {
         const alvoIdx = lista.findIndex(x => x.tarefa.id === t.id);
         if (predIdx < 0 || alvoIdx < 0) return;
         const pred = lista[predIdx].tarefa;
-        this.desenharLink(svg, pred, t, predIdx, alvoIdx, rangeStart, pxPerDia, this.ROW_H);
+        // Tarefa de data fixa cuja predecessora termina depois dela: a ligação fica a vermelho.
+        const emConflito = Agendamento.linkEmConflito(t, pr, new Map([[pr.id, pred]]));
+        this.desenharLink(svg, pred, t, predIdx, alvoIdx, rangeStart, pxPerDia, this.ROW_H, emConflito);
       });
     });
 
@@ -222,7 +224,7 @@ const Gantt = {
     return { x, w, y };
   },
 
-  desenharLink(svg, pred, alvo, predIdx, alvoIdx, rangeStart, pxPerDia, rowH) {
+  desenharLink(svg, pred, alvo, predIdx, alvoIdx, rangeStart, pxPerDia, rowH, emConflito) {
     const gp = this.barraGeom(pred, rangeStart, pxPerDia, predIdx);
     const ga = this.barraGeom(alvo, rangeStart, pxPerDia, alvoIdx);
     const y1 = gp.y + rowH / 2;
@@ -233,7 +235,8 @@ const Gantt = {
     const path = document.createElementNS(this.SVGNS, 'path');
     const d = `M${x1},${y1} L${midX},${y1} L${midX},${y2} L${x2 - 4},${y2}`;
     path.setAttribute('d', d);
-    path.setAttribute('class', 'gantt-link');
+    path.setAttribute('class', 'gantt-link' + (emConflito ? ' conflito' : ''));
+    if (emConflito) { const tit = document.createElementNS(this.SVGNS, 'title'); tit.textContent = 'A predecessora termina depois da data fixa desta tarefa'; path.appendChild(tit); }
     svg.appendChild(path);
   },
 
@@ -305,7 +308,8 @@ const Gantt = {
     if (t.negrito) nomeLabel.style.fontWeight = '700';
     if (t.italico) nomeLabel.style.fontStyle = 'italic';
     if (t.cor) nomeLabel.style.fill = t.cor;
-    nomeLabel.textContent = t.nome;
+    // 📌 = data fixa (as ligações não a movem).
+    nomeLabel.textContent = (t.modoData === 'fixa' && t.predecessores && t.predecessores.length ? '📌 ' : '') + t.nome;
     g.appendChild(nomeLabel);
 
     if (!temFilhos) {
@@ -442,7 +446,7 @@ const Gantt = {
           if (App.temFilhos(projeto, destTaskId)) {
             App.toast('Tarefas-resumo não podem ter predecessoras.');
           } else {
-            if (App.adicionarPredecessor(destTaskId, drag.origemId, 'FS', 0)) {
+            if (App.ligarTarefas(destTaskId, drag.origemId, 'FS', 0)) {
               App.renderTudo();
             }
           }

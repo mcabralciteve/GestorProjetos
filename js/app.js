@@ -1297,6 +1297,7 @@ const App = {
       recursoIds: recursoIds || [],
       alocacoesHoras: {},
       predecessores: [],
+      modoData: null,
       negrito: false,
       italico: false,
       cor: null
@@ -2121,7 +2122,10 @@ const App = {
       if (DateUtil.parseISO(t.fim) < DateUtil.parseISO(t.inicio)) t.inicio = t.fim;
     } else if (campo === 'duracao') {
       const dias = Math.max(1, parseInt(valor, 10) || 1);
-      t.fim = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.inicio), dias - 1));
+      // Uma tarefa que segue as predecessoras tem a duração em dias úteis (senão um fim de semana encurtava-a).
+      t.fim = t.modoData === 'auto' && t.predecessores.length
+        ? Agendamento.fimPorDiasUteis(t.inicio, dias)
+        : DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.inicio), dias - 1));
     } else if (campo === 'progresso') {
       t.progresso = Math.max(0, Math.min(100, parseInt(valor, 10) || 0));
     } else if (campo === 'nome') {
@@ -2215,17 +2219,24 @@ const App = {
     let deslocadas = 0;
     if (this.moverDependentes && delta !== 0 && mesmaDuracao) {
       this.dependentesDe(p, id).forEach(d => {
+        if (d.modoData === 'fixa') return; // data fixa: as ligações não a movem
         d.inicio = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(d.inicio), delta));
         d.fim = DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(d.fim), delta));
         deslocadas++;
       });
     }
+    // Mover à mão uma tarefa que segue as predecessoras fixa-lhe a data (senão voltava logo para onde estava).
+    const ficouFixa = t.modoData === 'auto' && t.predecessores.length > 0 && novoInicioISO !== t.inicio;
+    if (ficouFixa) t.modoData = 'fixa';
     t.inicio = novoInicioISO;
     t.fim = novoFimISO;
     this.recalcularAgendamento(p);
     this.persist();
     this.renderTudo();
-    if (deslocadas) this.toast(`${deslocadas} tarefa(s) dependente(s) também deslocada(s) ${Math.abs(delta)} dia(s).`);
+    const avisos = [];
+    if (deslocadas) avisos.push(`${deslocadas} tarefa(s) dependente(s) também deslocada(s) ${Math.abs(delta)} dia(s).`);
+    if (ficouFixa) avisos.push(`📌 "${t.nome}" passou a data fixa (moveste-a à mão). Em Predecessoras podes voltar a "Segue as predecessoras".`);
+    if (avisos.length) this.toast(avisos.join(' '));
   },
 
   // ---------- Predecessoras ----------
@@ -2243,7 +2254,8 @@ const App = {
     }
     return false;
   },
-  adicionarPredecessor(taskId, predId, tipo, atraso) {
+  // "modoData" (opcional): 'auto' | 'fixa' | null — define o modo de data da tarefa antes de reagendar.
+  adicionarPredecessor(taskId, predId, tipo, atraso, modoData) {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, taskId);
     if (!t || taskId === predId) return false;
@@ -2251,6 +2263,44 @@ const App = {
     const existente = t.predecessores.find(pr => pr.id === predId);
     if (existente) { existente.tipo = tipo; existente.atraso = atraso; }
     else t.predecessores.push({ id: predId, tipo, atraso });
+    if (modoData !== undefined) t.modoData = modoData;
+    this.recalcularAgendamento(p);
+    this.persist();
+    return true;
+  },
+  // Cria uma ligação a partir da interface (janela de Predecessoras ou arrastar no Gantt). A primeira ligação de uma
+  // tarefa sem modo passa-a para "segue as predecessoras"; se isso a mudar de data, pergunta primeiro.
+  ligarTarefas(taskId, predId, tipo, atraso) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, taskId);
+    if (!t || taskId === predId) return false;
+    if (this.wouldCreateCycle(p, taskId, predId)) { this.toast('Isso criaria uma dependência circular.'); return false; }
+    let modo; // undefined = não mexe no modo
+    if (!t.predecessores.length && !t.modoData) {
+      modo = 'auto';
+      const alvo = Agendamento.alvoAuto(t, this.mapaTarefas(p), this.feriadosSet(), [{ id: predId, tipo, atraso }]);
+      if (alvo && (alvo.inicio !== t.inicio || alvo.fim !== t.fim)) {
+        const d = iso => PessoasLogica.dataPT(iso);
+        const ok = confirm(`Alinhar "${t.nome}" com a predecessora?\n\nPassa de ${d(t.inicio)} para ${d(alvo.inicio)} (dia útil seguinte).\n\nOK = alinhar (a tarefa passa a seguir as predecessoras)\nCancelar = manter ${d(t.inicio)} (a tarefa fica com data fixa 📌)`);
+        if (!ok) modo = 'fixa';
+      }
+    }
+    return this.adicionarPredecessor(taskId, predId, tipo, atraso, modo);
+  },
+  // Muda o modo de data de uma tarefa. Devolve false se a pessoa desistir (ao passar a automático pergunta, se mudar a data).
+  definirModoData(taskId, modo) {
+    const p = this.projetoAtivo();
+    const t = this.tarefaPorId(p, taskId);
+    if (!t) return false;
+    const novo = modo === 'auto' || modo === 'fixa' ? modo : null;
+    if (novo === (t.modoData || null)) return true;
+    if (novo === 'auto' && t.predecessores.length) {
+      const alvo = Agendamento.alvoAuto(t, this.mapaTarefas(p), this.feriadosSet());
+      const d = iso => PessoasLogica.dataPT(iso);
+      if (alvo && (alvo.inicio !== t.inicio || alvo.fim !== t.fim)
+        && !confirm(`"${t.nome}" passa de ${d(t.inicio)}–${d(t.fim)} para ${d(alvo.inicio)}–${d(alvo.fim)} (dia útil seguinte às predecessoras). Continuar?`)) return false;
+    }
+    t.modoData = novo;
     this.recalcularAgendamento(p);
     this.persist();
     return true;
@@ -3960,39 +4010,13 @@ const App = {
     };
     raizes.forEach(visitar);
   },
+  // As regras (modo automático, data fixa, "como até aqui") vivem em js/agendamento-logica.js.
   relaxarPredecessoras(p) {
     const folhas = p.tarefas.filter(t => !this.temFilhos(p, t.id));
-    const mapa = new Map(p.tarefas.map(t => [t.id, t]));
-    for (let pass = 0; pass < folhas.length + 1; pass++) {
-      let mudou = false;
-      folhas.forEach(t => {
-        if (!t.predecessores.length) return;
-        const inicioAtual = DateUtil.parseISO(t.inicio);
-        const fimAtual = DateUtil.parseISO(t.fim);
-        const duracao = DateUtil.diffDays(inicioAtual, fimAtual);
-        let minInicio = null;
-        t.predecessores.forEach(pr => {
-          const pred = mapa.get(pr.id);
-          if (!pred) return;
-          const predInicio = DateUtil.parseISO(pred.inicio);
-          const predFim = DateUtil.parseISO(pred.fim);
-          const atraso = pr.atraso || 0;
-          let candidato;
-          if (pr.tipo === 'FS') candidato = DateUtil.addDays(predFim, 1 + atraso);
-          else if (pr.tipo === 'SS') candidato = DateUtil.addDays(predInicio, atraso);
-          else if (pr.tipo === 'FF') candidato = DateUtil.addDays(predFim, atraso - duracao);
-          else if (pr.tipo === 'SF') candidato = DateUtil.addDays(predInicio, atraso - duracao);
-          if (candidato && (minInicio === null || candidato > minInicio)) minInicio = candidato;
-        });
-        if (minInicio && minInicio > inicioAtual) {
-          t.inicio = DateUtil.toISO(minInicio);
-          t.fim = DateUtil.toISO(DateUtil.addDays(minInicio, duracao));
-          mudou = true;
-        }
-      });
-      if (!mudou) break;
-    }
+    Agendamento.relaxar(folhas, this.mapaTarefas(p), { feriados: this.feriadosSet() });
   },
+  mapaTarefas(p) { return new Map(p.tarefas.map(t => [t.id, t])); },
+  feriadosSet() { return new Set((this.state.feriados || []).map(f => f.data)); },
 
   // ---------- Flatten / render ----------
   flatten(p) {
@@ -8676,9 +8700,11 @@ const App = {
         const dica = Capacidade.descreverProblema(r.nome, resultado);
         return `<span class="badge-rec ${resultado.nivel}" title="${escapeAttr(dica)}">⚠ ${escapeHtml(r.nome)}${sufixoPct}</span>`;
       }).join('');
-      const chipsPred = t.predecessores.map(pr => {
+      const fixaComPred = t.modoData === 'fixa' && t.predecessores.length > 0;
+      const chipsPred = (fixaComPred ? '<span title="Data fixa: as ligações não movem esta tarefa">📌</span> ' : '') + t.predecessores.map(pr => {
         const pt = this.tarefaPorId(p, pr.id);
-        return `<span class="pred-tag">${pt ? escapeHtml(pt.nome.slice(0, 14)) : '?'} (${pr.tipo})</span>`;
+        const conflito = pt && Agendamento.linkEmConflito(t, pr, new Map([[pr.id, pt]]));
+        return `<span class="pred-tag${conflito ? ' conflito' : ''}"${conflito ? ' title="A predecessora termina depois da data fixa desta tarefa"' : ''}>${conflito ? '⚠ ' : ''}${pt ? escapeHtml(pt.nome.slice(0, 14)) : '?'} (${pr.tipo})</span>`;
       }).join('');
       const duracao = DateUtil.diffDays(DateUtil.parseISO(t.inicio), DateUtil.parseISO(t.fim)) + 1;
       const horasReais = this.horasReaisTarefa(p, t);
@@ -10373,16 +10399,35 @@ const App = {
     const p = this.projetoAtivo();
     const t = this.tarefaPorId(p, taskId);
     if (!t) return;
+    const mapa = this.mapaTarefas(p);
     const opcoes = p.tarefas.filter(x => x.id !== taskId)
       .map(x => `<option value="${x.id}">${escapeHtml(x.nome)}</option>`).join('');
+    const auto = t.modoData === 'auto';
     const linhasAtuais = t.predecessores.map(pr => {
       const pt = this.tarefaPorId(p, pr.id);
+      const conflito = Agendamento.linkEmConflito(t, pr, mapa);
       return `<div class="pred-linha">
-        <span style="flex:1">${pt ? escapeHtml(pt.nome) : '?'} — ${pr.tipo}${pr.atraso ? ' +' + pr.atraso + 'd' : ''}</span>
+        <span style="flex:1">${pt ? escapeHtml(pt.nome) : '?'} — ${pr.tipo}${pr.atraso ? ' +' + pr.atraso + (auto ? ' dia(s) útil(eis)' : 'd') : ''}${conflito ? ' <span class="pred-conflito">⚠ a predecessora termina depois desta data</span>' : ''}</span>
         <button class="btn-icon" data-remover="${pr.id}">🗑</button>
       </div>`;
     }).join('') || '<p style="color:var(--cinza-500)">Sem predecessoras.</p>';
+    const modo = t.modoData || '';
+    const legado = !modo && t.predecessores.length > 0;
+    const dicas = {
+      auto: 'A tarefa fica sempre no dia útil seguinte ao fim da predecessora (salta fins de semana e feriados) e acompanha-a se esta mudar de data. Se a arrastares à mão, passa a data fixa.',
+      fixa: 'As ligações não movem esta tarefa. Se a predecessora terminar depois da data, a ligação fica assinalada com ⚠, sem mudar nada.',
+      '': legado
+        ? 'Como até aqui: a tarefa só é empurrada para a frente se a predecessora terminar depois; nunca é puxada para trás. Escolhe outro modo para a alterar.'
+        : 'Por defeito, ao ligar a uma predecessora a tarefa passa a segui-la (dia útil seguinte).'
+    };
     const html = `
+      <label class="zoom-label" style="display:block;margin-bottom:4px;">Data desta tarefa
+        <select id="predModoData" style="width:100%;">
+          ${legado ? '<option value="" selected>Como até aqui — só é empurrada para a frente</option>' : ''}
+          <option value="auto"${modo === 'auto' || (!modo && !legado) ? ' selected' : ''}>Segue as predecessoras (dia útil seguinte)</option>
+          <option value="fixa"${modo === 'fixa' ? ' selected' : ''}>📌 Data fixa — as ligações não a movem</option>
+        </select></label>
+      <p class="hint" style="margin:0 0 10px;">${dicas[modo]}</p>
       <div id="listaPred">${linhasAtuais}</div>
       <hr style="margin:12px 0;border:none;border-top:1px solid #e5e7eb">
       <div class="pred-linha">
@@ -10393,10 +10438,15 @@ const App = {
           <option value="FF">Fim→Fim</option>
           <option value="SF">Início→Fim</option>
         </select>
-        <input type="number" id="novaPredAtraso" value="0" title="Atraso (dias)" style="width:52px">
+        <input type="number" id="novaPredAtraso" value="0" title="Atraso (dias; dias úteis nas tarefas que seguem as predecessoras)" style="width:52px">
         <button class="btn btn-sm btn-primary" id="btnAddPred">Adicionar</button>
       </div>`;
     this.abrirModal(`Predecessoras — ${t.nome}`, html);
+    const selModo = document.getElementById('predModoData');
+    if (selModo) selModo.addEventListener('change', () => {
+      if (this.definirModoData(taskId, selModo.value)) this.renderTudo();
+      this.abrirModalPredecessoras(taskId);
+    });
     this.els.modalCorpo.querySelectorAll('[data-remover]').forEach(btn => {
       btn.addEventListener('click', () => {
         this.removerPredecessor(taskId, btn.dataset.remover);
@@ -10409,7 +10459,7 @@ const App = {
       const predId = document.getElementById('novaPredTarefa').value;
       const tipo = document.getElementById('novaPredTipo').value;
       const atraso = parseInt(document.getElementById('novaPredAtraso').value, 10) || 0;
-      if (this.adicionarPredecessor(taskId, predId, tipo, atraso)) {
+      if (this.ligarTarefas(taskId, predId, tipo, atraso)) {
         this.renderTudo();
         this.abrirModalPredecessoras(taskId);
       }

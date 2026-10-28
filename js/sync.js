@@ -194,7 +194,9 @@ const Sync = {
     const linhasTarefas = tarefas.map((t, idx) => ({
       id: t.id, parent_id: t.parentId || null, nome: t.nome, ordem: idx,
       inicio: t.inicio, fim: t.fim, progresso: t.progresso, predecessores: t.predecessores || [],
-      negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
+      negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null,
+      // supabase/tarefas_modo_data.sql: 'auto' | 'fixa' | vazio. Antes de correr o SQL a base de dados ignora este campo.
+      modo_data: t.modoData === 'auto' || t.modoData === 'fixa' ? t.modoData : null
     }));
     const linhasTarefaRecursos = [];
     tarefas.forEach(t => {
@@ -330,7 +332,8 @@ const Sync = {
       const tarefa = {
         id: t.id, parentId: t.parent_id, nome: t.nome, inicio: t.inicio, fim: t.fim,
         progresso: t.progresso, recursoIds: [], alocacoesHoras: {}, predecessores: t.predecessores || [],
-        negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null
+        negrito: !!t.negrito, italico: !!t.italico, cor: t.cor || null,
+        modoData: t.modo_data === 'auto' || t.modo_data === 'fixa' ? t.modo_data : null
       };
       tarefaPorId[t.id] = tarefa;
       if (projetos[t.projeto_id]) projetos[t.projeto_id].tarefas.push(tarefa);
