@@ -6186,7 +6186,7 @@ const App = {
       const intervalosCriticos = Capacidade.intervalosCriticos(r);
       const resumos = meses.map(m => Object.assign({ label: m.label }, Capacidade.resumoMes(r, m.ano, m.mes, intervalosCriticos, filtroProjeto)));
       resumos.forEach((res, i) => { totaisMes[i].alocado += res.alocado; totaisMes[i].capacidade += res.capacidade; });
-      linhasCap.push({ nome: r.nome, equipa: (this.state.equipas.find(eq => eq.id === r.equipaId) || {}).nome || '', resumos });
+      linhasCap.push({ recurso: r, nome: r.nome, equipa: (this.state.equipas.find(eq => eq.id === r.equipaId) || {}).nome || '', resumos });
 
       const tr = document.createElement('tr');
       tr.dataset.recursoId = r.id; // usado por App.irParaCapacidadeDoRecurso (vindo do Dashboard) para realçar a linha
@@ -6245,50 +6245,84 @@ const App = {
     e.heatmapCapBody.appendChild(trTotal);
     this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap) };
   },
-  // Exporta para Excel exatamente o que está no ecrã da Capacidade: por consultor e por mês, as horas alocadas, a
-  // capacidade e a ocupação — sempre as três, seja qual for a vista (Percentagem/Horas/Horas e %).
+  // Exporta para Excel os consultores e os meses que estão no ecrã da Capacidade (equipas e período escolhidos). Por
+  // consultor e por mês: horas de Serviços, de I&D e Totais — o Total são TODAS as horas alocadas (inclui projetos sem
+  // tipo e outros), por isso não é a soma de Serviços + I&D —, a capacidade e a ocupação total. Não depende do filtro
+  // "Horas de" do ecrã. O ficheiro é montado com formatação própria (ver js/xlsx-estilo.js).
   async exportarCapacidadeExcel() {
     const d = this._dadosCap;
     if (!d || !d.linhas.length) { this.toast('Não há nada para exportar com estes filtros.'); return; }
     const btn = this.els.btnCapExportar;
     if (btn) btn.disabled = true;
+    this.toast('A gerar o Excel…');
     try {
-      if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
+      await new Promise(resolver => setTimeout(resolver, 30)); // deixa o aviso aparecer antes do cálculo
+      const fServicos = Capacidade.filtroTipoProjeto('servicos'), fID = Capacidade.filtroTipoProjeto('id');
+      const AZ = '1F3A5F', AZ2 = '2A6A9A', NUM = '#,##0.0;-#,##0.0;"–"';
+      const COR = { critico: ['F1CFC9', '6E241C'], aviso: ['F6DDC4', '7A3A10'], conflito: ['F6DDC4', '7A3A10'], ok: ['CDE4D8', '1F4B34'], subutilizado: ['F3E3B6', '6B4F0F'], vazio: ['F4F5F7', '6B7280'] };
       const r1 = (n) => Math.round(n * 10) / 10;
-      const nomeTipo = { total: 'Totalidade', servicos: 'Serviços', id: 'I&D', 'servicos+id': 'Serviços + I&D' }[d.tipo];
-      const nomesEq = this.state.equipas.filter(eq => d.equipasIds.includes(String(eq.id))).map(eq => eq.nome);
-      const cab = ['Consultor', 'Equipa'];
-      d.meses.forEach(m => cab.push(`${m.label} · Alocadas (h)`, `${m.label} · Capacidade (h)`, `${m.label} · Ocupação`));
-      const linhaDe = (nome, equipa, resumos) => {
-        const l = [nome, equipa];
-        resumos.forEach(res => l.push(r1(res.alocado), r1(res.capacidade), res.capacidade > 0 ? res.alocado / res.capacidade : (res.alocado > 0 ? null : 0)));
-        return l;
+      const maiuscula = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+      const calc = (rec, m) => {
+        // Sem os intervalos de sobre-alocação ([]): aqui só interessam as horas.
+        const total = Capacidade.resumoMes(rec, m.ano, m.mes, [], null);
+        return { s: Capacidade.resumoMes(rec, m.ano, m.mes, [], fServicos).alocado, i: Capacidade.resumoMes(rec, m.ano, m.mes, [], fID).alocado, t: total.alocado, cap: total.capacidade };
       };
-      const aoa = [
-        ['Capacidade & Alocação'],
-        [`Horas de: ${nomeTipo} · Equipas: ${nomesEq.length ? nomesEq.join(', ') : 'todas'} · Gerado em ${new Date().toLocaleDateString('pt-PT')}`],
-        [],
-        cab
-      ];
-      d.linhas.forEach(l => aoa.push(linhaDe(l.nome, l.equipa, l.resumos)));
-      aoa.push(linhaDe(`Total (${d.linhas.length})`, '', d.totais));
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      // As colunas de "Ocupação" levam formato de percentagem (o valor é a fração: 0,85 = 85%).
-      const linhaCab = 3, ultima = aoa.length - 1;
-      for (let R = linhaCab + 1; R <= ultima; R++) {
-        for (let i = 0; i < d.meses.length; i++) {
-          const ref = XLSX.utils.encode_cell({ r: R, c: 2 + i * 3 + 2 });
-          if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = '0%';
-        }
-      }
-      ws['!cols'] = cab.map((c, i) => ({ wch: i === 0 ? 26 : i === 1 ? 16 : 16 }));
-      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: linhaCab, c: 0 }, e: { r: ultima - 1, c: cab.length - 1 } }) };
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Capacidade');
-      const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const sufixo = { total: 'Total', servicos: 'Servicos', id: 'ID', 'servicos+id': 'Servicos_ID' }[d.tipo];
-      this.descarregarBlob(blob, `Capacidade_${sufixo}_${d.meses[0].ano}-${String(d.meses[0].mes + 1).padStart(2, '0')}.xlsx`);
+      const nColunas = 2 + d.meses.length * 5;
+      const somas = d.meses.map(() => ({ s: 0, i: 0, t: 0, cap: 0 }));
+      const linhasDados = d.linhas.map((l, idx) => {
+        const zebra = idx % 2 ? 'F7F9FC' : null;
+        const celulas = [
+          { v: l.nome, e: { negrito: true, borda: 'fina', fundo: zebra } },
+          { v: l.equipa, e: { borda: 'fina', fundo: zebra } }
+        ];
+        d.meses.forEach((m, mi) => {
+          const x = calc(l.recurso, m);
+          somas[mi].s += x.s; somas[mi].i += x.i; somas[mi].t += x.t; somas[mi].cap += x.cap;
+          const h = (v, negrito) => ({ v: r1(v), e: { formato: NUM, alinha: 'right', borda: 'fina', fundo: zebra, negrito } });
+          const pct = x.cap > 0 ? x.t / x.cap : (x.t > 0 ? Infinity : 0);
+          const cls = Capacidade.classeResumo({ pct, diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 });
+          const semDados = x.cap <= 0 && x.t <= 0;
+          celulas.push(h(x.s), h(x.i), h(x.t, true), h(x.cap));
+          celulas.push(semDados ? { v: '–', e: { alinha: 'center', borda: 'fina', fundo: zebra, cor: '6B7280' } }
+            : { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'fina', negrito: true, fundo: COR[cls][0], cor: COR[cls][1] } });
+        });
+        return { altura: 18, celulas };
+      });
+      const linhaTotal = { altura: 20, celulas: [
+        { v: `Total (${d.linhas.length} consultor${d.linhas.length === 1 ? '' : 'es'})`, e: { negrito: true, fundo: 'DCE8F3', borda: 'topo' }, colspan: 2 }
+      ] };
+      somas.forEach(s => {
+        const h = (v) => ({ v: r1(v), e: { formato: NUM, alinha: 'right', borda: 'topo', negrito: true, fundo: 'DCE8F3' } });
+        const pct = s.cap > 0 ? s.t / s.cap : (s.t > 0 ? Infinity : 0);
+        linhaTotal.celulas.push(h(s.s), h(s.i), h(s.t), h(s.cap),
+          { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'topo', negrito: true, fundo: 'DCE8F3' } });
+      });
+      const nomesEq = this.state.equipas.filter(eq => d.equipasIds.includes(String(eq.id))).map(eq => eq.nome);
+      const periodo = `${maiuscula(d.meses[0].label)} a ${maiuscula(d.meses[d.meses.length - 1].label)}`;
+      const nota = (texto) => ({ celulas: [{ v: texto, e: { italico: true, tam: 9, cor: '6B7280' }, colspan: nColunas }] });
+      const linhas = [
+        { altura: 28, celulas: [{ v: 'Capacidade & Alocação', e: { negrito: true, tam: 16, cor: AZ }, colspan: nColunas }] },
+        { altura: 16, celulas: [{ v: `Equipas: ${nomesEq.length ? nomesEq.join(', ') : 'todas'}  ·  Período: ${periodo}  ·  Gerado em ${new Date().toLocaleDateString('pt-PT')}`, e: { italico: true, tam: 10, cor: '6B7280' }, colspan: nColunas }] },
+        { altura: 8, celulas: [] },
+        { altura: 22, celulas: [{ v: '', e: { fundo: AZ }, colspan: 2 }].concat(d.meses.map((m, mi) => ({ v: maiuscula(m.label), colspan: 5, e: { negrito: true, tam: 11, cor: 'FFFFFF', fundo: mi % 2 ? AZ2 : AZ, alinha: 'center' } }))) },
+        { altura: 32, celulas: [
+          { v: 'Consultor', e: { negrito: true, cor: AZ, fundo: 'D3E3F3', borda: 'fina' } },
+          { v: 'Equipa', e: { negrito: true, cor: AZ, fundo: 'D3E3F3', borda: 'fina' } }
+        ].concat(d.meses.reduce((acc, m, mi) => acc.concat(['Serviços (h)', 'I&D (h)', 'Total (h)', 'Capacidade (h)', 'Ocupação'].map(t =>
+          ({ v: t, e: { negrito: true, cor: AZ, fundo: mi % 2 ? 'E3EEF8' : 'D3E3F3', alinha: 'center', quebra: true, borda: 'fina' } }))), [])) }
+      ].concat(linhasDados, [linhaTotal, { altura: 8, celulas: [] },
+        nota('Total = todas as horas alocadas ao consultor no mês (inclui projetos sem tipo e outras atividades), por isso não é a soma de Serviços + I&D.'),
+        nota('Ocupação = Total ÷ Capacidade. Cores: verde confortável · amarelo subutilizado · laranja perto do limite · vermelho sobre-alocado (limiares das Definições).'),
+        nota('Capacidade = dias úteis × 8h, a descontar feriados, ausências e horas registadas fora de projetos.')]);
+      const spec = {
+        nome: 'Capacidade', paisagem: true,
+        larguras: [26, 16].concat(d.meses.reduce((acc) => acc.concat([13, 12, 12, 15, 13]), [])),
+        congelar: { linhas: 5, colunas: 2 },
+        autofiltro: { linha: 5, de: 0, ate: nColunas - 1, ultimaLinha: 5 + d.linhas.length },
+        linhas
+      };
+      const blob = await XlsxEstilo.gerar(spec, JSZip, 'blob');
+      this.descarregarBlob(blob, `Capacidade_${d.meses[0].ano}-${String(d.meses[0].mes + 1).padStart(2, '0')}.xlsx`);
       this.toast('Capacidade exportada para Excel.');
     } catch (err) {
       console.error(err);
