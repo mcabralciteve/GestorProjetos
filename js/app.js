@@ -121,9 +121,9 @@ const App = {
   // Definição das colunas da tabela de Projetos, para o painel "⚙ Colunas" — a ordem aqui é só a
   // do painel de checkboxes, não afeta a ordem real das colunas na tabela (essa é fixa no HTML).
   COLUNAS_PROJETOS: [
-    { key: 'idInterno', label: 'ID interno' },
-    { key: 'nome', label: 'Nome' },
     { key: 'cliente', label: 'Cliente' },
+    { key: 'nome', label: 'Nome' },
+    { key: 'idInterno', label: 'ID interno' },
     { key: 'gestor', label: 'Gestor' },
     { key: 'dataInicio', label: 'Início' },
     { key: 'dataFim', label: 'Fim' },
@@ -5011,7 +5011,8 @@ const App = {
       const { p, orc } = l;
       switch (campo) {
         case 'nome': return p.nome.toLowerCase();
-        case 'cliente': return (p.cliente || '').toLowerCase();
+        // Cliente, depois projeto, depois código (os sem cliente, no fim).
+        case 'cliente': return `${(p.cliente || '').trim() ? '0' : '1'}|${(p.cliente || '').toLowerCase()}|${p.nome.toLowerCase()}|${(p.idInterno || '').toLowerCase()}`;
         case 'gestor': return this.nomeUtilizador(p.gestorId).toLowerCase();
         case 'dataInicio': return p.dataInicio || '';
         case 'dataFim': return p.dataFim || '';
@@ -5034,9 +5035,9 @@ const App = {
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td style="white-space:nowrap;"><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${p.tipoReferencia === 'interno' ? 'disabled' : dis} style="width:${p.tipoReferencia === 'interno' ? '78' : '100'}%;">${p.tipoReferencia === 'interno' ? ' <span class="badge-interno" title="Projeto interno — sem referência GIAF">INT</span>' : ''}</td>
-        <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
+        <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
+        <td style="white-space:nowrap;"><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${p.tipoReferencia === 'interno' ? 'disabled' : dis} style="width:${p.tipoReferencia === 'interno' ? '78' : '100'}%;">${p.tipoReferencia === 'interno' ? ' <span class="badge-interno" title="Projeto interno — sem referência GIAF">INT</span>' : ''}</td>
         <td>${admin
           ? `<select data-campo="gestorId" style="min-width:120px">${this.opcoesGestorProjeto('Sem gestor', p.gestorId)}</select>`
           : escapeHtml(this.nomeUtilizador(p.gestorId))}</td>
@@ -11140,7 +11141,7 @@ const App = {
 
     // Colunas ajustáveis + cabeçalhos ordenáveis nas restantes tabelas de dados da app.
     this.tornarColunasRedimensionaveis('tabelaProjetos', 'colunasProjetos');
-    this.ligarOrdenacaoTabela('tabelaProjetos', { campo: 'idInterno', dir: 'asc' }, () => this.renderTabelaProjetos());
+    this.ligarOrdenacaoTabela('tabelaProjetos', { campo: 'cliente', dir: 'asc' }, () => this.renderTabelaProjetos());
     this.tornarColunasRedimensionaveis('tabelaPontosSituacao', 'colunasPontosSituacao');
     this.ligarOrdenacaoTabela('tabelaPontosSituacao', { campo: 'data', dir: 'desc' }, () => this.renderAcompanhamento());
     this.tornarColunasRedimensionaveis('tabelaNextStepsGlobal', 'colunasNextStepsGlobal');
