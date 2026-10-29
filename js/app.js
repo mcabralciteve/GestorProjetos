@@ -7072,12 +7072,13 @@ const App = {
         <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
-        <td class="col-acoes"><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
+        <td class="col-acoes"><button class="btn-icon" data-editar-registo="${r.id}" title="Editar este registo (todos os campos, como no Registo do Dia)">✎</button><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
       tr.querySelector('[data-campo="pessoa"]').value = r.pessoa;
       tr.querySelector('[data-campo="data"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'data', ev.target.value));
       tr.querySelector('[data-campo="horas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'horas', ev.target.value));
       tr.querySelector('[data-campo="notas"]').addEventListener('change', (ev) => this.atualizarCampoRegisto(r.id, 'notas', ev.target.value));
       tr.querySelector('[data-eliminar]').addEventListener('click', () => this.eliminarRegisto(r.id));
+      tr.querySelector('[data-editar-registo]').addEventListener('click', () => this.abrirModalBlocoDia(r.id, null, null, { mudarPessoa: true }));
       if (semProjeto) {
         // Sem projeto, só a Pessoa é reatribuível — mantém o resto do registo (tipo/horas/notas)
         // como está, sem a cascata Projeto/Tarefa que só faz sentido para o tipo "Projeto".
@@ -7493,12 +7494,16 @@ const App = {
   // dataISO: o dia (célula do mês) onde se clicou "+", usado só para um registo novo — a editar um
   // já existente, a data vem do próprio registo (e é a única coisa que este modal deixa mudar sem
   // ser através do tipo/projeto/tarefa/horas/notas habituais).
-  abrirModalBlocoDia(registoId, tipoPreSelecionadoId, dataISO) {
-    const pessoa = this.diaRegistoPessoa;
-    if (!pessoa) return;
-    const recurso = this.state.recursos.find(r => r.nome === pessoa);
+  // opts.mudarPessoa (botão ✎ da tabela de Registos): abre o registo com a pessoa DELE (não a do Registo
+  // do Dia) e deixa mudá-la também — assim edita-se tudo (pessoa, data, tipo, projeto, tarefa, horas,
+  // notas, cliente/oportunidade) no mesmo formulário do Registo do Dia.
+  abrirModalBlocoDia(registoId, tipoPreSelecionadoId, dataISO, opts) {
     const registoExistente = registoId ? this.state.registos.find(r => r.id === registoId) : null;
     if (registoId && !registoExistente) return;
+    const mudarPessoa = !!(opts && opts.mudarPessoa && registoExistente);
+    let pessoa = mudarPessoa ? registoExistente.pessoa : this.diaRegistoPessoa;
+    if (!pessoa) return;
+    let recurso = this.state.recursos.find(r => r.nome === pessoa);
     const dataAlvo = registoExistente ? registoExistente.data : dataISO;
     if (!dataAlvo) return;
 
@@ -7552,7 +7557,15 @@ const App = {
       .reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
     const horasDefeito = registoExistente ? (parseFloat(registoExistente.horas) || 1) : Math.min(1, Math.max(0.25, this.CAPACIDADE_DIA_REGISTO - outrasHorasDoDia));
 
+    // Pessoas oferecidas ao editar a partir da tabela: o Administrador escolhe qualquer uma; um Gestor só as
+    // que já pode registar (mais a atual do registo, para o <select> não a "perder").
+    const pessoasModal = !mudarPessoa ? [] : (() => {
+      const lista = (this.souAdmin() ? this.state.recursos : this.recursosPermitidosRegisto()).slice();
+      if (!lista.some(r => r.nome === pessoa)) { const atual = this.state.recursos.find(r => r.nome === pessoa); if (atual) lista.push(atual); }
+      return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    })();
     const html = `
+      ${mudarPessoa ? `<label>Pessoa <select id="blocoPessoa">${pessoasModal.map(r => `<option value="${escapeAttr(r.nome)}" ${r.nome === pessoa ? 'selected' : ''}>${escapeHtml(r.nome)}</option>`).join('')}</select></label>` : ''}
       <div class="row-2">
         <label><span id="blocoDataLabelTxt">Data</span> <input type="date" id="blocoData" value="${dataAlvo}"></label>
         <label id="blocoDataFimWrap" style="display:none;">Data fim <input type="date" id="blocoDataFim" value="${dataAlvo}"></label>
@@ -7583,7 +7596,7 @@ const App = {
         ${registoExistente ? '<button type="button" class="btn btn-sm" id="blocoEliminar" style="color:var(--vermelho)">🗑 Eliminar</button>' : '<span></span>'}
         <button type="button" class="btn btn-primary" id="blocoGuardar">Guardar</button>
       </div>`;
-    this.abrirModal(registoExistente ? 'Editar bloco de trabalho' : 'Novo bloco de trabalho', html);
+    this.abrirModal(mudarPessoa ? 'Editar registo de horas' : registoExistente ? 'Editar bloco de trabalho' : 'Novo bloco de trabalho', html);
 
     const m = this.els.modalCorpo;
     const inpData = m.querySelector('#blocoData');
@@ -7653,6 +7666,13 @@ const App = {
     };
     atualizarCamposPorTipo();
     selTipo.addEventListener('change', atualizarCamposPorTipo);
+    const selPessoa = m.querySelector('#blocoPessoa');
+    if (selPessoa) selPessoa.addEventListener('change', () => {
+      // Outra pessoa = outros projetos/tarefas possíveis; o registo mantém a escolha se ainda for válida.
+      pessoa = selPessoa.value;
+      recurso = this.state.recursos.find(r => r.nome === pessoa);
+      atualizarCamposPorTipo();
+    });
     m.querySelectorAll('input[name="blocoDuracao"]').forEach(r => r.addEventListener('change', atualizarCamposPorTipo));
     selProjeto.addEventListener('change', preencherTarefas);
 
@@ -7707,6 +7727,7 @@ const App = {
       const rc = tipo.comercial && !tipo.criaAusencia && rcModal ? rcModal.ler() : { crmContaId: null, crmOportunidadeId: null, cliente: '', oportunidadeTexto: '' };
       if (registoExistente) {
         this.gravarLinhaRegisto(registoExistente.id, {
+          ...(mudarPessoa ? { pessoa } : {}),
           data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' }),
           cliente: rc.cliente, crmContaId: rc.crmContaId, crmOportunidadeId: rc.crmOportunidadeId, oportunidadeTexto: rc.oportunidadeTexto
         });
