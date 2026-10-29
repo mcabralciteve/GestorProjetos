@@ -627,7 +627,7 @@ const Crm = {
   },
   nomeProjetoDaOp(op) {
     const p = op.projeto_id && App.state.projetos[op.projeto_id];
-    return p ? `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}` : null;
+    return p ? App.rotuloProjetoCompleto(p) : null;
   },
 
   // ---------- Previsão na oportunidade (início, duração, área e plano de faturas) ----------
@@ -1669,7 +1669,7 @@ const Crm = {
       faturado: App.totalFaturadoProjeto(p), sobreFaturado: App.projetoSobreFaturado(p), prazo
     };
   },
-  rotuloProjeto(p) { return `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`; },
+  rotuloProjeto(p) { return App.rotuloProjetoCompleto(p); },
   horasFmt(h) { return `${(Math.round((Number(h) || 0) * 10) / 10).toLocaleString('pt-PT')}h`; },
   htmlNumerosProjeto(r) {
     if (!r.visivel) return '<p class="hint">Sem permissão para ver as horas e a faturação deste projeto.</p>';
@@ -1777,7 +1777,7 @@ A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
     const visiveis = resumos.filter(r => r.visivel).sort((a, b) => b.valorVendido - a.valorVendido).slice(0, 10);
     return {
       linhas: visiveis.map(r => ({
-        rotulo: `${r.projeto.idInterno || ''} ${r.projeto.nome}`.trim(), valor: r.faturado, valor2: r.valorVendido,
+        rotulo: App.rotuloProjetoCompleto(r.projeto), valor: r.faturado, valor2: r.valorVendido,
         texto: `${this.euro(r.faturado)} de ${this.euro(r.valorVendido)} faturado · ${this.horasFmt(r.horasReais)}${r.horasVendidas ? ' de ' + this.horasFmt(r.horasVendidas) : ''}`
       })),
       semPermissao: resumos.length - resumos.filter(r => r.visivel).length

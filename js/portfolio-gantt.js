@@ -99,7 +99,7 @@ const PortfolioGantt = {
         label.setAttribute('x', 6); label.setAttribute('y', y + this.ROW_H / 2 + 4);
         label.setAttribute('class', 'gantt-label');
         label.style.fontWeight = '700';
-        label.textContent = `${p.idInterno || ''} — ${p.nome}`;
+        label.textContent = App.rotuloProjetoCompleto(p);
         svg.appendChild(label);
       } else {
         const t = l.tarefa;

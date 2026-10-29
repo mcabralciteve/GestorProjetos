@@ -1544,8 +1544,21 @@ const App = {
   FORMATO_INTERNO_ANTIGO: /^\d{4}\/\d{3,}$/,
   // Sem maiúsculas/minúsculas nem espaços: "2026/007", " 2026/007 " e "2026 / 007" são a mesma referência.
   normalizarCodigoProjeto(c) { return String(c || '').toLowerCase().replace(/\s+/g, ''); },
+  // Como se mostra um projeto nas listas: Cliente — Projeto (código). O código vai no fim: identifica-se melhor
+  // pelo cliente e pelo nome. As listas ordenam-se pela mesma sequência (ver compararProjetos).
+  montarRotuloProjeto(cliente, nome, codigo) {
+    const base = [cliente, nome].map(x => String(x || '').trim()).filter(Boolean).join(' — ');
+    const cod = String(codigo || '').trim();
+    return cod ? (base ? `${base} (${cod})` : cod) : base;
+  },
   rotuloProjetoCompleto(p) {
-    return `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`;
+    return this.montarRotuloProjeto(p.cliente, p.nome, p.idInterno);
+  },
+  compararProjetos(a, b) {
+    const c = (x) => String(x || '');
+    const op = { numeric: true, sensitivity: 'base' };
+    if (!c(a.cliente) !== !c(b.cliente)) return c(a.cliente) ? -1 : 1;   // sem cliente, no fim
+    return c(a.cliente).localeCompare(c(b.cliente), 'pt', op) || c(a.nome).localeCompare(c(b.nome), 'pt', op) || c(a.idInterno).localeCompare(c(b.idInterno), 'pt', op);
   },
   projetoComCodigo(codigo, exetoId) {
     const alvo = this.normalizarCodigoProjeto(codigo);
@@ -2527,7 +2540,7 @@ const App = {
     return itens.map(it => {
       const linhas = [];
       it.trabalho.forEach(t => linhas.push(`<div class="dash-linha dash-linha-link" data-saida="trabalho|${escapeAttr(it.pessoa.id)}|${escapeAttr(t.projetoId)}">
-        <span class="dash-linha-principal">${escapeHtml(t.idInterno ? t.idInterno + ' — ' : '')}${escapeHtml(t.nome)}</span>
+        <span class="dash-linha-principal">${escapeHtml(this.montarRotuloProjeto(t.cliente, t.nome, t.idInterno))}</span>
         <span class="dash-linha-sub">${t.tarefas} tarefa(s)${t.nextSteps ? `, ${t.nextSteps} next step(s)` : ''} por passar →</span></div>`));
       if (it.gestor.length) linhas.push(`<div class="dash-linha dash-linha-link" data-saida="gestor|${escapeAttr(it.pessoa.id)}|">
         <span class="dash-linha-principal">${it.gestor.length} projeto(s) que gere</span><span class="dash-linha-sub">escolher novo Gestor →</span></div>`);
@@ -2652,7 +2665,7 @@ const App = {
       horasRegistadas: (p, t, rid) => this.horasJaRegistadasTarefa(p, t, rid),
       pendente: pp => this.proximoPassoPendente(pp)
     });
-    const rotuloProj = x => `${x.idInterno ? x.idInterno + ' — ' : ''}${x.projetoNome || x.nome}${x.cliente ? ` (${x.cliente})` : ''}`;
+    const rotuloProj = x => this.montarRotuloProjeto(x.cliente, x.projetoNome || x.nome, x.idInterno);
     const lista = (itens, f, max) => {
       max = max || 8;
       return `<ul style="margin:4px 0 0;padding-left:18px;">${itens.slice(0, max).map(i => `<li>${f(i)}</li>`).join('')}${itens.length > max ? `<li>… e mais ${itens.length - max}</li>` : ''}</ul>`;
@@ -3106,7 +3119,7 @@ const App = {
     const chkAtivos = m.querySelector('#asSoAtivos');
     const lista = m.querySelector('#asLista');
     const LIMITE_LINHAS = 300;
-    const rotuloProjeto = (p) => `${p.idInterno ? p.idInterno + ' — ' : ''}${p.nome}${p.cliente ? ` (${p.cliente})` : ''}`;
+    const rotuloProjeto = (p) => this.rotuloProjetoCompleto(p);
     let itens = [];
     const render = () => {
       const termo = filtro.value.trim().toLowerCase();
@@ -4085,7 +4098,7 @@ const App = {
   renderProjetoSelect() {
     const sel = this.els.selProjeto;
     const selGestor = this.els.selGestorFiltroGantt;
-    let projetos = this.projetosQuePossoVer();
+    let projetos = this.projetosQuePossoVer().slice().sort((a, b) => this.compararProjetos(a, b));
     if (this.souAdmin() && selGestor) {
       // Esta função é ao mesmo tempo o render E o "handler" do próprio <select> (não há um
       // aplicarFiltroGestorGantt à parte) — por isso um simples "||" com this.filtroGestorGantt
@@ -4114,7 +4127,7 @@ const App = {
     projetos.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ' (' + p.cliente + ')' : '') + (p.ativo === false ? ' ⏸ Suspenso' : '');
+      opt.textContent = this.rotuloProjetoCompleto(p) + (p.ativo === false ? ' ⏸ Suspenso' : '');
       if (p.id === this.state.projetoAtivoId) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -4527,7 +4540,7 @@ const App = {
           corpo = tarefasHoje.length ? tarefasHoje.map(({ p, t }) => `
             <div class="dash-linha dash-linha-link" data-dash-tarefa="${p.id}|${t.id}">
               <span class="dash-linha-principal">${escapeHtml(this.rotuloTarefaComPai(p, t))}</span>
-              <span class="dash-linha-sub">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)} · ${t.progresso || 0}%</span>
+              <span class="dash-linha-sub">${escapeHtml(this.rotuloProjetoCompleto(p))} · ${t.progresso || 0}%</span>
             </div>`).join('') : '<p class="hint">Sem tarefas previstas para hoje.</p>';
         }
       }
@@ -4573,7 +4586,7 @@ const App = {
       const meus = this.meusProjetosDiretamente();
       const corpo = meus.length ? meus.map(p => `
         <div class="dash-linha dash-linha-link" data-dash-projeto="${p.id}">
-          <span class="dash-linha-principal">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</span>
+          <span class="dash-linha-principal">${escapeHtml(this.rotuloProjetoCompleto(p))}${p.ativo === false ? '<span class="badge-suspenso">Suspenso</span>' : ''}</span>
           <span class="dash-linha-sub">${escapeHtml(p.cliente || 'Sem cliente')} · ${escapeHtml(p.estado)}</span>
         </div>`).join('') : '<p class="hint">Ainda não és gestor nem consultor de nenhum projeto.</p>';
       html += this.cartaoDashboard('📁 Os meus projetos', corpo, null, 'meusProjetos');
@@ -5338,7 +5351,7 @@ const App = {
       const alvo = OrcprevLogica.alvoDe(p.orcprevRef);
       const valor = alvo.tipo === 'atividade' ? '' : alvo.valor;
       const definido = !!String(p.orcprevRef || '').trim();
-      const rotulo = `${p.idInterno ? escapeHtml(p.idInterno) + ' — ' : ''}<b>${escapeHtml(p.nome || '')}</b>${p.cliente ? ' <span class="hint">(' + escapeHtml(p.cliente) + ')</span>' : ''}${p.ativo === false ? ' <span class="badge-suspenso">Suspenso</span>' : ''}`;
+      const rotulo = `${p.cliente ? escapeHtml(p.cliente) + ' — ' : ''}<b>${escapeHtml(p.nome || '')}</b>${p.idInterno ? ' <span class="hint">(' + escapeHtml(p.idInterno) + ')</span>' : ''}${p.ativo === false ? ' <span class="badge-suspenso">Suspenso</span>' : ''}`;
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${rotulo}</td>
@@ -5994,7 +6007,7 @@ const App = {
     }
     if (e.fAlocProjeto) {
       const valorProjeto = this.filtrosAlocacoes.projeto;
-      e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+      e.fAlocProjeto.innerHTML = '<option value="">Todos</option>' + projetosPermitidos.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
       e.fAlocProjeto.value = projetosPermitidos.some(p => p.id === valorProjeto) ? valorProjeto : '';
     }
     if (e.fAlocCliente) {
@@ -6413,7 +6426,7 @@ const App = {
     if (!e.regData.value) e.regData.value = DateUtil.todayISO();
 
     const projetosComId = this.projetosRegistoPermitidos();
-    const filtrosProjetos = '<option value="">Todos</option>' + projetosComId.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+    const filtrosProjetos = '<option value="">Todos</option>' + projetosComId.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     const valorFiltroProjeto = e.fRegProjeto.value;
     e.fRegProjeto.innerHTML = filtrosProjetos;
     e.fRegProjeto.value = valorFiltroProjeto;
@@ -6475,7 +6488,7 @@ const App = {
     const recurso = this.recursosPermitidosRegisto().find(r => r.nome === e.regPessoa.value);
     const projetosComId = this.projetosRegistoPermitidos();
     const projetosDaPessoa = recurso ? projetosComId.filter(p => p.tarefas.some(t => t.recursoIds.includes(recurso.id))) : [];
-    e.regProjeto.innerHTML = `<option value="">${recurso ? 'Seleciona…' : 'Seleciona primeiro a pessoa…'}</option>` + projetosDaPessoa.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+    e.regProjeto.innerHTML = `<option value="">${recurso ? 'Seleciona…' : 'Seleciona primeiro a pessoa…'}</option>` + projetosDaPessoa.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     e.regProjeto.disabled = !recurso;
     e.regProjeto.value = projetosDaPessoa.some(p => p.idInterno === valorAtualProjeto) ? valorAtualProjeto : '';
     this.renderTarefasRegisto();
@@ -6990,7 +7003,7 @@ const App = {
           <td>${DateUtil.formatShort(DateUtil.parseISO(r.data))}</td>
           <td>${escapeHtml(r.pessoa)}</td>
           <td>${tipoHtml}</td>
-          <td>${r.projetoIdInterno ? `${escapeHtml(r.projetoIdInterno)} — ${escapeHtml(r.projetoNome)}` : '<span style="color:var(--cinza-500)">—</span>'}</td>
+          <td>${r.projetoIdInterno ? escapeHtml(this.montarRotuloProjeto(r.cliente, r.projetoNome, r.projetoIdInterno)) : '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${escapeHtml(this.rotuloTarefaRegisto(r)) || '<span style="color:var(--cinza-500)">—</span>'}</td>
           <td>${(parseFloat(r.horas) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}h</td>
@@ -7055,7 +7068,7 @@ const App = {
           return;
         }
         selProjeto.disabled = false;
-        selProjeto.innerHTML = projetos.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+        selProjeto.innerHTML = projetos.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
         const mantemProjeto = manterSelecao && projetos.some(p => p.idInterno === r.projetoIdInterno);
         selProjeto.value = mantemProjeto ? r.projetoIdInterno : projetos[0].idInterno;
         preencherTarefas(mantemProjeto);
@@ -7191,7 +7204,7 @@ const App = {
     const nomesOrg = new Set(recursosOrg.map(r => r.nome));
     if (e.fCalProjeto) {
       const valorProjeto = this.filtrosCalendarioRegisto.projeto;
-      e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+      e.fCalProjeto.innerHTML = '<option value="">Todos</option>' + projetosDisponiveis.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
       e.fCalProjeto.value = projetosDisponiveis.some(p => p.idInterno === valorProjeto) ? valorProjeto : '';
     }
     // Nunca reatribui this.filtrosCalendarioRegisto a partir do <select> aqui (ao contrário de
@@ -7565,7 +7578,7 @@ const App = {
     };
     const preencherProjetos = () => {
       const projetosDaPessoa = recurso ? this.projetosRegistoPermitidos().filter(p => p.tarefas.some(t => t.recursoIds.includes(recurso.id))) : [];
-      selProjeto.innerHTML = '<option value="">Seleciona…</option>' + projetosDaPessoa.map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(p.idInterno)} — ${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+      selProjeto.innerHTML = '<option value="">Seleciona…</option>' + projetosDaPessoa.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.idInterno)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
       if (registoExistente && projetosDaPessoa.some(p => p.idInterno === registoExistente.projetoIdInterno)) selProjeto.value = registoExistente.projetoIdInterno;
       preencherTarefas();
     };
@@ -7730,7 +7743,7 @@ const App = {
     if (!e.corpoTabelaFaturas) return;
     const valorFiltro = e.fFatProjeto.value;
     const todosProjetos = Object.values(this.state.projetos).filter(p => this.possoEditarProjeto(p.id));
-    e.fFatProjeto.innerHTML = '<option value="">Todos</option>' + todosProjetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+    e.fFatProjeto.innerHTML = '<option value="">Todos</option>' + todosProjetos.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     e.fFatProjeto.value = valorFiltro;
     this.renderTabelaFaturas();
   },
@@ -7990,7 +8003,7 @@ const App = {
         <h1>Relatório de Horas</h1>
         <table class="rh-info">
           <tr><td>Cliente</td><td>${escapeHtml(p.cliente || '—')}</td></tr>
-          <tr><td>Projeto</td><td>${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}</td></tr>
+          <tr><td>Projeto</td><td>${escapeHtml(this.rotuloProjetoCompleto(p))}</td></tr>
           <tr><td>Período</td><td>${periodoTexto}</td></tr>
           <tr><td>Emitido em</td><td>${new Date().toLocaleDateString('pt-PT')}</td></tr>
         </table>
@@ -8056,7 +8069,7 @@ const App = {
     e.reservaChefia.value = diretor ? diretor.nome : '';
     const valorAtual = e.reservaProjeto.value;
     e.reservaProjeto.innerHTML = '<option value="">Seleciona…</option>' +
-      projetos.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+      projetos.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     e.reservaProjeto.value = projetos.some(p => p.id === valorAtual) ? valorAtual : '';
     // Gestor e Empresa/Evento NÃO se repreenchem aqui (isto corre a cada render e apagava o que a
     // pessoa editou) — só ao mudar o tipo ou o projeto (ver preencherAutomaticosReserva).
@@ -8570,7 +8583,7 @@ const App = {
     const projetosDoGestor = this.acompanhamentoGestorId
       ? Object.values(this.state.projetos).filter(p => p.gestorId === this.acompanhamentoGestorId)
       : [];
-    e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.idInterno ? p.idInterno + ' — ' : '')}${escapeHtml(p.nome)}${p.cliente ? ` (${escapeHtml(p.cliente)})` : ''}</option>`).join('');
+    e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     e.acompProjeto.value = this.acompanhamentoProjetoId;
     e.acompProjeto.disabled = !this.acompanhamentoGestorId;
     if (e.acompProjeto.value !== this.acompanhamentoProjetoId) this.acompanhamentoProjetoId = '';
@@ -8649,7 +8662,7 @@ const App = {
   // lado fica ininteligível para quem não decorou os códigos de cor. Mesmo formato já usado nos
   // selects de projeto espalhados pela app (Alocações, Faturação, Reserva de Viatura, Acompanhamento).
   rotuloProjeto(p) {
-    return (p.idInterno ? p.idInterno + ' — ' : '') + p.nome + (p.cliente ? ` (${p.cliente})` : '');
+    return this.rotuloProjetoCompleto(p);
   },
   // Texto do botão que abre cada dropdown — "Todos" sem seleção, o nome quando é só um, ou a
   // contagem quando são vários (mesma ideia do filtro "(Todos)" de uma tabela dinâmica).
@@ -9152,7 +9165,7 @@ const App = {
       const idInt = projReal ? (projReal.idInterno || '') : (r.projetoIdInterno || '');
       const nomeProj = projReal ? projReal.nome : (r.projetoNome || '');
       const clienteProj = projReal ? (projReal.cliente || '') : (r.cliente || '');
-      const projetoRotulo = emProjeto ? `${idInt ? idInt + ' — ' : ''}${nomeProj}${clienteProj ? ` (${clienteProj})` : ''}` : 'Sem projeto';
+      const projetoRotulo = emProjeto ? this.montarRotuloProjeto(clienteProj, nomeProj, idInt) : 'Sem projeto';
       const i = {
         registo: r, data: r.data, horas: parseFloat(r.horas) || 0, pessoa: r.pessoa,
         equipaId: org.equipaId, equipa: org.equipaNome, deptId: org.deptId, dept: org.deptNome,
