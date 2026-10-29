@@ -162,11 +162,13 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 .btn-icon:hover{color:var(--cinza-900);}
 
 /* Comentários das tarefas */
-.btn-comentarios{font-size:12px;padding:1px 4px;border-radius:8px;opacity:.55;}
-.btn-comentarios.com-tem{opacity:1;}
+.btn-comentarios{font-size:11px;padding:1px 4px;border-radius:8px;}
 .btn-comentarios.com-novo{opacity:1;background:var(--azul);color:#fff;font-weight:600;}
 .btn-comentarios.com-novo:hover{color:#fff;background:var(--azul-esc);}
-tr:hover .btn-comentarios{opacity:1;}
+/* Botão 💬 da barra: número de comentários da tarefa selecionada, realçado se há por ler */
+.ib-badge{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 3px;box-sizing:border-box;border-radius:8px;background:var(--cinza-500);color:#fff;font-size:10px;font-weight:700;line-height:15px;text-align:center;}
+.ib.com-novo{color:var(--azul);}
+.ib.com-novo .ib-badge{background:var(--azul);}
 .com-lista{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;margin-bottom:12px;}
 .com-vazio{color:var(--cinza-500);margin:4px 0;}
 .com-item{border:1px solid var(--cinza-200);border-radius:10px;padding:8px 10px;background:var(--cinza-100);}

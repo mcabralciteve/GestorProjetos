@@ -2212,7 +2212,7 @@ const App = {
           <button class="btn btn-sm" id="fmtLimparCor">Sem cor</button>
         </div>
       </label>`;
-    this.abrirModal(`Formatar — ${t.nome}`, html);
+    this.abrirModal(`Formatar — ${t.nome}`, html, { alteracoes: () => false }); // aplica logo, não há nada por guardar
     document.getElementById('fmtNegrito').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'negrito', e.target.checked));
     document.getElementById('fmtItalico').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'italico', e.target.checked));
     document.getElementById('fmtCor').addEventListener('change', (e) => this.atualizarFormatoTarefa(id, 'cor', e.target.value));
@@ -2232,14 +2232,15 @@ const App = {
     if (!l.length) return;
     try { localStorage.setItem(this._comVistoChave(id), l[l.length - 1].criadoEm); } catch (e) { /* sem armazenamento: só perde o "novo" */ }
   },
-  // Botão 💬 da linha da tarefa: número de comentários, realçado se há algum que ainda não vi.
-  botaoComentarios(p, t) {
+  // Marca 💬 N na linha da tarefa — só aparece nas tarefas que já têm comentários (para não gastar espaço nas outras);
+  // realçada se há algum que ainda não vi. Escrever/abrir comentários faz-se pelo botão da barra de cima.
+  marcaComentarios(p, t) {
     if (!Sync.temComentarios || !this.possoVerProjeto(p.id)) return '';
     const l = this.comentariosDaTarefa(t.id);
+    if (!l.length) return '';
     const novos = ComentariosLogica.porLer(l, this.usuarioAtualId, this._comUltimaVista(t.id));
-    const rotulo = l.length ? `💬 ${l.length}` : '💬';
-    const dica = !l.length ? 'Comentários desta tarefa' : (novos ? `${l.length} comentário(s), ${novos} por ler` : `${l.length} comentário(s)`);
-    return `<button class="btn-icon btn-comentarios${novos ? ' com-novo' : ''}${l.length ? ' com-tem' : ''}" data-acao="comentarios" title="${escapeAttr(dica)}" style="flex-shrink:0;">${rotulo}</button>`;
+    const dica = novos ? `${l.length} comentário(s), ${novos} por ler` : `${l.length} comentário(s)`;
+    return `<button class="btn-icon btn-comentarios com-tem${novos ? ' com-novo' : ''}" data-acao="comentarios" title="${escapeAttr(dica)}" style="flex-shrink:0;">💬${l.length}</button>`;
   },
   abrirComentarios(tarefaId) {
     const p = this.projetoAtivo();
@@ -2247,7 +2248,9 @@ const App = {
     if (!t || !Sync.temComentarios || !this.possoVerProjeto(p.id)) return;
     this._comTarefaId = tarefaId;
     this._comAEditar = null;
-    this.abrirModal(`Comentários — ${t.nome}`, '<div id="comCorpo"></div>');
+    this.abrirModal(`Comentários — ${t.nome}`, '<div id="comCorpo"></div>', {
+      alteracoes: () => { const n = document.getElementById('comNovo'); return !!(n && n.value.trim()) || !!document.querySelector('#comCorpo .com-texto-edicao'); }
+    });
     this.renderComentarios();
     this._comMarcarVisto(tarefaId);
     this.renderTabelaTarefas();
@@ -9061,6 +9064,7 @@ const App = {
     });
     if (!p) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo projeto para começar.</td></tr>';
+      this.atualizarBotoesTarefaSelecionada(null, false);
       return;
     }
     this.aplicarProgressoAuto(p);
@@ -9106,8 +9110,7 @@ const App = {
             <span class="toggle-filhos">${filhos ? (this.colapsadas.has(t.id) ? '▶' : '▼') : ''}</span>
             <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}
               style="${t.negrito ? 'font-weight:700;' : ''}${t.italico ? 'font-style:italic;' : ''}${t.cor ? 'color:' + escapeAttr(t.cor) + ';' : ''}">
-            ${podeEditar ? `<button class="btn-icon" data-acao="formatar" title="Formatar (negrito, itálico, cor)" style="flex-shrink:0;">🎨</button>` : ''}
-            ${this.botaoComentarios(p, t)}
+            ${this.marcaComentarios(p, t)}
           </div>
         </td>`,
         inicio: `<td><input type="date" value="${t.inicio}" data-campo="inicio" ${(filhos || !podeEditar) ? 'disabled' : ''}></td>`,
@@ -9142,12 +9145,28 @@ const App = {
         if (predCell && !filhos) predCell.addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalPredecessoras(t.id); });
         const btnProgModo = tr.querySelector('[data-acao="progmodo"]');
         if (btnProgModo) btnProgModo.addEventListener('click', (e) => { e.stopPropagation(); this.alternarProgAuto(t.id); });
-        const btnFormatar = tr.querySelector('[data-acao="formatar"]');
-        if (btnFormatar) btnFormatar.addEventListener('click', (e) => { e.stopPropagation(); this.abrirModalFormatoTarefa(t.id); });
       }
 
       tbody.appendChild(tr);
     });
+    this.atualizarBotoesTarefaSelecionada(p, podeEditar);
+  },
+  // Formatar e Comentários vivem na barra de cima e atuam na tarefa selecionada (a última em que se clicou).
+  atualizarBotoesTarefaSelecionada(p, podeEditar) {
+    const btnFmt = document.getElementById('btnFormatarTarefa');
+    if (btnFmt) btnFmt.style.display = podeEditar ? '' : 'none';
+    const btn = document.getElementById('btnComentarios');
+    if (!btn) return;
+    const pode = !!p && !!Sync.temComentarios && this.possoVerProjeto(p.id);
+    btn.style.display = pode ? '' : 'none';
+    btn.querySelector('.ib-badge')?.remove();
+    if (!pode) return;
+    const t = this.selecionadaId ? this.tarefaPorId(p, this.selecionadaId) : null;
+    const l = t ? this.comentariosDaTarefa(t.id) : [];
+    const novos = t ? ComentariosLogica.porLer(l, this.usuarioAtualId, this._comUltimaVista(t.id)) : 0;
+    btn.classList.toggle('com-novo', novos > 0);
+    btn.dataset.tip = !t ? 'Comentários: seleciona primeiro uma tarefa' : (l.length ? `Comentários da tarefa selecionada (${l.length}${novos ? `, ${novos} por ler` : ''})` : 'Comentários da tarefa selecionada');
+    if (l.length) btn.insertAdjacentHTML('beforeend', `<span class="ib-badge">${l.length}</span>`);
   },
 
   // Ordem atual das colunas da tabela de tarefas, lida diretamente do DOM do cabeçalho — assim
@@ -10198,7 +10217,12 @@ const App = {
   },
 
   // ---------- Modais ----------
+  // Clicar fora da janela fecha-a, EXCETO se a pessoa já escreveu/alterou alguma coisa (aí pergunta antes, para um clique
+  // enganado não deitar fora o que foi preenchido). "opts.alteracoes": função que diz se há algo por guardar — para janelas
+  // que gravam logo (Formatar) ou que têm um rascunho próprio (Comentários); sem ela, vale qualquer edição feita à mão.
   abrirModal(titulo, corpoHtml, opts) {
+    this._modalSujo = false;
+    this._modalAlteracoes = (opts && opts.alteracoes) || null;
     this.els.modalTitulo.textContent = titulo;
     this.els.modalCorpo.innerHTML = corpoHtml;
     this.els.modal.classList.toggle('modal-largo', !!(opts && opts.largo));
@@ -10207,7 +10231,12 @@ const App = {
     this.els.modalBackdrop.classList.add('aberto');
   },
   fecharModal() {
+    this._modalSujo = false;
+    this._modalAlteracoes = null;
     this.els.modalBackdrop.classList.remove('aberto');
+  },
+  modalTemAlteracoes() {
+    return this._modalAlteracoes ? !!this._modalAlteracoes() : !!this._modalSujo;
   },
   // Deixa arrastar o modal pelo cabeçalho, para se poder ver o que está por trás (o fundo já é
   // quase transparente de propósito, ver style.css) — desloca-se por transform, a posição
@@ -11020,6 +11049,14 @@ const App = {
     document.getElementById('btnIndent').addEventListener('click', () => this.indentarSelecionada());
     document.getElementById('btnOutdent').addEventListener('click', () => this.promoverSelecionada());
     document.getElementById('btnAssociarLote').addEventListener('click', () => this.abrirModalAssociarRecursoLote());
+    document.getElementById('btnFormatarTarefa').addEventListener('click', () => {
+      if (!this.selecionadaId) { this.toast('Seleciona primeiro uma tarefa.'); return; }
+      this.abrirModalFormatoTarefa(this.selecionadaId);
+    });
+    document.getElementById('btnComentarios').addEventListener('click', () => {
+      if (!this.selecionadaId) { this.toast('Seleciona primeiro uma tarefa.'); return; }
+      this.abrirComentarios(this.selecionadaId);
+    });
     document.getElementById('btnDelTarefa').addEventListener('click', () => this.eliminarTarefaSelecionada());
     e.btnToggleSidebar.addEventListener('click', () => this.alternarSidebar());
 
@@ -11240,7 +11277,13 @@ const App = {
 
     document.getElementById('modalFechar').addEventListener('click', () => this.fecharModal());
     this.ligarArrastarModal();
-    e.modalBackdrop.addEventListener('click', (ev) => { if (ev.target === e.modalBackdrop) this.fecharModal(); });
+    // isTrusted: só conta o que a pessoa escreve/escolhe, não o que o código preenche.
+    ['input', 'change'].forEach(tipo => e.modalCorpo.addEventListener(tipo, (ev) => { if (ev.isTrusted) this._modalSujo = true; }));
+    e.modalBackdrop.addEventListener('click', (ev) => {
+      if (ev.target !== e.modalBackdrop) return;
+      if (this.modalTemAlteracoes() && !confirm('Tens alterações por guardar nesta janela. Fechar mesmo e perder o que escreveste?')) return;
+      this.fecharModal();
+    });
     document.getElementById('btnMinhaConta').addEventListener('click', () => this.abrirModalMinhaConta());
     this.els.btnAlternarTema.addEventListener('click', () => this.alternarTema());
     if (this.els.btnNotificacoes) this.els.btnNotificacoes.addEventListener('click', (ev) => { ev.stopPropagation(); this.alternarPainelNotificacoes(); });
