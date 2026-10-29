@@ -247,7 +247,7 @@ const Sync = {
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
   async carregarDeSupabase() {
-    const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt, he] = await Promise.all([
+    const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt, he, co] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
       supabaseClient.from('departamentos').select('*'),
       supabaseClient.from('recursos').select('*'),
@@ -275,10 +275,17 @@ const Sync = {
       // gravar_filhos_projeto). Em vez disso, sem a tabela, o histórico de equipas fica vazio e o
       // resto da app continua a funcionar normalmente (só o Acompanhamento Financeiro fica sem
       // conseguir repartir horas antigas de quem já mudou de equipa antes de a tabela existir).
-      supabaseClient.from('historico_equipas').select('*').then(r => r, () => ({ data: [], error: null }))
+      supabaseClient.from('historico_equipas').select('*').then(r => r, () => ({ data: [], error: null })),
+      // Comentários das tarefas (supabase/tarefa_comentarios.sql): mesma regra — sem a tabela, a app continua sem comentários.
+      supabaseClient.from('tarefa_comentarios').select('*').order('criado_em', { ascending: true }).then(r => r, () => ({ data: [], error: { message: 'sem tabela' } }))
     ]);
     [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
     if (he.error) { console.warn('historico_equipas ainda não existe no Supabase — corre supabase/schema.sql. A app continua, mas sem histórico de mudanças de equipa.', he.error); he.data = []; }
+
+    // Fora de App.state de propósito: nunca entra no diff/gravação do projeto, e escreve-se à parte (adicionarComentario...).
+    this.temComentarios = !co.error;
+    if (co.error) console.warn('tarefa_comentarios ainda não existe no Supabase — corre supabase/tarefa_comentarios.sql. A app continua, sem comentários nas tarefas.', co.error);
+    App.comentarios = ComentariosLogica.agruparPorTarefa(co.error ? [] : (co.data || []).map(l => ComentariosLogica.deLinha(l)));
 
     const departamentos = dep.data.map(r => ({ id: r.id, nome: r.nome, diretorId: r.diretor_id || null }));
     const equipas = eq.data.map(r => ({ id: r.id, nome: r.nome, liderId: r.lider_id || null, departamentoId: r.departamento_id || null }));
@@ -411,6 +418,28 @@ const Sync = {
       departamentos, equipas, recursos, feriados, ausencias, registos, projetos, utilizadores, tiposTrabalho,
       reservasViatura, historicoEquipas, configuracoes, projetoAtivoId: Object.keys(projetos)[0] || null
     };
+  },
+
+  // ---------- Comentários das tarefas ----------
+  // Escrevem-se logo, um de cada vez, fora do fluxo de diff/undo e da gravação do projeto (por isso dois comentários
+  // simultâneos de pessoas diferentes nunca se atropelam, nem uma gravação do projeto os apaga). Devolvem a linha gravada.
+  async adicionarComentario({ projetoId, tarefaId, autorUserId, autorNome, texto }) {
+    const { data, error } = await supabaseClient.from('tarefa_comentarios')
+      .insert({ projeto_id: projetoId, tarefa_id: tarefaId, autor_user_id: autorUserId || null, autor_nome: autorNome || '', texto })
+      .select('*').single();
+    if (error) throw error;
+    return ComentariosLogica.deLinha(data);
+  },
+  async editarComentario(id, texto) {
+    const { data, error } = await supabaseClient.from('tarefa_comentarios')
+      .update({ texto, editado_em: new Date().toISOString() }).eq('id', id).select('*');
+    if (error) throw error;
+    if (!data || data.length !== 1) throw new Error('Não foi possível gravar (o comentário já não existe).');
+    return ComentariosLogica.deLinha(data[0]);
+  },
+  async apagarComentario(id) {
+    const { error } = await supabaseClient.from('tarefa_comentarios').delete().eq('id', id);
+    if (error) throw error;
   },
 
   // ---------- Edição direta de acesso (fora do fluxo de diff/undo do resto da app) ----------

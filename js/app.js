@@ -2221,6 +2221,140 @@ const App = {
       document.getElementById('fmtCor').value = '#12222f';
     });
   },
+  // ---------- Comentários das tarefas ----------
+  // Quem vê o projeto lê e escreve; o autor edita e apaga o seu; Administrador e Gestores do projeto apagam qualquer um
+  // (regras em ComentariosLogica). Gravam-se logo, à parte da gravação do projeto (ver Sync.adicionarComentario).
+  comentariosDaTarefa(id) { return (this.comentarios && this.comentarios[id]) || []; },
+  _comVistoChave(id) { return `gp_com_visto_${this.usuarioAtualId || ''}_${id}`; },
+  _comUltimaVista(id) { try { return localStorage.getItem(this._comVistoChave(id)); } catch (e) { return null; } },
+  _comMarcarVisto(id) {
+    const l = this.comentariosDaTarefa(id);
+    if (!l.length) return;
+    try { localStorage.setItem(this._comVistoChave(id), l[l.length - 1].criadoEm); } catch (e) { /* sem armazenamento: só perde o "novo" */ }
+  },
+  // Botão 💬 da linha da tarefa: número de comentários, realçado se há algum que ainda não vi.
+  botaoComentarios(p, t) {
+    if (!Sync.temComentarios || !this.possoVerProjeto(p.id)) return '';
+    const l = this.comentariosDaTarefa(t.id);
+    const novos = ComentariosLogica.porLer(l, this.usuarioAtualId, this._comUltimaVista(t.id));
+    const rotulo = l.length ? `💬 ${l.length}` : '💬';
+    const dica = !l.length ? 'Comentários desta tarefa' : (novos ? `${l.length} comentário(s), ${novos} por ler` : `${l.length} comentário(s)`);
+    return `<button class="btn-icon btn-comentarios${novos ? ' com-novo' : ''}${l.length ? ' com-tem' : ''}" data-acao="comentarios" title="${escapeAttr(dica)}" style="flex-shrink:0;">${rotulo}</button>`;
+  },
+  abrirComentarios(tarefaId) {
+    const p = this.projetoAtivo();
+    const t = p && this.tarefaPorId(p, tarefaId);
+    if (!t || !Sync.temComentarios || !this.possoVerProjeto(p.id)) return;
+    this._comTarefaId = tarefaId;
+    this._comAEditar = null;
+    this.abrirModal(`Comentários — ${t.nome}`, '<div id="comCorpo"></div>');
+    this.renderComentarios();
+    this._comMarcarVisto(tarefaId);
+    this.renderTabelaTarefas();
+    const ta = document.getElementById('comNovo');
+    if (ta) ta.focus();
+  },
+  renderComentarios() {
+    const corpo = document.getElementById('comCorpo');
+    const p = this.projetoAtivo();
+    const id = this._comTarefaId;
+    if (!corpo || !p || !id) return;
+    const lista = this.comentariosDaTarefa(id);
+    const agora = Date.now();
+    const admin = this.souAdmin(), gestor = this.souGestorDe(p.id);
+    const campoAntigo = document.getElementById('comNovo');
+    const rascunho = campoAntigo ? campoAntigo.value : '';
+    const itens = lista.map(c => {
+      const meu = ComentariosLogica.podeEditar(c, this.usuarioAtualId);
+      const cabecalho = `<div class="com-cab"><strong>${escapeHtml(c.autorNome || 'Alguém')}</strong> <span class="com-quando" title="${escapeAttr(new Date(c.criadoEm).toLocaleString('pt-PT'))}">${escapeHtml(ComentariosLogica.quando(c.criadoEm, agora))}${c.editadoEm ? ' · editado' : ''}</span></div>`;
+      if (this._comAEditar === c.id) {
+        return `<div class="com-item" data-com="${escapeAttr(c.id)}">${cabecalho}
+          <textarea class="com-texto-edicao" rows="3" maxlength="${ComentariosLogica.MAX_TEXTO}">${escapeHtml(c.texto)}</textarea>
+          <div class="com-acoes"><button class="btn btn-sm btn-primary" data-com-acao="gravar">Guardar</button> <button class="btn btn-sm" data-com-acao="cancelar">Cancelar</button></div></div>`;
+      }
+      const acoes = [
+        meu ? '<button class="btn-icon" data-com-acao="editar" title="Editar o meu comentário">✎</button>' : '',
+        ComentariosLogica.podeApagar(c, { userId: this.usuarioAtualId, admin, gestor }) ? '<button class="btn-icon" data-com-acao="apagar" title="Apagar comentário">🗑</button>' : ''
+      ].join('');
+      return `<div class="com-item${meu ? ' com-meu' : ''}" data-com="${escapeAttr(c.id)}">${cabecalho}<div class="com-texto">${escapeHtml(c.texto)}</div>${acoes ? `<div class="com-acoes">${acoes}</div>` : ''}</div>`;
+    }).join('');
+    corpo.innerHTML = `
+      <div class="com-lista">${itens || '<p class="com-vazio">Ainda sem comentários nesta tarefa.</p>'}</div>
+      <label class="com-novo-label">Novo comentário
+        <textarea id="comNovo" rows="3" maxlength="${ComentariosLogica.MAX_TEXTO}" placeholder="Escreve aqui… (Ctrl+Enter para comentar)"></textarea>
+      </label>
+      <div class="com-acoes"><button class="btn btn-primary" id="comEnviar">Comentar</button></div>`;
+    document.getElementById('comNovo').value = rascunho;
+    document.getElementById('comEnviar').addEventListener('click', () => this.enviarComentario());
+    document.getElementById('comNovo').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.enviarComentario(); } });
+    corpo.querySelectorAll('[data-com-acao]').forEach(btn => btn.addEventListener('click', () => {
+      const item = btn.closest('[data-com]');
+      const cid = item && item.dataset.com;
+      const acao = btn.dataset.comAcao;
+      if (acao === 'editar') { this._comAEditar = cid; this.renderComentarios(); const ta = corpo.querySelector('.com-texto-edicao'); if (ta) ta.focus(); }
+      else if (acao === 'cancelar') { this._comAEditar = null; this.renderComentarios(); }
+      else if (acao === 'gravar') this.gravarEdicaoComentario(cid, item.querySelector('.com-texto-edicao').value);
+      else if (acao === 'apagar') this.apagarComentario(cid);
+    }));
+  },
+  // Corre a ação de rede de um comentário uma de cada vez e só atualiza a janela se ainda for a da mesma tarefa.
+  // O texto já escrito no campo "Novo comentário" volta a aparecer (não se perde com um erro de rede, nem ao editar/apagar
+  // outro comentário); só fica vazio depois de o comentário novo ser mesmo gravado.
+  async _comExecutar(tarefaId, acao, { limpaRascunho } = {}) {
+    if (this._comOcupado) return;
+    this._comOcupado = true;
+    const campo = document.getElementById('comNovo');
+    let rascunho = campo ? campo.value : '';
+    try { await acao(); if (limpaRascunho) rascunho = ''; }
+    catch (err) { this.toast('Não foi possível gravar o comentário: ' + (err.message || err)); }
+    finally {
+      this._comOcupado = false;
+      if (this._comTarefaId === tarefaId && document.getElementById('comCorpo')) {
+        this.renderComentarios();
+        this._comMarcarVisto(tarefaId);
+        const novo = document.getElementById('comNovo');
+        if (novo) { novo.value = rascunho; if (limpaRascunho) novo.focus(); }
+      }
+      this.renderTabelaTarefas();
+    }
+  },
+  enviarComentario() {
+    const p = this.projetoAtivo(), tarefaId = this._comTarefaId;
+    const ta = document.getElementById('comNovo');
+    const texto = ComentariosLogica.limparTexto(ta && ta.value);
+    if (!p || !tarefaId || !texto) { this.toast('Escreve o comentário primeiro.'); return; }
+    const perfil = this.perfilAtual();
+    return this._comExecutar(tarefaId, async () => {
+      const c = await Sync.adicionarComentario({ projetoId: p.id, tarefaId, autorUserId: this.usuarioAtualId, autorNome: (perfil && perfil.nome) || '', texto });
+      (this.comentarios[tarefaId] = this.comentarios[tarefaId] || []).push(c);
+    }, { limpaRascunho: true });
+  },
+  gravarEdicaoComentario(cid, valor) {
+    const tarefaId = this._comTarefaId;
+    const atual = this.comentariosDaTarefa(tarefaId).find(c => c.id === cid);
+    const texto = ComentariosLogica.limparTexto(valor);
+    if (!atual || !ComentariosLogica.podeEditar(atual, this.usuarioAtualId)) return;
+    if (!texto) { this.toast('O comentário não pode ficar vazio — usa 🗑 para o apagar.'); return; }
+    if (texto === atual.texto) { this._comAEditar = null; this.renderComentarios(); return; }
+    return this._comExecutar(tarefaId, async () => {
+      const novo = await Sync.editarComentario(cid, texto);
+      const l = this.comentarios[tarefaId];
+      const i = l.findIndex(c => c.id === cid);
+      if (i !== -1) l[i] = novo;
+      this._comAEditar = null;
+    });
+  },
+  apagarComentario(cid) {
+    const p = this.projetoAtivo(), tarefaId = this._comTarefaId;
+    const atual = this.comentariosDaTarefa(tarefaId).find(c => c.id === cid);
+    if (!p || !atual || !ComentariosLogica.podeApagar(atual, { userId: this.usuarioAtualId, admin: this.souAdmin(), gestor: this.souGestorDe(p.id) })) return;
+    if (!confirm('Apagar este comentário? Não dá para desfazer.')) return;
+    return this._comExecutar(tarefaId, async () => {
+      await Sync.apagarComentario(cid);
+      this.comentarios[tarefaId] = this.comentarios[tarefaId].filter(c => c.id !== cid);
+    });
+  },
+
   // Tarefas-folha que dependem (direta ou indiretamente, por predecessoras) da tarefa "id".
   dependentesDe(p, id) {
     const vistos = new Set();
@@ -8973,6 +9107,7 @@ const App = {
             <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}
               style="${t.negrito ? 'font-weight:700;' : ''}${t.italico ? 'font-style:italic;' : ''}${t.cor ? 'color:' + escapeAttr(t.cor) + ';' : ''}">
             ${podeEditar ? `<button class="btn-icon" data-acao="formatar" title="Formatar (negrito, itálico, cor)" style="flex-shrink:0;">🎨</button>` : ''}
+            ${this.botaoComentarios(p, t)}
           </div>
         </td>`,
         inicio: `<td><input type="date" value="${t.inicio}" data-campo="inicio" ${(filhos || !podeEditar) ? 'disabled' : ''}></td>`,
@@ -8999,6 +9134,8 @@ const App = {
         inp.addEventListener('click', (e) => e.stopPropagation());
         inp.addEventListener('change', () => { this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.atualizarCampoTarefa(t.id, inp.dataset.campo, inp.value); });
       });
+      const btnComentarios = tr.querySelector('[data-acao="comentarios"]');
+      if (btnComentarios) btnComentarios.addEventListener('click', (e) => { e.stopPropagation(); this.abrirComentarios(t.id); });
       if (podeEditar) {
         tr.querySelector('[data-acao="recursos"]').addEventListener('click', (e) => { e.stopPropagation(); this.selecionadaId = t.id; this.selecionadasIds = new Set([t.id]); this.abrirModalRecursos(t.id); });
         const predCell = tr.querySelector('[data-acao="pred"]');
@@ -10273,11 +10410,11 @@ const App = {
     e.btnExportarBackup.disabled = true;
     try {
       const dataStr = DateUtil.todayISO().replace(/-/g, '');
-      const sql = Backup.gerarSQL(this.state);
+      const sql = Backup.gerarSQL({ ...this.state, comentarios: this.comentarios });
       this.descarregarBlob(new Blob([sql], { type: 'text/plain;charset=utf-8' }), `backup_dados_${dataStr}.sql`);
 
       if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
-      const excelBlob = Backup.gerarExcelBlob(this.state);
+      const excelBlob = Backup.gerarExcelBlob({ ...this.state, comentarios: this.comentarios });
       this.descarregarBlob(excelBlob, `backup_dados_${dataStr}.xlsx`);
 
       e.backupMsg.style.color = 'var(--verde)';

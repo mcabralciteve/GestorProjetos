@@ -17,7 +17,7 @@
 // passo manual. Por isso "recursos.auth_user_id" e "registos.user_id" saem sempre em branco.
 const Backup = {
   TABELAS_EM_ORDEM: [
-    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos',
+    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos', 'tarefa_comentarios',
     'faturas', 'pontos_situacao', 'proximos_passos', 'registos', 'reservas_viatura'
   ],
   // Composta pelas mesmas transformações já usadas em js/sync.js para escrever cada tabela — se o
@@ -111,6 +111,13 @@ const Backup = {
       fechado_em: pp.fechadoEm || null, criado_por: pp.criadoPor || null, criado_em: pp.criadoEm || null,
       atualizado_em: pp.atualizadoEm || null
     })));
+
+    // Comentários das tarefas (vivem fora de state.projetos — ver Sync.adicionarComentario; o app passa-os em state.comentarios).
+    // autor_user_id sai em branco, como registos.user_id: as contas voltam a ser criadas com ids novos.
+    linhas.tarefa_comentarios = [].concat(...Object.values(state.comentarios || {})).map(c => ({
+      id: c.id, projeto_id: c.projetoId, tarefa_id: c.tarefaId, autor_user_id: null, autor_nome: c.autorNome || '',
+      texto: c.texto, criado_em: c.criadoEm || null, editado_em: c.editadoEm || null
+    }));
 
     linhas.reservas_viatura = (state.reservasViatura || []).map(rv => ({
       id: rv.id, projeto_id: rv.projetoId || null, projeto_nome: rv.projetoNome || '',
