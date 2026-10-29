@@ -219,7 +219,8 @@ const App = {
       projFaturacaoResumo: document.getElementById('projFaturacaoResumo'),
       projOrcBaseLinha: document.getElementById('projOrcBaseLinha'),
       projOrcBase: document.getElementById('projOrcBase'),
-      projGestorId: document.getElementById('projGestorId'),
+      projGestoresTexto: document.getElementById('projGestoresTexto'),
+      btnProjGestores: document.getElementById('btnProjGestores'),
       projEquipaId: document.getElementById('projEquipaId'),
       listaConsultoresProjeto: document.getElementById('listaConsultoresProjeto'),
       grupoBtnEquipa: document.getElementById('grupoBtnEquipa'),
@@ -746,6 +747,7 @@ const App = {
     // Compatibilidade com projetos guardados antes da introdução do Gestor de Projeto.
     Object.values(this.state.projetos).forEach(p => {
       if (p.gestorId === undefined) p.gestorId = null;
+      PessoasLogica.definirGestores(p, PessoasLogica.gestoresDoProjeto(p));
       if (p.equipaId === undefined) p.equipaId = null;
       if (p.tipoReferencia !== 'interno') p.tipoReferencia = 'giaf';
       if (p.tipoProjeto === undefined) p.tipoProjeto = '';
@@ -865,8 +867,15 @@ const App = {
   // contra o recurso ligado ao meu próprio login, não contra o id da conta.
   souGestorDe(projetoId) {
     const p = this.state.projetos[projetoId];
-    const meuRecursoId = this.perfilAtual()?.recursoId;
-    return !!p && !!meuRecursoId && p.gestorId === meuRecursoId;
+    return !!p && this.ehGestorDoProjeto(p, this.perfilAtual()?.recursoId);
+  },
+  // Um projeto pode ter vários gestores, todos com os mesmos poderes (regras em PessoasLogica):
+  // "gestorId" é o principal (o primeiro) e "gestorIds" a lista completa.
+  gestoresDoProjeto(p) { return PessoasLogica.gestoresDoProjeto(p); },
+  ehGestorDoProjeto(p, recursoId) { return PessoasLogica.ehGestorDoProjeto(p, recursoId); },
+  nomesGestoresProjeto(p, vazio) {
+    const ids = this.gestoresDoProjeto(p);
+    return ids.length ? ids.map(id => this.nomeUtilizador(id)).join(', ') : (vazio === undefined ? '—' : vazio);
   },
   // Não há lista manual de consultores do projeto — é consultor quem já tem, em qualquer tarefa
   // deste projeto, o recurso ligado ao seu próprio login (perfilAtual().recursoId). Atribuir
@@ -1073,7 +1082,7 @@ const App = {
     if (meuRecurso.equipaId) this.filtroEquipasCap = new Set([String(meuRecurso.equipaId)]);
     // Só faz sentido para o Administrador (é o único que vê este filtro — ver renderProjetoSelect)
     // e só se ele próprio gerir algum projeto; senão fica "Todos os gestores", como já era.
-    if (this.souAdmin() && Object.values(this.state.projetos).some(p => p.gestorId === meuRecurso.id)) {
+    if (this.souAdmin() && Object.values(this.state.projetos).some(p => this.ehGestorDoProjeto(p, meuRecurso.id))) {
       this.filtroGestorGantt = meuRecurso.id;
     }
   },
@@ -1168,7 +1177,7 @@ const App = {
   consultoresDoProjeto(p) {
     const ids = new Set();
     p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => ids.add(rid)));
-    if (p.gestorId) ids.add(p.gestorId);
+    this.gestoresDoProjeto(p).forEach(id => ids.add(id));
     return this.state.recursos.filter(r => ids.has(r.id));
   },
   // Consultores "à minha responsabilidade": todos para o Administrador; para os outros, a UNIÃO de
@@ -1246,6 +1255,7 @@ const App = {
       estado: 'Por iniciar',
       ativo: true,
       gestorId: gestorId || null,
+      gestorIds: gestorId ? [gestorId] : [],
       equipaId: null,
       tipoReferencia: 'giaf',
       tipoProjeto: '',
@@ -2362,6 +2372,37 @@ const App = {
     return `<option value="">${escapeHtml(vazio)}</option>` +
       lista.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}${inativo(u) ? ' (inativa)' : ''}</option>`).join('');
   },
+  // Escolha dos gestores de um projeto (só o Administrador): marca-se quem gere; o primeiro marcado,
+  // pela ordem da lista abaixo, fica como principal. Todos têm os mesmos poderes sobre o projeto.
+  abrirModalGestoresProjeto(projetoId) {
+    const p = this.state.projetos[projetoId];
+    if (!p || !this.souAdmin()) return;
+    const atuais = this.gestoresDoProjeto(p);
+    const inativo = u => this.recursoInativo(this.state.recursos.find(r => r.id === u.recursoId));
+    const pessoas = this.state.utilizadores
+      .filter(u => u.recursoId && (!inativo(u) || atuais.includes(u.recursoId)))
+      .sort((a, b) => (a.nome || a.email || '').localeCompare(b.nome || b.email || '', 'pt'));
+    const semSql = typeof Sync !== 'undefined' && Sync.temGestorIds === false;
+    const html = `
+      <p class="hint" style="margin:0 0 8px;">${escapeHtml(this.rotuloProjetoCompleto(p))}</p>
+      ${semSql ? '<p class="hint" style="color:var(--vermelho);margin:0 0 8px;">Para ter mais do que um gestor, corre primeiro supabase/projeto_gestores.sql no Supabase. Até lá só o primeiro marcado fica guardado.</p>' : ''}
+      <div style="display:flex;flex-direction:column;max-height:50vh;overflow:auto;border:1px solid var(--cinza-300);border-radius:8px;padding:4px;">
+        ${pessoas.map(u => `<label class="multi-op" style="flex-direction:row;justify-content:flex-start;"><input type="checkbox" data-gestor="${escapeAttr(u.recursoId)}" ${atuais.includes(u.recursoId) ? 'checked' : ''}> ${escapeHtml(u.nome || u.email)}${inativo(u) ? ' (inativa)' : ''}</label>`).join('')}
+      </div>
+      <p class="hint" style="margin:8px 0 0;">Todos os gestores marcados têm os mesmos poderes sobre o projeto. Desmarca todos para ficar sem gestor.</p>
+      <button class="btn btn-primary" id="btnGuardarGestores" style="margin-top:10px;">Guardar</button>`;
+    this.abrirModal('Gestores do projeto', html);
+    this.els.modalCorpo.querySelector('#btnGuardarGestores').addEventListener('click', () => {
+      const marcados = new Set([...this.els.modalCorpo.querySelectorAll('input[data-gestor]:checked')].map(cb => cb.dataset.gestor));
+      // Mantém a ordem atual (o principal continua a ser o mesmo) e acrescenta os novos no fim.
+      const lista = [...atuais.filter(id => marcados.has(id)), ...[...marcados].filter(id => !atuais.includes(id))];
+      PessoasLogica.definirGestores(p, lista);
+      this.fecharModal();
+      this.persist();
+      this.renderTudo();
+      this.toast(lista.length ? `Gestores: ${this.nomesGestoresProjeto(p)}.` : 'O projeto ficou sem gestor.');
+    });
+  },
   eliminarRecurso(id) {
     const alvo = this.state.recursos.find(r => r.id === id);
     // Apagar uma pessoa apaga em cascata as ausências, o histórico de equipas e as atribuições, e deixa
@@ -2439,7 +2480,7 @@ const App = {
     const de = this.state.recursos.find(r => r.id === deId);
     if (!de) return;
     if (!this.podeDecidirGestorDe(de)) { this.toast('Só o Administrador ou o superior desta pessoa (Team Leader/Diretor) indica o novo Gestor de Projeto.'); return; }
-    const projetos = Object.values(this.state.projetos).filter(p => p.gestorId === deId);
+    const projetos = Object.values(this.state.projetos).filter(p => this.ehGestorDoProjeto(p, deId));
     if (!projetos.length) { this.toast(`${de.nome} não é Gestor de nenhum projeto.`); return; }
     const cand = this.opcoesCandidatosCargo(deId);
     if (!cand.total) { this.toast('Não há outras pessoas ativas, com conta na plataforma, para ficar com os projetos.'); return; }
@@ -4112,7 +4153,7 @@ const App = {
         this.state.utilizadores.map(u => `<option value="${escapeAttr(u.recursoId || '')}">${escapeHtml(u.nome || u.email)}</option>`).join('');
       selGestor.value = valorAtual;
       this.filtroGestorGantt = selGestor.value;
-      if (this.filtroGestorGantt) projetos = projetos.filter(p => p.gestorId === this.filtroGestorGantt);
+      if (this.filtroGestorGantt) projetos = projetos.filter(p => this.ehGestorDoProjeto(p, this.filtroGestorGantt));
     }
     // O projeto ativo pode ter ficado de fora deste filtro (ex.: escolher um Gestor cujo projeto
     // ativo não é nenhum dos dele) — sem isto, o <select> mostrava visualmente o único projeto
@@ -4757,7 +4798,8 @@ const App = {
         // admin) não tem acesso a esse separador, por isso só abre o projeto no Gantt.
         if (pp && pp.tarefaId) { this.abrirProjetoNoGantt(pid); this.selecionarTarefa(pp.tarefaId); }
         else if (proj && this.possoEditarProjeto(pid)) {
-          this.acompanhamentoGestorId = proj.gestorId;
+          const meuId = this.perfilAtual()?.recursoId;
+          this.acompanhamentoGestorId = this.ehGestorDoProjeto(proj, meuId) ? meuId : proj.gestorId;
           this.acompanhamentoProjetoId = pid;
           this.irParaAba('acompanhamento');
         } else if (proj) this.abrirProjetoNoGantt(pid);
@@ -4942,11 +4984,9 @@ const App = {
   // "Consultores" da tabela de tarefas), nunca aqui.
   renderGestorConsultores(p) {
     const e = this.els;
-    if (!e.projGestorId) return;
-    const opcoesGestor = this.opcoesGestorProjeto('Sem gestor atribuído', p ? p.gestorId : null);
-    e.projGestorId.innerHTML = opcoesGestor;
-    e.projGestorId.value = p ? (p.gestorId || '') : '';
-    e.projGestorId.disabled = !p || !this.souAdmin();
+    if (!e.projGestoresTexto) return;
+    e.projGestoresTexto.textContent = p ? this.nomesGestoresProjeto(p, 'Sem gestor atribuído') : '—';
+    e.btnProjGestores.style.display = p && this.souAdmin() ? '' : 'none';
 
     if (e.projEquipaId) {
       const opcoesEquipa = '<option value="">Sem equipa atribuída</option>' +
@@ -5000,7 +5040,7 @@ const App = {
     const f = this.filtrosProjetos;
     let linhas = this.meusProjetosEnvolvidos().map(p => ({ p, orc: this.avaliarOrcamentoProjeto(p) }));
     linhas = linhas.filter(({ p, orc }) => {
-      if (f.gestorId && p.gestorId !== f.gestorId) return false;
+      if (f.gestorId && !this.ehGestorDoProjeto(p, f.gestorId)) return false;
       if (f.cliente && p.cliente !== f.cliente) return false;
       if (f.estado && p.estado !== f.estado) return false;
       if (f.estadoOrc && orc.nivel !== f.estadoOrc) return false;
@@ -5013,7 +5053,7 @@ const App = {
         case 'nome': return p.nome.toLowerCase();
         // Cliente, depois projeto, depois código (os sem cliente, no fim).
         case 'cliente': return `${(p.cliente || '').trim() ? '0' : '1'}|${(p.cliente || '').toLowerCase()}|${p.nome.toLowerCase()}|${(p.idInterno || '').toLowerCase()}`;
-        case 'gestor': return this.nomeUtilizador(p.gestorId).toLowerCase();
+        case 'gestor': return this.nomesGestoresProjeto(p, '').toLowerCase();
         case 'dataInicio': return p.dataInicio || '';
         case 'dataFim': return p.dataFim || '';
         case 'horasVendidas': return p.horasVendidas || 0;
@@ -5038,9 +5078,7 @@ const App = {
         <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
         <td style="white-space:nowrap;"><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${p.tipoReferencia === 'interno' ? 'disabled' : dis} style="width:${p.tipoReferencia === 'interno' ? '78' : '100'}%;">${p.tipoReferencia === 'interno' ? ' <span class="badge-interno" title="Projeto interno — sem referência GIAF">INT</span>' : ''}</td>
-        <td>${admin
-          ? `<select data-campo="gestorId" style="min-width:120px">${this.opcoesGestorProjeto('Sem gestor', p.gestorId)}</select>`
-          : escapeHtml(this.nomeUtilizador(p.gestorId))}</td>
+        <td>${escapeHtml(this.nomesGestoresProjeto(p))}${admin ? ' <button type="button" class="btn-icon" data-acao="gestores" title="Alterar os gestores deste projeto">✎</button>' : ''}</td>
         <td><input type="date" value="${p.dataInicio}" data-campo="dataInicio" ${dis}></td>
         <td><input type="date" value="${p.dataFim}" data-campo="dataFim" ${dis}></td>
         <td><input type="number" min="0" value="${p.horasVendidas || 0}" data-campo="horasVendidas" style="width:70px" ${dis}></td>
@@ -5065,12 +5103,7 @@ const App = {
           ${admin ? '<button class="btn-icon" data-acao="eliminar" title="Eliminar">🗑</button>' : ''}
         </td>`;
       if (admin) {
-        tr.querySelector('[data-campo="gestorId"]').value = p.gestorId || '';
-        tr.querySelector('[data-campo="gestorId"]').addEventListener('change', (ev) => {
-          p.gestorId = ev.target.value || null;
-          this.persist();
-          this.renderTudo();
-        });
+        tr.querySelector('[data-acao="gestores"]').addEventListener('click', () => this.abrirModalGestoresProjeto(p.id));
         tr.querySelector('[data-campo="ativo"]').addEventListener('change', (ev) => this.atualizarProjetoAtivo(p.id, ev.target.checked));
       }
       const inpIdInterno = tr.querySelector('[data-campo="idInterno"]');
@@ -8112,8 +8145,7 @@ const App = {
     const recurso = perfil ? this.state.recursos.find(r => r.id === perfil.recursoId) : null;
     if (tipo === 'projeto') {
       const p = this.state.projetos[e.reservaProjeto.value];
-      const gestor = p && p.gestorId ? this.state.recursos.find(r => r.id === p.gestorId) : null;
-      e.reservaGestor.value = gestor ? gestor.nome : '';
+      e.reservaGestor.value = p ? this.nomesGestoresProjeto(p, '') : '';
       e.reservaEmpresa.value = p && p.cliente ? p.cliente : '';
     } else {
       e.reservaGestor.value = tipo && recurso ? recurso.nome : '';
@@ -8297,7 +8329,7 @@ const App = {
   selecionarGestorAcompanhamento(gestorId) {
     this.acompanhamentoGestorId = gestorId;
     const pAtual = this.projetoAcompanhamento();
-    if (!pAtual || pAtual.gestorId !== gestorId) this.acompanhamentoProjetoId = '';
+    if (!pAtual || !this.ehGestorDoProjeto(pAtual, gestorId)) this.acompanhamentoProjetoId = '';
     this.filtrosNextSteps.gestores = gestorId ? [gestorId] : [];
     this.filtrosNextSteps.projetos = [];
     this.renderAcompanhamento();
@@ -8305,7 +8337,12 @@ const App = {
   selecionarProjetoAcompanhamento(projetoId) {
     this.acompanhamentoProjetoId = projetoId;
     const p = this.projetoAcompanhamento();
-    if (p) { this.filtrosNextSteps.gestores = p.gestorId ? [p.gestorId] : []; this.filtrosNextSteps.projetos = [p.id]; }
+    if (p) {
+      // Com vários gestores, mantém-se o que já está escolhido se gere este projeto (senão, o principal).
+      const atual = this.acompanhamentoGestorId;
+      this.filtrosNextSteps.gestores = this.ehGestorDoProjeto(p, atual) ? [atual] : (p.gestorId ? [p.gestorId] : []);
+      this.filtrosNextSteps.projetos = [p.id];
+    }
     else this.filtrosNextSteps.projetos = [];
     this.renderAcompanhamento();
   },
@@ -8573,7 +8610,7 @@ const App = {
     // projetos deles (ver possoEditarProjeto mais abaixo).
     const meuRecursoId = this.perfilAtual()?.recursoId;
     if (!admin) this.acompanhamentoGestorId = meuRecursoId || '';
-    const idsGestores = new Set(Object.values(this.state.projetos).map(p => p.gestorId).filter(Boolean));
+    const idsGestores = new Set(Object.values(this.state.projetos).flatMap(p => this.gestoresDoProjeto(p)));
     const gestoresDisponiveis = admin
       ? this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome))
       : this.state.recursos.filter(r => r.id === meuRecursoId);
@@ -8582,7 +8619,7 @@ const App = {
     e.acompGestor.disabled = !admin;
 
     const projetosDoGestor = this.acompanhamentoGestorId
-      ? Object.values(this.state.projetos).filter(p => p.gestorId === this.acompanhamentoGestorId)
+      ? Object.values(this.state.projetos).filter(p => this.ehGestorDoProjeto(p, this.acompanhamentoGestorId))
       : [];
     e.acompProjeto.innerHTML = '<option value="">Escolhe…</option>' + projetosDoGestor.slice().sort((a, b) => this.compararProjetos(a, b)).map(p => `<option value="${escapeAttr(p.id)}">${escapeHtml(this.rotuloProjetoCompleto(p))}</option>`).join('');
     e.acompProjeto.value = this.acompanhamentoProjetoId;
@@ -8645,7 +8682,7 @@ const App = {
       const permitidos = this.projetosAcompanhamentoPermitidos();
       f.projetos = f.projetos.filter(pid => {
         const proj = permitidos.find(p => p.id === pid);
-        return proj && (!f.gestores.length || f.gestores.includes(proj.gestorId));
+        return proj && (!f.gestores.length || this.gestoresDoProjeto(proj).some(g => f.gestores.includes(g)));
       });
     }
     this.renderNextStepsGlobal();
@@ -8696,7 +8733,7 @@ const App = {
         ${marcado}${escapeHtml(rotulo)}
       </label>`;
 
-    const idsGestores = new Set(permitidos.map(p => p.gestorId).filter(Boolean));
+    const idsGestores = new Set(permitidos.flatMap(p => this.gestoresDoProjeto(p)));
     const gestoresDisponiveis = this.state.recursos.filter(r => idsGestores.has(r.id)).sort((a, b) => a.nome.localeCompare(b.nome));
     e.btnFiltroGestoresNS.textContent = this.rotuloFiltroNextSteps(f.gestores, gestoresDisponiveis, 'Gestor');
     e.painelFiltroGestoresNS.innerHTML =
@@ -8707,7 +8744,7 @@ const App = {
       cb.addEventListener('change', () => this.alternarFiltroNextSteps('gestores', cb.dataset.gestor));
     });
 
-    const projetosParaCheckbox = f.gestores.length ? permitidos.filter(p => f.gestores.includes(p.gestorId)) : permitidos;
+    const projetosParaCheckbox = f.gestores.length ? permitidos.filter(p => this.gestoresDoProjeto(p).some(g => f.gestores.includes(g))) : permitidos;
     e.btnFiltroProjetosNS.textContent = this.rotuloFiltroNextSteps(f.projetos, projetosParaCheckbox.map(p => ({ id: p.id, nome: this.rotuloProjeto(p) })), 'Projeto');
     e.painelFiltroProjetosNS.innerHTML =
       linhaFiltro(`<input type="checkbox" data-todos ${f.projetos.length === 0 ? 'checked' : ''}>`, '(Todos)', true) +
@@ -8748,7 +8785,7 @@ const App = {
     const linhas = [];
     permitidos.forEach(p => p.proximosPassos.forEach(pp => linhas.push({ p, pp })));
     const filtradas = linhas.filter(({ p, pp }) => {
-      if (f.gestores.length && !f.gestores.includes(p.gestorId)) return false;
+      if (f.gestores.length && !this.gestoresDoProjeto(p).some(g => f.gestores.includes(g))) return false;
       if (f.projetos.length && !f.projetos.includes(p.id)) return false;
       if (f.pontoSituacao && pp.pontoSituacaoId !== f.pontoSituacao) return false;
       if (f.responsavel && pp.responsavelId !== f.responsavel) return false;
@@ -8760,7 +8797,7 @@ const App = {
 
     const ordenadas = this.aplicarOrdenacaoTabela('tabelaNextStepsGlobal', filtradas, ({ p, pp }, campo) => {
       switch (campo) {
-        case 'gestor': return ((this.state.recursos.find(r => r.id === p.gestorId) || {}).nome || '').toLowerCase();
+        case 'gestor': return this.nomesGestoresProjeto(p, '').toLowerCase();
         case 'projeto': return (p.idInterno || p.nome).toLowerCase();
         case 'sessao': return (p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId) || {}).data || '';
         case 'tarefa': return ((p.tarefas.find(t => t.id === pp.tarefaId) || {}).nome || '').toLowerCase();
@@ -8785,7 +8822,6 @@ const App = {
       const opcoesSessaoLinha = sessoesOrdenadas.map(ps => `<option value="${ps.id}">${escapeHtml(DateUtil.formatShort(DateUtil.parseISO(ps.data)))}${ps.feedback ? ' — ' + escapeHtml(ps.feedback.slice(0, 30)) : ''}</option>`).join('');
       const consultores = this.consultoresDoProjeto(p);
       const opcoesResponsavel = '<option value="">— Sem responsável —</option>' + consultores.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
-      const gestor = this.state.recursos.find(r => r.id === p.gestorId);
       const sessao = p.pontosSituacao.find(ps => ps.id === pp.pontoSituacaoId);
       const nomeCriador = (this.state.recursos.find(r => r.id === pp.criadoPor) || {}).nome || '—';
       const podeEditar = this.podeEditarProximoPasso(p, pp);
@@ -8802,7 +8838,7 @@ const App = {
       const tr = document.createElement('tr');
       tr.className = this.proximoPassoAtrasado(pp) ? 'linha-atrasada' : '';
       tr.innerHTML = `
-        <td class="hint">${escapeHtml(gestor ? gestor.nome : '—')}</td>
+        <td class="hint">${escapeHtml(this.nomesGestoresProjeto(p))}</td>
         <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
         <td>${podeEditar ? `<input type="text" value="${escapeAttr(pp.descricao)}" data-campo="descricao" style="min-width:180px">` : escapeHtml(pp.descricao)}</td>
         <td>${podeEditar ? `<select data-campo="pontoSituacaoId">${opcoesSessaoLinha}</select>` : escapeHtml(sessao ? DateUtil.formatShort(DateUtil.parseISO(sessao.data)) : '—')}</td>
@@ -10814,7 +10850,7 @@ const App = {
     e.projFim.addEventListener('change', () => { if (!this.projetoAtivo() || !this.anoDataPlausivel(e.projFim.value)) return; this.projetoAtivo().dataFim = e.projFim.value; this.persist(); this.renderGanttAtual(); this.renderTabelaProjetos(); });
     e.projHorasVendidas.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().horasVendidas = parseFloat(e.projHorasVendidas.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.projValorVendido.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().valorVendido = parseFloat(e.projValorVendido.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
-    e.projGestorId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().gestorId = e.projGestorId.value || null; this.persist(); this.renderTudo(); });
+    e.btnProjGestores.addEventListener('click', () => { if (this.projetoAtivo() && this.souAdmin()) this.abrirModalGestoresProjeto(this.projetoAtivo().id); });
     if (e.projEquipaId) e.projEquipaId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().equipaId = e.projEquipaId.value || null; this.persist(); this.renderTudo(); });
 
     document.getElementById('btnAddTarefa').addEventListener('click', () => this.adicionarTarefa(false));

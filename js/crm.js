@@ -1698,7 +1698,7 @@ const Crm = {
       const linhaOrc = validado ? `<p class="hint" style="margin:6px 0;">Orçamento validado: <b>v${validado.versao}</b> (${this.euro(validado.total)}). ${jaUsa ? '✔ O projeto usa-o como base da faturação.' : ''}</p>` : '';
       const botaoOrc = validado && !jaUsa && App.possoEditarProjeto(p.id) ? '<button type="button" class="btn btn-sm" data-sec-acao="usar-orc" title="Copia o valor, as horas e as rubricas do orçamento validado para o projeto">Usar este orçamento no projeto</button>' : '';
       raiz.innerHTML = `<div class="crm-item"><div class="crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.rotuloProjeto(p))}</b></span><span class="crm-badge">${escapeHtml(p.estado || '')}</span></div>
-        <p class="hint" style="margin:2px 0 6px;">${this.data(p.dataInicio)} a ${this.data(p.dataFim)}${p.gestorId ? ` · Gestor: ${escapeHtml(App.nomeUtilizador(p.gestorId))}` : ''}</p>${this.htmlNumerosProjeto(r)}</div>
+        <p class="hint" style="margin:2px 0 6px;">${this.data(p.dataInicio)} a ${this.data(p.dataFim)}${p.gestorId ? ` · Gestor: ${escapeHtml(App.nomesGestoresProjeto(p))}` : ''}</p>${this.htmlNumerosProjeto(r)}</div>
         ${linhaOrc}${botaoOrc}
         ${App.possoVerProjeto(p.id) ? '<button type="button" class="btn btn-sm" data-sec-acao="abrir">Abrir no Gantt</button>' : ''}
         <button type="button" class="btn btn-sm btn-danger" data-sec-acao="desligar" title="Só desfaz a ligação — o projeto não é apagado">Desligar</button>`;

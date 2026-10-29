@@ -171,6 +171,9 @@ create table if not exists public.projetos (
 );
 
 alter table public.projetos add column if not exists gestor_id uuid references public.recursos(id) on delete set null;
+-- Vários gestores por projeto (ver supabase/projeto_gestores.sql): lista de ids de "recursos", o primeiro
+-- é o principal e fica também em gestor_id.
+alter table public.projetos add column if not exists gestor_ids jsonb not null default '[]'::jsonb;
 -- Suspender/fechar um projeto (só o Administrador — ver App.possoEditarProjeto/atualizarProjetoAtivo):
 -- congela-o para toda a gente (ninguém edita tarefas/faturas/next steps nem regista horas nele, e
 -- as suas tarefas deixam de contar para a Capacidade/Alocações de quem lá está), sem o eliminar nem

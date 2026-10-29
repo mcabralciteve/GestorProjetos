@@ -173,6 +173,13 @@ const Sync = {
     if (this.temOrcprevProjetos) linhaProjeto.orcprev_ref = projeto.orcprevRef || '';
     if (this.temTipoReferencia !== false) linhaProjeto.tipo_referencia = projeto.tipoReferencia === 'interno' ? 'interno' : 'giaf';
     // Tipo de projeto e "sem faturação" (supabase/projeto_tipo.sql) — só se as colunas já existirem.
+    // Lista completa de gestores (supabase/projeto_gestores.sql) — só se a coluna já existir; o
+    // principal (o primeiro) continua também em gestor_id, que é o que o resto da base lê.
+    if (this.temGestorIds) {
+      const gestores = PessoasLogica.gestoresDoProjeto(projeto);
+      linhaProjeto.gestor_ids = gestores;
+      linhaProjeto.gestor_id = gestores[0] || null;
+    }
     if (this.temTipoProjeto) { linhaProjeto.tipo_projeto = projeto.tipoProjeto || ''; linhaProjeto.sem_faturacao = !!projeto.semFaturacao; }
     // Cópia do orçamento validado (Orçamentação, Fase 2) — só se as colunas já existirem (supabase/orcamentos_fase2.sql).
     if (this.temOrcamentoBase !== false) {
@@ -316,6 +323,7 @@ const Sync = {
     this.temTipoProjeto = proj.data.length === 0 || 'tipo_projeto' in proj.data[0];
     this.temOrcamentoBase = proj.data.length === 0 || 'orcamento_base' in proj.data[0];
     this.temOrcprevProjetos = proj.data.length === 0 || 'orcprev_ref' in proj.data[0];
+    this.temGestorIds = proj.data.length === 0 || 'gestor_ids' in proj.data[0];
     const projetos = {};
     proj.data.forEach(p => {
       projetos[p.id] = {
@@ -323,6 +331,7 @@ const Sync = {
         id: p.id, idInterno: p.id_interno, nome: p.nome, cliente: p.cliente, descricao: p.descricao,
         dataInicio: p.data_inicio, dataFim: p.data_fim, horasVendidas: Number(p.horas_vendidas) || 0,
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,
+        gestorIds: PessoasLogica.gestoresDoProjeto({ gestorId: p.gestor_id, gestorIds: Array.isArray(p.gestor_ids) ? p.gestor_ids : [] }),
         orcamentoBase: p.orcamento_base || null, orcprevRef: p.orcprev_ref || '',
         tipoProjeto: p.tipo_projeto || '', semFaturacao: !!p.sem_faturacao,
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],

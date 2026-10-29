@@ -57,6 +57,7 @@ const Backup = {
       id: p.id, id_interno: p.idInterno || '', nome: p.nome, cliente: p.cliente || '', descricao: p.descricao || '',
       data_inicio: p.dataInicio || null, data_fim: p.dataFim || null, horas_vendidas: p.horasVendidas || 0,
       valor_vendido: p.valorVendido || 0, estado: p.estado || 'Por iniciar', gestor_id: p.gestorId || null,
+      gestor_ids: JSON.stringify(PessoasLogica.gestoresDoProjeto(p)),
       tipo_referencia: p.tipoReferencia === 'interno' ? 'interno' : 'giaf',
       tipo_projeto: p.tipoProjeto || '', sem_faturacao: !!p.semFaturacao,
       atualizado_em: p.versao || null
@@ -139,7 +140,7 @@ const Backup = {
   linhaParaInsert(tabela, linha, onConflict) {
     const colunas = Object.keys(linha);
     const valores = colunas.map(c => {
-      if (tabela === 'tarefas' && c === 'predecessores') return `'${String(linha[c]).replace(/'/g, "''")}'::jsonb`;
+      if ((tabela === 'tarefas' && c === 'predecessores') || (tabela === 'projetos' && c === 'gestor_ids')) return `'${String(linha[c]).replace(/'/g, "''")}'::jsonb`;
       return this.sqlValor(linha[c]);
     });
     return `insert into public.${tabela} (${colunas.join(', ')}) values (${valores.join(', ')}) on conflict ${onConflict} do nothing;`;

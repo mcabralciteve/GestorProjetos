@@ -220,9 +220,9 @@
         <div class="calc-line" id="projOrcBaseLinha" style="display:none;">Orçamento base: <b id="projOrcBase">—</b></div>
         <div class="calc-line"><a href="#" data-tab="faturacao" class="link-tab">💶 Ver faturação deste projeto</a></div>
         <div class="calc-line" id="linhaRelatorioHorasProjeto"><a href="#" id="linkRelatorioHorasProjeto">📄 Relatório de horas deste projeto</a></div>
-        <label>Gestor de Projeto
-          <select id="projGestorId"><option value="">Sem gestor atribuído</option></select>
-        </label>
+        <div class="calc-line" style="align-items:center;gap:8px;flex-wrap:wrap;">Gestores de Projeto: <b id="projGestoresTexto">—</b>
+          <button type="button" class="btn btn-sm" id="btnProjGestores" style="display:none;">Alterar</button>
+        </div>
         <label><span class="rotulo-campo">Equipa do Projeto <span class="nota">(pré-seleciona o filtro ao associar consultores)</span></span>
           <select id="projEquipaId"><option value="">Sem equipa atribuída</option></select>
         </label>
@@ -1325,22 +1325,22 @@
 <script src="lib/jszip.min.js"></script>
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
-<script src="js/sync.js?v=20261101b"></script>
+<script src="js/sync.js?v=20261101c"></script>
 <script src="js/gantt.js?v=20261101a"></script>
 <script src="js/capacidade.js?v=20261101a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
-<script src="js/backup.js?v=20261101b"></script>
+<script src="js/backup.js?v=20261101c"></script>
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261009d"></script>
-<script src="js/crm.js?v=20261101e"></script>
+<script src="js/crm.js?v=20261101f"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
 <script src="js/orcamentos.js?v=20261015a"></script>
-<script src="js/pessoas-logica.js?v=20261031a"></script>
+<script src="js/pessoas-logica.js?v=20261101a"></script>
 <script src="js/icones.js?v=20261101c"></script>
 <script src="js/agendamento-logica.js?v=20261101a"></script>
 <script src="js/progresso-logica.js?v=20261101a"></script>
@@ -1350,6 +1350,6 @@
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261031e"></script>
-<script src="js/app.js?v=20261101i"></script>
+<script src="js/app.js?v=20261101j"></script>
 </body>
 </html>

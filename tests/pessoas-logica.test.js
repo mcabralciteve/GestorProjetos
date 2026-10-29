@@ -187,6 +187,34 @@ test('novo gestor: aplica e devolve o registo; ignora projetos que a pessoa não
   assert.equal(linhas.length, 2); assert.equal(linhas[0].tipo, 'gestor'); assert.equal(linhas[0].deNome, 'Ana'); assert.equal(linhas[0].feitoPor, 'adm1');
 });
 
+test('vários gestores: principal primeiro, sem repetidos, aceita só gestorId ou a lista', () => {
+  assert.deepEqual(P.gestoresDoProjeto({ gestorId: 'a' }), ['a']);
+  assert.deepEqual(P.gestoresDoProjeto({ gestorId: null }), []);
+  assert.deepEqual(P.gestoresDoProjeto({ gestorId: 'a', gestorIds: ['b', 'a', 'c', 'b'] }), ['a', 'b', 'c']);
+  assert.ok(P.ehGestorDoProjeto({ gestorId: 'a', gestorIds: ['a', 'b'] }, 'b'));
+  assert.ok(!P.ehGestorDoProjeto({ gestorId: 'a' }, 'b')); assert.ok(!P.ehGestorDoProjeto({ gestorId: 'a' }, null));
+  const p = { gestorId: 'a' };
+  assert.deepEqual(P.definirGestores(p, ['b', '', 'c', 'b']), ['b', 'c']);
+  assert.equal(p.gestorId, 'b'); assert.deepEqual(p.gestorIds, ['b', 'c']);
+  P.definirGestores(p, []); assert.equal(p.gestorId, null); assert.deepEqual(P.gestoresDoProjeto(p), []);
+});
+
+test('vários gestores: pendências, histórico e substituição só trocam a pessoa que sai', () => {
+  const e = cen3();
+  P.definirGestores(e.projetos.p1, ['a', 'b']);                      // Ana e Bruno gerem p1
+  assert.ok(P.pendencias(e, 'b').projetosGeridos.some(x => x.projetoId === 'p1'));
+  assert.ok(P.historico(e, e.recursos.find(r => r.id === 'b')).geridos >= 2);   // p1 (agora) + p2
+  const plano = P.planearNovosGestores(e, 'a', { p1: 'n', p3: 'b' }, { hojeISO: HOJE });
+  assert.equal(plano.erros.length, 0);
+  P.aplicarNovosGestores(e, plano, 'a', 'adm1');
+  assert.deepEqual(P.gestoresDoProjeto(e.projetos.p1), ['n', 'b']);   // Ana sai, Bruno mantém-se; Nuno entra no lugar dela
+  assert.equal(e.projetos.p1.gestorId, 'n');
+  assert.deepEqual(P.gestoresDoProjeto(e.projetos.p3), ['b']);
+  // quem já gere o projeto como co-gestor: a pessoa que sai só desaparece da lista
+  const q = { gestorId: 'a', gestorIds: ['a', 'b'] };
+  assert.deepEqual(P.substituirGestor(q, 'a', 'b'), ['b']);
+});
+
 test('nova liderança: líder de equipa e diretor passam para quem tem conta; histórico de tipo lider/diretor', () => {
   const e = cen3();
   const plano = P.planearNovaLideranca(e, 'a', { equipas: { e1: 'b' }, departamentos: { d1: 'n' } }, { hojeISO: HOJE });

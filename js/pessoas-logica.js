@@ -16,6 +16,28 @@ const PessoasLogica = {
     return r && r.dataSaida && r.ativo !== false ? 'a-sair' : 'ativo';
   },
 
+  // ---- Gestores de projeto (pode haver mais do que um) ----
+  // "gestorId" é o gestor principal (o primeiro) e "gestorIds" a lista completa, por ordem; as duas
+  // formas aceitam-se (projetos antigos só têm gestorId) e a lista devolvida nunca tem repetidos.
+  gestoresDoProjeto(p) {
+    if (!p) return [];
+    return [...new Set([p.gestorId, ...(p.gestorIds || [])].filter(Boolean))];
+  },
+  ehGestorDoProjeto(p, recursoId) {
+    return !!recursoId && this.gestoresDoProjeto(p).includes(recursoId);
+  },
+  // Define a lista toda de uma vez (mantém gestorId = primeiro, para o que ainda lê só o principal).
+  definirGestores(p, ids) {
+    const lista = [...new Set((ids || []).filter(Boolean))];
+    p.gestorIds = lista;
+    p.gestorId = lista[0] || null;
+    return lista;
+  },
+  // Troca "deId" por "paraId" mantendo os restantes gestores; se "paraId" já gere o projeto, "deId" só sai.
+  substituirGestor(p, deId, paraId) {
+    return this.definirGestores(p, this.gestoresDoProjeto(p).map(id => (id === deId ? paraId : id)));
+  },
+
   // O que a pessoa "tem" na app — serve tanto para listar pendências como para decidir se pode ser
   // eliminada (só quem nunca teve nada). "horasRegistadas(projeto, tarefa, recursoId)" é injetada
   // (App.horasJaRegistadasTarefa) porque depende do índice de registos; "pendente(pp)" idem.
@@ -27,7 +49,7 @@ const PessoasLogica = {
     const r2 = n => Math.round(n * 100) / 100;
     const tarefas = [], projetosGeridos = [], nextSteps = [];
     projetos.forEach(p => {
-      if (p.gestorId === recursoId) projetosGeridos.push({ projetoId: p.id, idInterno: p.idInterno || '', nome: p.nome, cliente: p.cliente || '', suspenso: p.ativo === false });
+      if (this.ehGestorDoProjeto(p, recursoId)) projetosGeridos.push({ projetoId: p.id, idInterno: p.idInterno || '', nome: p.nome, cliente: p.cliente || '', suspenso: p.ativo === false });
       (p.tarefas || []).forEach(t => {
         if (!(t.recursoIds || []).includes(recursoId)) return;
         if ((t.progresso || 0) >= 100) return;
@@ -53,7 +75,7 @@ const PessoasLogica = {
     const tarefas = projetos.reduce((n, p) => n + (p.tarefas || []).filter(t => (t.recursoIds || []).includes(recurso.id)).length, 0);
     const registos = (estado.registos || []).filter(x => x.pessoa === recurso.nome).length;
     const ausencias = (estado.ausencias || []).filter(a => a.recursoId === recurso.id).length;
-    const geridos = projetos.filter(p => p.gestorId === recurso.id).length;
+    const geridos = projetos.filter(p => this.ehGestorDoProjeto(p, recurso.id)).length;
     const lidera = (estado.equipas || []).filter(e => e.liderId === recurso.id).length
       + (estado.departamentos || []).filter(d => d.diretorId === recurso.id).length;
     const conta = (estado.utilizadores || []).some(u => u.recursoId === recurso.id);
@@ -181,7 +203,7 @@ const PessoasLogica = {
     const o = opcoes || {};
     const ops = [], erros = [];
     Object.values(estado.projetos || {}).forEach(p => {
-      if (p.gestorId !== deId) return;
+      if (!this.ehGestorDoProjeto(p, deId)) return;
       const paraId = (escolhas || {})[p.id];
       if (!paraId) return;
       const motivo = this.candidatoACargo(estado, paraId, deId, o.hojeISO);
@@ -193,7 +215,7 @@ const PessoasLogica = {
   aplicarNovosGestores(estado, plano, deId, quemFezId) {
     const nome = id => ((estado.recursos || []).find(r => r.id === id) || {}).nome || '';
     return plano.ops.map(op => {
-      estado.projetos[op.projetoId].gestorId = op.paraId;
+      this.substituirGestor(estado.projetos[op.projetoId], deId, op.paraId);
       return { tipo: 'gestor', projetoId: op.projetoId, projetoNome: op.projetoNome, tarefaId: null, tarefaNome: 'Gestor do projeto',
         deId, deNome: nome(deId), paraId: op.paraId, paraNome: nome(op.paraId), horas: 0, observacoes: '', feitoPor: quemFezId || null };
     });
