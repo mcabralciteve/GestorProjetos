@@ -196,9 +196,9 @@ const Crm = {
     if (c.tipo === 'url') return `<a href="${escapeAttr(c.href)}" target="_blank" rel="noopener noreferrer">Abrir documento ↗</a>`;
     return `<span class="crm-caminho" title="${escapeAttr(c.texto)}">${escapeHtml(c.texto)}</span> <button type="button" class="btn btn-sm" data-crm-acao="copiar" data-texto="${escapeAttr(c.texto)}">Copiar</button>`;
   },
-  async copiar(texto) {
-    try { await navigator.clipboard.writeText(texto); App.toast('Caminho copiado.'); }
-    catch (e) { window.prompt('Copia o caminho:', texto); }
+  async copiar(texto, aviso) {
+    try { await navigator.clipboard.writeText(texto); App.toast(aviso || 'Caminho copiado.'); }
+    catch (e) { window.prompt(aviso ? 'Copia o texto:' : 'Copia o caminho:', texto); }
   },
 
   // ============================ Navegação / arranque de cada separador ============================
@@ -339,6 +339,7 @@ const Crm = {
       'nova-tarefa': () => this.abrirTarefa(null, { conta: el.dataset.conta, op: el.dataset.op }),
       'abrir-tarefa': () => this.abrirTarefa(id),
       'concluir-tarefa': () => this.alternarTarefa(id),
+      'rascunho-tarefa': () => this.abrirRascunho(id),
       'copiar': () => this.copiar(el.dataset.texto),
       'vista': () => { this.filtros.op.vista = el.dataset.valor; this.renderAtual(); },
       'ir-conta': () => { App.fecharModal(); this.abrirConta(id); },
@@ -1138,6 +1139,83 @@ const Crm = {
       this.renderAtual();
     } catch (err) { this.avisoErro(err); this.renderAtual(); }
   },
+  // ---------- Rascunho de email para um follow-up (escrito pelo Claude) ----------
+  // A função "followup-rascunho" lê o CRM com a sessão da pessoa e devolve assunto + texto. NADA é enviado: a pessoa revê,
+  // copia ou abre no programa de email, e só depois (se quiser) regista o envio e conclui o follow-up.
+  async abrirRascunho(tarefaId, pedido) {
+    const t = this.d.tarefas.find(x => x.id === tarefaId);
+    if (!t) return;
+    pedido = pedido || {};
+    this.abrir('Rascunho de follow-up', `<p class="hint" data-rascunho-espera style="padding:12px 0;">A preparar o rascunho com o Claude… (cerca de 10 segundos)</p>`, true);
+    const falha = texto => {
+      const c = this.corpo();
+      if (!c.querySelector('[data-rascunho-espera]')) return;      // a pessoa já fechou ou abriu outra coisa
+      c.innerHTML = `<p style="color:var(--vermelho);">${escapeHtml(texto)}</p><div class="crm-acoes-form"><button type="button" class="btn" id="rascFechar">Fechar</button></div>`;
+      c.querySelector('#rascFechar').addEventListener('click', () => App.fecharModal());
+    };
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('followup-rascunho', { body: { tarefa_id: tarefaId, para_email: pedido.para || '', indicacoes: pedido.indicacoes || '' } });
+      if (error) {
+        let texto = error.message || 'Erro ao preparar o rascunho.';
+        try { const j = await error.context.json(); if (j && j.erro) texto = j.erro; } catch (e) { /* mantém a mensagem */ }
+        if (/Failed to send a request|non-2xx/i.test(texto) && !error.context) texto = 'Não consegui contactar a função do assistente. Já foi instalada no Supabase (followup-rascunho)?';
+        return falha(texto);
+      }
+      if (!this.corpo().querySelector('[data-rascunho-espera]')) return;
+      this.mostrarRascunho(t, data);
+    } catch (err) { console.error(err); falha(err.message || 'Não consegui preparar o rascunho.'); }
+  },
+  mostrarRascunho(t, d) {
+    const c = this.corpo();
+    c.innerHTML = `<p class="hint" style="margin:0 0 8px;">Escrito pelo Claude a partir do CRM (o texto da oportunidade e dos contactos anteriores foi enviado ao serviço da Anthropic para o gerar). <b>Nada foi enviado</b> — revê e ajusta antes de usar.</p>
+      <label><span class="rotulo-campo">Para</span><input type="text" data-r="para" list="rascContactos" value="${escapeAttr(d.para || '')}" placeholder="email do destinatário"></label>
+      <datalist id="rascContactos">${(d.contactos || []).map(x => `<option value="${escapeAttr(x.email)}">${escapeHtml(x.nome + (x.cargo ? ' — ' + x.cargo : ''))}</option>`).join('')}</datalist>
+      <label><span class="rotulo-campo">Assunto</span><input type="text" data-r="assunto" value="${escapeAttr(d.assunto)}"></label>
+      <label><span class="rotulo-campo">Mensagem</span><textarea data-r="corpo" rows="12">${escapeHtml(d.corpo)}</textarea></label>
+      <details class="hint" style="margin:6px 0;"><summary>O que o Claude viu</summary><ul style="margin:4px 0 0 18px;">${(d.usado || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></details>
+      <div class="row-2" style="align-items:end;">
+        <label><span class="rotulo-campo">Indicações para refazer <span class="nota">(opcional)</span></span><input type="text" data-r="indic" placeholder="Ex.: mais informal; propõe uma chamada na próxima semana"></label>
+        <div><button type="button" class="btn" data-r-acao="refazer">↻ Refazer</button></div>
+      </div>
+      <span data-msg class="calc-line" style="border:none;display:block;margin-top:6px;color:var(--vermelho);"></span>
+      <div class="crm-acoes-form">
+        <button type="button" class="btn btn-primary" data-r-acao="mail">✉ Abrir no email</button>
+        <button type="button" class="btn" data-r-acao="copiar">Copiar</button>
+        <button type="button" class="btn" data-r-acao="registar" title="Regista um email na conta/oportunidade e marca este follow-up como concluído">Já enviei: registar e concluir</button>
+        <button type="button" class="btn" data-r-acao="fechar">Fechar</button>
+      </div>`;
+    const campo = n => c.querySelector(`[data-r="${n}"]`);
+    const msg = c.querySelector('[data-msg]');
+    const original = d.corpo;
+    const ler = () => ({ para: campo('para').value.trim(), assunto: campo('assunto').value.trim(), corpo: campo('corpo').value.trim() });
+    const acao = (n, f) => c.querySelector(`[data-r-acao="${n}"]`).addEventListener('click', f);
+    acao('fechar', () => App.fecharModal());
+    acao('copiar', () => { const r = ler(); this.copiar(`Assunto: ${r.assunto}\n\n${r.corpo}`, 'Rascunho copiado.'); });
+    acao('mail', () => {
+      const r = ler();
+      if (!r.para) { msg.textContent = 'Indica o email do destinatário.'; return; }
+      const m = CrmLogica.mailto(r);
+      window.location.href = m.url;
+      if (m.cortado) App.toast('A mensagem é longa e o email abriu cortado — usa "Copiar".');
+    });
+    acao('refazer', () => {
+      if (campo('corpo').value.trim() !== original.trim() && !confirm('Isto substitui o texto que editaste. Continuar?')) return;
+      this.abrirRascunho(t.id, { para: campo('para').value.trim(), indicacoes: campo('indic').value.trim() });
+    });
+    acao('registar', async () => {
+      const r = ler();
+      if (!r.assunto) { msg.textContent = 'O assunto não pode ficar vazio.'; return; }
+      try {
+        const op = t.oportunidade_id && this.idx.op.get(t.oportunidade_id);
+        const contaId = t.conta_id || (op && op.conta_id) || null;
+        const contacto = this.d.contactos.find(x => x.conta_id === contaId && r.para && String(x.email || '').trim().toLowerCase() === r.para.toLowerCase());
+        await this.gravar('interacoes', { id: null, conta_id: contaId, contacto_id: contacto ? contacto.id : null, oportunidade_id: t.oportunidade_id || null, tipo: 'email', data: this.hoje(), resumo: `Follow-up enviado: ${r.assunto}`, criado_por: this.meuRecursoId() });
+        if (!t.concluida) await this.gravar('tarefas', Object.assign({}, t, { concluida: true, concluida_em: new Date().toISOString() }));
+        App.fecharModal(); this.renderAtual();
+        App.toast('Envio registado e follow-up concluído.');
+      } catch (err) { this.avisoErro(err); }
+    });
+  },
   secTarefas(raiz, ctx) {
     const lista = this.d.tarefas.filter(t => ctx.opId ? t.oportunidade_id === ctx.opId : t.conta_id === ctx.contaId)
       .sort((a, b) => (a.concluida - b.concluida) || String(a.data_limite || '9999').localeCompare(String(b.data_limite || '9999')));
@@ -1147,6 +1225,7 @@ const Crm = {
         <input type="checkbox" data-sec-acao="concluir" data-id="${escapeAttr(t.id)}"${t.concluida ? ' checked' : ''} title="Marcar como concluída">
         <span class="crm-item-texto">${escapeHtml(t.descricao)}</span>
         <span class="${estado === 'atrasada' ? 'crm-atrasada' : 'hint'}">${t.data_limite ? this.data(t.data_limite) : 'sem data'} · ${escapeHtml(this._primeiroNome(t.responsavel_id))}</span>
+        ${t.concluida ? '' : `<button type="button" class="btn btn-sm" data-sec-acao="rascunho" data-id="${escapeAttr(t.id)}" title="Preparar um rascunho de email ao cliente com o Claude (nada é enviado)">✉ Rascunho</button>`}
         <button type="button" class="btn btn-sm" data-sec-acao="editar" data-id="${escapeAttr(t.id)}">Editar</button></div>`;
     }).join('')}</div>` : this.vazioHtml('Sem follow-ups.')}
       <button type="button" class="btn btn-sm" data-sec-acao="nova">+ Follow-up</button><div class="crm-inline"></div>`;
@@ -1160,7 +1239,8 @@ const Crm = {
     }));
     this.ligarAcoes(raiz, {
       nova: () => abrirInline(this.novaTarefa(ctx)),
-      editar: b => abrirInline(this.d.tarefas.find(x => x.id === b.dataset.id))
+      editar: b => abrirInline(this.d.tarefas.find(x => x.id === b.dataset.id)),
+      rascunho: b => this.abrirRascunho(b.dataset.id)
     });
   },
   renderFollowups(el) {
@@ -1187,7 +1267,8 @@ const Crm = {
           <span class="crm-item-texto"><a href="#" data-crm-acao="abrir-tarefa" data-id="${escapeAttr(t.id)}">${escapeHtml(t.descricao)}</a>
             ${op ? ` · <a href="#" data-crm-acao="abrir-op" data-id="${escapeAttr(op.id)}">${escapeHtml(op.titulo)}</a>` : ''}
             ${c ? ` · <a href="#" data-crm-acao="abrir-conta" data-id="${escapeAttr(c.id)}">${escapeHtml(c.nome)}</a>` : ''}</span>
-          <span class="${k === 'atrasada' ? 'crm-atrasada' : 'hint'}">${t.data_limite ? this.data(t.data_limite) : 'sem data'} · ${escapeHtml(this._primeiroNome(t.responsavel_id))}</span></div>`;
+          <span class="${k === 'atrasada' ? 'crm-atrasada' : 'hint'}">${t.data_limite ? this.data(t.data_limite) : 'sem data'} · ${escapeHtml(this._primeiroNome(t.responsavel_id))}</span>
+          ${t.concluida ? '' : `<button type="button" class="btn btn-sm" data-crm-acao="rascunho-tarefa" data-id="${escapeAttr(t.id)}" title="Preparar um rascunho de email ao cliente com o Claude (nada é enviado)">✉ Rascunho</button>`}</div>`;
       }).join('')}</div>`).join('');
     el.innerHTML = `<div class="filters crm-barra">
         <label class="zoom-label">De quem <select data-crm-filtro="tarefas.quem"><option value="minhas"${f.quem === 'minhas' ? ' selected' : ''}>Os meus</option><option value="todas"${f.quem === 'todas' ? ' selected' : ''}>Todos</option></select></label>

@@ -833,6 +833,16 @@ const CrmLogica = {
     return t;
   },
 
+  // ---------- Rascunho de follow-up ----------
+  // Ligação mailto: com o rascunho. Os programas de email limitam o tamanho da ligação (cerca de 2000
+  // caracteres): se passar, o corpo é encurtado e "cortado" avisa, para a app sugerir "Copiar".
+  mailto({ para, assunto, corpo }) {
+    const montar = c => `mailto:${encodeURIComponent(String(para || '').trim())}?subject=${encodeURIComponent(assunto || '')}&body=${encodeURIComponent(String(c).replace(/\r?\n/g, '\r\n'))}`;
+    let c = String(corpo || ''), url = montar(c), cortado = false;
+    while (url.length > 1900 && c.length > 0) { c = c.slice(0, Math.floor(c.length * 0.9)); url = montar(c); cortado = true; }
+    return { url, cortado };
+  },
+
   // ---------- Formatação ----------
   euro(v) { return (Number(v) || 0).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }); },
   data(iso) { return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'; }

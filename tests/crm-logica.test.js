@@ -265,3 +265,13 @@ test('grupos de contas duplicadas (transitivo por NIF e por nome)', () => {
   assert.equal(g.length, 1);
   assert.deepEqual(g[0].map(x => x.id), ['2', '1', '3']);                       // a mais antiga primeiro
 });
+
+test('mailto do rascunho: codifica acentos e quebras de linha, e corta corpos demasiado longos', () => {
+  const r = C.mailto({ para: ' carla@x.pt ', assunto: 'Proposta 2026/829-01', corpo: 'Bom dia,\nObrigado.' });
+  assert.equal(r.cortado, false);
+  assert.equal(r.url, 'mailto:carla%40x.pt?subject=Proposta%202026%2F829-01&body=Bom%20dia%2C%0D%0AObrigado.');
+  const longo = C.mailto({ para: 'a@b.pt', assunto: 'x', corpo: 'ção '.repeat(2000) });
+  assert.equal(longo.cortado, true);
+  assert.ok(longo.url.length <= 1900);
+  assert.equal(C.mailto({ para: '', assunto: '', corpo: '' }).url, 'mailto:?subject=&body=');
+});
