@@ -9134,6 +9134,13 @@ const App = {
     const porNome = new Map(this.state.recursos.map(r => [r.nome, r]));
     const rotulos = { equipa: new Map(), departamento: new Map(), pessoa: new Map(), projeto: new Map(), tipo: new Map() };
     const itens = [];
+    // Registos antigos só trazem o código interno do projeto; os recentes trazem também o id. Para o mesmo projeto não
+    // aparecer duas vezes (nos filtros, nos gráficos e no "real vs. previsto"), a chave é sempre o id do projeto
+    // quando ele existe, e o rótulo vem do projeto (não do texto de cada registo).
+    const projetoDoRegisto = (r) => {
+      if (r.projetoId && this.state.projetos[r.projetoId]) return this.state.projetos[r.projetoId];
+      return r.projetoIdInterno ? Object.values(this.state.projetos).find(p => p.idInterno === r.projetoIdInterno) || null : null;
+    };
     this.state.registos.forEach(r => {
       if (!r.data || r.data < de || r.data > ate) return;
       const rec = porNome.get(r.pessoa) || null;
@@ -9141,11 +9148,15 @@ const App = {
       const org = this.orgDoRecurso(rec);
       const tipo = this.tipoTrabalhoPorId(r.tipoTrabalhoId);
       const emProjeto = !!(r.projetoIdInterno || r.projetoId);
-      const projetoRotulo = emProjeto ? `${r.projetoIdInterno ? r.projetoIdInterno + ' — ' : ''}${r.projetoNome || ''}${r.cliente ? ` (${r.cliente})` : ''}` : 'Sem projeto';
+      const projReal = emProjeto ? projetoDoRegisto(r) : null;
+      const idInt = projReal ? (projReal.idInterno || '') : (r.projetoIdInterno || '');
+      const nomeProj = projReal ? projReal.nome : (r.projetoNome || '');
+      const clienteProj = projReal ? (projReal.cliente || '') : (r.cliente || '');
+      const projetoRotulo = emProjeto ? `${idInt ? idInt + ' — ' : ''}${nomeProj}${clienteProj ? ` (${clienteProj})` : ''}` : 'Sem projeto';
       const i = {
         registo: r, data: r.data, horas: parseFloat(r.horas) || 0, pessoa: r.pessoa,
         equipaId: org.equipaId, equipa: org.equipaNome, deptId: org.deptId, dept: org.deptNome,
-        projetoKey: emProjeto ? (r.projetoId || r.projetoIdInterno) : '', projeto: projetoRotulo, emProjeto, cliente: emProjeto ? (r.cliente || '') : '',
+        projetoKey: emProjeto ? (projReal ? projReal.id : (r.projetoId || r.projetoIdInterno)) : '', projeto: projetoRotulo, emProjeto, cliente: emProjeto ? clienteProj : '',
         tipoKey: tipo.id || '__projeto__', tipo: tipo.nome
       };
       if (comFiltros) {
