@@ -10165,13 +10165,24 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', reunioes: 'reunioes', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { inicio: 'dashboard', reunioes: 'reunioes', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', reunioes: 'planeamento', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  // "Reuniões" aparece nos submenus de Comercial e de Planeamento (é o mesmo ecrã): fica no grupo de onde se veio, ou no último usado.
+  ultimoGrupoReunioes: 'planeamento',
+  grupoDaAba(nome) { return nome === 'reunioes' ? this.ultimoGrupoReunioes : this.gruposAbas[nome]; },
   irParaAba(nome) {
+    let grupo = this.gruposAbas[nome];
+    if (nome === 'reunioes') {
+      const vindoDe = this.grupoDaAba(this.abaAtiva);
+      grupo = vindoDe === 'comercial' || vindoDe === 'planeamento' ? vindoDe : this.ultimoGrupoReunioes;
+      this.ultimoGrupoReunioes = grupo;
+    }
     this.abaAtiva = nome;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      const g = b.closest('.tabs-grupo');
+      b.classList.toggle('active', b.dataset.tab === nome && (!g || g.dataset.grupo === grupo)); // o botão repetido do outro grupo não acende
+    });
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + nome));
-    const grupo = this.gruposAbas[nome];
     document.querySelectorAll('.grupo-btn').forEach(b => b.classList.toggle('active', b.dataset.grupo === grupo));
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
     if (nome === 'dashboard') this.renderDashboard();
@@ -10195,7 +10206,7 @@ const App = {
     });
   },
   irParaGrupo(grupo) {
-    if (this.gruposAbas[this.abaAtiva] === grupo) return;
+    if (this.grupoDaAba(this.abaAtiva) === grupo) return;
     // "Equipa" está sempre visível (ver aplicarPermissoesUI), mas o primeiro separador por omissão
     // (Alocações) só é para quem gere algo — quem não gere nada entra antes em Ausências (as suas
     // próprias), senão ficava a saltar logo para o Dashboard sem nunca lá chegar.
