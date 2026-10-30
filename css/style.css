@@ -1092,6 +1092,19 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .reu-card .crm-h{margin-top:0;}
 .reu-card label{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;font-size:12px;color:var(--cinza-500);}
 .reu-card textarea{width:100%;box-sizing:border-box;resize:vertical;}
+.reu-rt-campo{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
+.reu-rt-rotulo{font-size:12px;color:var(--cinza-500);}
+.reu-rt-bar{display:flex;flex-wrap:wrap;align-items:center;gap:3px;padding:4px 6px;border:1px solid var(--cinza-300);border-bottom:none;border-radius:8px 8px 0 0;background:var(--cinza-100);}
+.reu-rt-btn{min-width:28px;height:26px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--cinza-900);cursor:pointer;font-size:13px;line-height:1;}
+.reu-rt-btn:hover{background:var(--branco);border-color:var(--cinza-300);}
+.reu-rt-cor{min-width:18px;width:18px;height:18px;padding:0;margin:0 2px;border-radius:50%;background:var(--cor);border:2px solid var(--branco);box-shadow:0 0 0 1px var(--cinza-300);}
+.reu-rt-sep{width:1px;height:18px;background:var(--cinza-300);margin:0 4px;}
+.reu-rt{min-height:190px;max-height:60vh;overflow:auto;padding:8px 10px;border:1px solid var(--cinza-300);border-radius:0 0 8px 8px;background:var(--branco);color:var(--cinza-900);font-size:13px;line-height:1.5;outline:none;overflow-wrap:anywhere;resize:vertical;}
+.reu-rt:focus{border-color:var(--azul);box-shadow:0 0 0 2px rgba(42,106,154,.18);}
+.reu-rt:empty:before{content:attr(data-ph);color:var(--cinza-500);pointer-events:none;}
+.reu-rt-leitura{border-radius:8px;min-height:0;resize:none;}
+.reu-rt h3{font-size:16px;margin:8px 0 4px;color:var(--cinza-900);}
+.reu-rt ul,.reu-rt ol{margin:4px 0;padding-left:24px;}
 .reu-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
 .reu-add select{min-width:240px;max-width:100%;}
 .reu-presente{display:inline-flex !important;flex-direction:row !important;align-items:center;gap:4px;margin:0 !important;white-space:nowrap;color:var(--cinza-900) !important;}

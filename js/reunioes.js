@@ -120,6 +120,7 @@ const Reunioes = {
     const r = this.lista.find(x => x.id === id);
     if (!r) return;
     this.atual = this.clonar(r);
+    this.atual.notas = this.L.notasParaEditor(this.atual.notas); // notas antigas (texto simples) → HTML, sem contar como alteração
     this.original = JSON.stringify(this.atual);
     this.abrirEditor();
   },
@@ -221,6 +222,27 @@ const Reunioes = {
     }
     return `${r.participantes.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Pessoa</th><th>Organização / cargo</th><th>Presença</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : '<p class="hint">Ainda ninguém. Acrescenta quem foi convidado e marca quem esteve presente.</p>'}${adicionar}`;
   },
+  // Notas com formatação: barra de botões + área editável (contenteditable). O que fica guardado é sempre HTML limpo (ver
+  // ReunioesLogica.limparHtml); quem só pode ler vê o mesmo texto, sem barra.
+  editorNotas() {
+    const ed = this.podeEditarAtual();
+    const html = this.L.limparHtml(this.atual.notas || '');
+    if (!ed) return `<div class="reu-rt reu-rt-leitura">${html || '<span class="hint">Sem notas.</span>'}</div>`;
+    const b = (cmd, rotulo, dica, arg) => `<button type="button" class="reu-rt-btn" data-reu-cmd="${cmd}"${arg ? ` data-arg="${arg}"` : ''} title="${escapeAttr(dica)}" aria-label="${escapeAttr(dica)}">${rotulo}</button>`;
+    const cores = [['#2a6a9a', 'Azul'], ['#d64545', 'Vermelho'], ['#1f8a5b', 'Verde'], ['#c77700', 'Laranja']];
+    return `<div class="reu-rt-bar" role="toolbar" aria-label="Formatação do texto">
+        ${b('bold', '<b>N</b>', 'Negrito (Ctrl+B)')}${b('italic', '<i>I</i>', 'Itálico (Ctrl+I)')}${b('underline', '<u>S</u>', 'Sublinhado (Ctrl+U)')}${b('strikeThrough', '<s>R</s>', 'Riscado')}
+        <span class="reu-rt-sep"></span>
+        ${b('tamanho-', 'A<small>−</small>', 'Diminuir o tamanho do texto')}${b('tamanho+', 'A<big>+</big>', 'Aumentar o tamanho do texto')}${b('titulo', 'T', 'Título (liga/desliga)')}
+        <span class="reu-rt-sep"></span>
+        ${b('insertUnorderedList', '• ≡', 'Lista com marcas')}${b('insertOrderedList', '1. ≡', 'Lista numerada')}
+        <span class="reu-rt-sep"></span>
+        ${cores.map(([c, n]) => `<button type="button" class="reu-rt-btn reu-rt-cor" data-reu-cmd="cor" data-arg="${c}" title="Cor do texto: ${n}" aria-label="Cor do texto: ${n}" style="--cor:${c}"></button>`).join('')}
+        <span class="reu-rt-sep"></span>
+        ${b('limpar', 'Tx', 'Limpar a formatação do texto selecionado')}
+      </div>
+      <div class="reu-rt" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Notas da reunião" data-reu-rt="notas" data-ph="O que foi dito e acordado…">${html}</div>`;
+  },
   secPontos() {
     const r = this.atual, ed = this.podeEditarAtual(), d = ed ? '' : ' disabled';
     const nomes = [...new Set([...r.participantes.map(p => p.nome), ...App.recursosAtivos().map(x => x.nome)])];
@@ -274,7 +296,7 @@ const Reunioes = {
       ${secao('reuSecPart', 'Participantes', this.secParticipantes())}
       <div class="card reu-card"><h4 class="crm-h">Ordem de trabalhos e notas</h4>
         <label>Ordem de trabalhos <textarea data-reu-f="ordem_trabalhos" rows="3" placeholder="Um ponto por linha"${d}>${escapeHtml(r.ordem_trabalhos)}</textarea></label>
-        <label>Notas / assuntos tratados <textarea data-reu-f="notas" rows="9" placeholder="O que foi dito e acordado…"${d}>${escapeHtml(r.notas)}</textarea></label></div>
+        <div class="reu-rt-campo"><span class="reu-rt-rotulo">Notas / assuntos tratados</span>${this.editorNotas()}</div></div>
       ${secao('reuSecPontos', 'Decisões e ações', this.secPontos())}
       ${secao('reuSecFich', 'Documentos', this.secFicheiros())}
       ${secao('reuSecAta', 'Ata', this.secAta())}`;
@@ -289,7 +311,12 @@ const Reunioes = {
   ligar(raiz) {
     if (this._ligado.has(raiz)) return; // delegação: um só conjunto de ouvintes por contentor
     this._ligado.add(raiz);
+    raiz.addEventListener('mousedown', ev => { if (ev.target.closest('[data-reu-cmd]')) ev.preventDefault(); }); // não tirar a seleção ao texto
+    raiz.addEventListener('paste', ev => this.aoColar(ev));
+    raiz.addEventListener('drop', ev => { if (ev.target.closest && ev.target.closest('[data-reu-rt]') && ev.dataTransfer && ev.dataTransfer.files.length) ev.preventDefault(); });
     raiz.addEventListener('click', ev => {
+      const cmd = ev.target.closest('[data-reu-cmd]');
+      if (cmd && raiz.contains(cmd)) { ev.preventDefault(); this.comandoRt(cmd.dataset.reuCmd, cmd.dataset.arg); return; }
       const el = ev.target.closest('[data-reu-acao]');
       if (el && raiz.contains(el)) { ev.preventDefault(); this.acao(el.dataset.reuAcao, el); }
     });
@@ -309,6 +336,7 @@ const Reunioes = {
     }
     if (!this.atual || !this.podeEditarAtual()) return;
     const r = this.atual;
+    if (t.dataset.reuRt !== undefined) { this.sincronizarRt(t); return; }
     if (t.dataset.reuF) this.editarCampo(t.dataset.reuF, t, mudou);
     else if (t.dataset.reuLista) {
       const item = r[t.dataset.reuLista][Number(t.dataset.i)];
@@ -320,6 +348,36 @@ const Reunioes = {
         if (k === 'tipo' || k === 'concluida') this.renderSecao('reuSecPontos', this.secPontos);
       }
     }
+  },
+  // Passa o conteúdo da área editável para a reunião em edição (já limpo).
+  sincronizarRt(el) { if (this.atual) this.atual[el.dataset.reuRt] = this.L.limparHtml(el.innerHTML); },
+  // Botões da barra de formatação (execCommand é antigo, mas funciona em todos os browsers e não exige bibliotecas).
+  comandoRt(cmd, arg) {
+    const ed = this.corpo() && this.corpo().querySelector('[data-reu-rt]');
+    if (!ed || !this.podeEditarAtual()) return;
+    ed.focus();
+    document.execCommand('styleWithCSS', false, false); // <b>/<font> em vez de style="…", que a limpeza descartaria
+    if (cmd === 'tamanho+' || cmd === 'tamanho-') {
+      const atual = parseInt(document.queryCommandValue('fontSize'), 10) || 3;
+      document.execCommand('fontSize', false, String(Math.max(1, Math.min(7, atual + (cmd === 'tamanho+' ? 1 : -1)))));
+    } else if (cmd === 'titulo') {
+      document.execCommand('formatBlock', false, String(document.queryCommandValue('formatBlock')).toLowerCase() === 'h3' ? '<div>' : '<h3>');
+    } else if (cmd === 'cor') document.execCommand('foreColor', false, arg);
+    else if (cmd === 'limpar') { document.execCommand('removeFormat'); if (String(document.queryCommandValue('formatBlock')).toLowerCase() === 'h3') document.execCommand('formatBlock', false, '<div>'); }
+    else document.execCommand(cmd);
+    this.sincronizarRt(ed);
+  },
+  // Colar: aceita a estrutura (negrito, listas…) mas não o resto (estilos, imagens, ligações do Word/Outlook/sites).
+  aoColar(ev) {
+    const ed = ev.target.closest && ev.target.closest('[data-reu-rt]');
+    if (!ed) return;
+    ev.preventDefault();
+    if (!this.atual || !this.podeEditarAtual()) return;
+    const cd = ev.clipboardData;
+    const html = cd.getData('text/html'), txt = cd.getData('text/plain');
+    const limpo = (html && this.L.limparHtml(html)) || this.L.textoParaHtml(txt) || escapeHtml(txt);
+    document.execCommand('insertHTML', false, limpo);
+    this.sincronizarRt(ed);
   },
   editarCampo(campo, t, mudou) {
     const r = this.atual;
@@ -424,7 +482,7 @@ const Reunioes = {
       titulo: r.titulo.trim(), data_hora: r.data_hora, duracao_min: r.duracao_min == null || r.duracao_min === '' ? null : Number(r.duracao_min),
       local: r.local || '', estado: r.estado, projeto_id: r.projeto_id || null, conta_id: r.conta_id || null, oportunidade_id: r.oportunidade_id || null,
       cliente: (r.cliente || '').trim(), projeto_nome: r.projeto_nome || '', oportunidade_titulo: r.oportunidade_titulo || '',
-      ordem_trabalhos: r.ordem_trabalhos || '', notas: r.notas || '',
+      ordem_trabalhos: r.ordem_trabalhos || '', notas: this.L.limparHtml(r.notas || ''),
       participantes: r.participantes, ficheiros: r.ficheiros.map(f => ({ id: f.id, nome: (f.nome || '').trim(), ligacao: (f.ligacao || '').trim() })), pontos: r.pontos
     };
   },

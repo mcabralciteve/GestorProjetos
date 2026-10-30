@@ -26,6 +26,27 @@ const ReunioesAta = {
   paragrafos(texto, o) {
     return String(texto == null ? '' : texto).replace(/\r\n/g, '\n').split('\n').map(l => this.par(l, Object.assign({ depois: 60 }, o))).join('');
   },
+  // Texto formatado das notas (HTML limpo de ReunioesLogica) → parágrafos do Word com negrito, itálico, sublinhado, riscado,
+  // tamanho, cor, títulos e listas. Notas antigas, em texto simples, são convertidas primeiro.
+  paragrafosRicos(notas) {
+    const L = this.L();
+    const blocos = L.htmlParaBlocos(L.notasParaEditor(notas));
+    return blocos.map(b => {
+      const nivel = b.lista ? b.lista.nivel : 0;
+      const ppr = `<w:pPr>${b.titulo ? '<w:keepNext/>' : ''}<w:spacing w:before="${b.titulo ? 160 : 0}" w:after="60"/>${b.lista ? `<w:ind w:left="${360 * nivel + 200}" w:hanging="300"/>` : ''}</w:pPr>`;
+      const marca = b.lista ? this.run(b.lista.tipo === 'ol' ? `${b.lista.n}.` : '•', {}) + '<w:r><w:tab/></w:r>' : '';
+      const runs = b.runs.map(r => r.br ? '<w:r><w:br/></w:r>' : this.run(r.t, b.titulo ? Object.assign({}, r, { b: true, tam: r.tam || 26 }) : r)).join('');
+      return `<w:p>${ppr}${marca}${runs}</w:p>`;
+    }).join('');
+  },
+  // Um trecho de texto com o seu formato: f = { b, i, u, s, tam (meios-pontos), cor (#rrggbb) }
+  run(texto, f) {
+    f = f || {};
+    const rpr = [f.b ? '<w:b/>' : '', f.i ? '<w:i/>' : '', f.s ? '<w:strike/>' : '', f.u ? '<w:u w:val="single"/>' : '',
+      f.cor ? `<w:color w:val="${String(f.cor).replace('#', '').replace(/^([0-9a-f])([0-9a-f])([0-9a-f])$/i, '$1$1$2$2$3$3').toUpperCase()}"/>` : '',
+      f.tam ? `<w:sz w:val="${f.tam}"/><w:szCs w:val="${f.tam}"/>` : ''].join('');
+    return `<w:r>${rpr ? `<w:rPr>${rpr}</w:rPr>` : ''}<w:t xml:space="preserve">${this.esc(texto)}</w:t></w:r>`;
+  },
   titulo(texto) { return this.par(texto, { estilo: 'Heading1' }); },
   celula(texto, largura, o) {
     o = o || {};
@@ -65,7 +86,7 @@ const ReunioesAta = {
         [3600, 4238, 1800], true));
     }
     if (String(r.ordem_trabalhos || '').trim()) { partes.push(this.titulo('Ordem de trabalhos')); partes.push(this.paragrafos(r.ordem_trabalhos)); }
-    if (String(r.notas || '').trim()) { partes.push(this.titulo('Assuntos tratados')); partes.push(this.paragrafos(r.notas)); }
+    if (L.notasParaEditor(r.notas)) { partes.push(this.titulo('Assuntos tratados')); partes.push(this.paragrafosRicos(r.notas)); }
 
     const decisoes = (r.pontos || []).filter(p => p.tipo === 'decisao');
     if (decisoes.length) { partes.push(this.titulo('Decisões')); decisoes.forEach((p, i) => partes.push(this.par(`${i + 1}. ${p.texto}`, { depois: 80 }))); }
