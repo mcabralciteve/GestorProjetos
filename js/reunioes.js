@@ -24,7 +24,8 @@ const Reunioes = {
     return {
       userId: App.usuarioAtualId, recursoId, admin: App.souAdmin(), crmVer: Crm.podeVer(),
       veProjeto: id => App.possoVerProjeto(id), editaProjeto: id => App.possoEditarProjeto(id),
-      souResponsavelOp: id => !!recursoId && (((Crm.idx.op && Crm.idx.op.get(id)) || {}).responsavel_id === recursoId)
+      souResponsavelOp: id => !!recursoId && (((Crm.idx.op && Crm.idx.op.get(id)) || {}).responsavel_id === recursoId),
+      souResponsavelConta: id => !!recursoId && (((Crm.idx.conta && Crm.idx.conta.get(id)) || {}).responsavel_id === recursoId)
     };
   },
   meuNome() { return (App.perfilAtual() || {}).nome || ''; },
@@ -109,12 +110,57 @@ const Reunioes = {
     this.ligar(this.corpo());
   },
 
+  // inicial (opcional): { projetoId, contaId, oportunidadeId } — para começar já ligada (a partir da ficha do cliente/oportunidade).
   nova(inicial) {
-    const p = inicial && inicial.projetoId ? App.state.projetos[inicial.projetoId] : null;
+    inicial = inicial || {};
+    const op = inicial.oportunidadeId && Crm.idx.op ? Crm.idx.op.get(inicial.oportunidadeId) : null;
+    const contaId = inicial.contaId || (op && op.conta_id) || null;
+    const conta = contaId && Crm.idx.conta ? Crm.idx.conta.get(contaId) : null;
+    const projetoId = inicial.projetoId || (op && op.projeto_id && App.state.projetos[op.projeto_id] && App.possoVerProjeto(op.projeto_id) ? op.projeto_id : null);
+    const p = projetoId ? App.state.projetos[projetoId] : null;
     this.atual = this.L.nova({ projeto: p });
     if (p) this.atual.projeto_nome = App.rotuloProjetoCompleto(p);
+    if (conta) { this.atual.conta_id = conta.id; if (!this.atual.cliente) this.atual.cliente = conta.nome; }
+    if (op) { this.atual.oportunidade_id = op.id; this.atual.oportunidade_titulo = op.titulo; }
     this.original = JSON.stringify(this.atual); // nova e ainda por tocar: sem alterações
     this.abrirEditor();
+  },
+  // A partir de outro ecrã (ficha do cliente/oportunidade): abre uma reunião, ou começa uma nova já ligada, no separador Reuniões.
+  abrirDeFora(id, inicial) {
+    if (this.sujo() && !confirm('Tens uma reunião por guardar no separador Reuniões. Descartar o que lá escreveste e continuar?')) return;
+    if (id) this.abrir(id); else this.nova(inicial);
+    App.fecharModal();
+    App.irParaAba('reunioes');
+  },
+  // Secção "Reuniões" da ficha da conta (ctx.contaId) ou da oportunidade (ctx.opId): as que a pessoa pode ver, mais recentes primeiro.
+  async secCrm(raiz, ctx) {
+    if (!raiz) return;
+    raiz.innerHTML = '<p class="hint">A carregar as reuniões…</p>';
+    await this.carregar();
+    if (!raiz.isConnected) return; // a janela mudou entretanto
+    if (this.semTabela) { raiz.innerHTML = '<p class="hint">O módulo de reuniões ainda não está instalado (falta correr supabase/reunioes.sql).</p>'; return; }
+    if (!this.carregado) { raiz.innerHTML = `<p class="hint">Não foi possível carregar as reuniões: ${escapeHtml(this.erro || '')}</p>`; return; }
+    let todas = this.visiveis();
+    if (ctx.opId) todas = this.L.daOportunidade(todas, ctx.opId);
+    else {
+      const conta = Crm.idx.conta && Crm.idx.conta.get(ctx.contaId);
+      const opIds = (Crm.d.oportunidades || []).filter(o => o.conta_id === ctx.contaId).map(o => o.id);
+      const projetoIds = conta ? CrmLogica.projetosDaConta(conta, Crm.d.oportunidades, Object.values(App.state.projetos)).map(x => x.projeto.id) : [];
+      todas = this.L.daConta(todas, { contaId: ctx.contaId, opIds, projetoIds });
+    }
+    const lista = todas.slice().sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora));
+    raiz.innerHTML = `${lista.length ? `<div class="crm-lista">${lista.map(r => {
+        const res = this.L.resumoPontos(r);
+        return `<div class="crm-item crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.L.formatarDataHora(r.data_hora))}</b> · ${escapeHtml(r.titulo)}
+          <span class="reu-estado reu-estado-${escapeAttr(r.estado)}">${escapeHtml(this.L.ESTADOS[r.estado] || r.estado)}</span></span>
+          <span class="hint">${r.participantes.length} pessoa(s)${res.acoesPorFechar ? ` · ${res.acoesPorFechar} ação(ões) por fechar` : ''}${r.ata_versao ? ` · ata v${r.ata_versao}` : ''}</span>
+          <button type="button" class="btn btn-sm" data-sec-acao="abrir" data-id="${escapeAttr(r.id)}">Abrir</button></div>`;
+      }).join('')}</div>` : '<p class="hint">Ainda sem reuniões registadas.</p>'}
+      <button type="button" class="btn btn-sm" data-sec-acao="nova">+ Reunião</button>`;
+    Crm.ligarAcoes(raiz, {
+      abrir: b => this.abrirDeFora(b.dataset.id),
+      nova: () => this.abrirDeFora(null, ctx.opId ? { oportunidadeId: ctx.opId } : { contaId: ctx.contaId })
+    });
   },
   abrir(id) {
     const r = this.lista.find(x => x.id === id);

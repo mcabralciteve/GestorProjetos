@@ -53,15 +53,16 @@ const ReunioesLogica = {
   },
 
   // ---------- Quem vê / edita ----------
-  // ctx: { userId, recursoId, admin, crmVer, veProjeto(id), editaProjeto(id), souResponsavelOp(id) }
+  // ctx: { userId, recursoId, admin, crmVer, veProjeto(id), editaProjeto(id), souResponsavelOp(id), souResponsavelConta(id) }
   // Vê: o Administrador, quem criou, quem é participante (colega), quem vê o projeto ligado, quem tem acesso ao CRM numa
-  // reunião ligada a uma oportunidade. Edita: Administrador, quem criou, quem edita o projeto ligado, o responsável da oportunidade.
+  // reunião ligada a uma oportunidade ou a uma conta. Edita: Administrador, quem criou, quem edita o projeto ligado, o responsável
+  // da oportunidade ou da conta.
   podeVer(r, ctx) {
     if (ctx.admin) return true;
     if (ctx.userId && r.criado_por_user === ctx.userId) return true;
     if (ctx.recursoId && (r.participantes || []).some(p => p.tipo === 'recurso' && p.ref_id === ctx.recursoId)) return true;
     if (r.projeto_id && ctx.veProjeto && ctx.veProjeto(r.projeto_id)) return true;
-    if (r.oportunidade_id && ctx.crmVer) return true;
+    if ((r.oportunidade_id || r.conta_id) && ctx.crmVer) return true;
     return false;
   },
   podeEditar(r, ctx) {
@@ -69,8 +70,15 @@ const ReunioesLogica = {
     if (ctx.userId && r.criado_por_user === ctx.userId) return true;
     if (r.projeto_id && ctx.editaProjeto && ctx.editaProjeto(r.projeto_id)) return true;
     if (r.oportunidade_id && ctx.souResponsavelOp && ctx.souResponsavelOp(r.oportunidade_id)) return true;
+    if (r.conta_id && ctx.souResponsavelConta && ctx.souResponsavelConta(r.conta_id)) return true;
     return false;
   },
+  // Reuniões que pertencem a uma conta (ficha do cliente): ligadas à conta, a uma das suas oportunidades ou a um dos seus projetos.
+  daConta(lista, { contaId, opIds, projetoIds }) {
+    const ops = new Set(opIds || []), projs = new Set(projetoIds || []);
+    return (lista || []).filter(r => r.conta_id === contaId || (r.oportunidade_id && ops.has(r.oportunidade_id)) || (r.projeto_id && projs.has(r.projeto_id)));
+  },
+  daOportunidade(lista, opId) { return (lista || []).filter(r => r.oportunidade_id === opId); },
 
   // ---------- Lista: filtros e ordem ----------
   // f: { texto, estado ('' = todos), projeto (id ou ''), periodo ('' | 'proximas' | 'passadas') }
