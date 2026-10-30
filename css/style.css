@@ -428,6 +428,9 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
   background:var(--branco);
   position:relative;
 }
+/* Mapa de Gantt escondido (por omissão): a lista de tarefas ocupa a largura toda e o zoom, que é do mapa, desaparece. */
+#tab-gantt.sem-mapa #resizerTabela,#tab-gantt.sem-mapa .painel-gantt,#tab-gantt.sem-mapa .toolbar .zoom-label{display:none;}
+#tab-gantt.sem-mapa .painel-tabela{width:auto !important;flex:1;}
 
 .tabela-tarefas{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;}
 .tabela-tarefas thead th{

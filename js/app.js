@@ -44,6 +44,9 @@ const App = {
   STORAGE_KEY: 'gp_state_v2',
   state: { departamentos: [], recursos: [], feriados: [], ausencias: [], equipas: [], registos: [], projetos: {}, utilizadores: [], tiposTrabalho: [], reservasViatura: [], historicoEquipas: [], configuracoes: { emailViaturas1: '', emailViaturas2: '', emailRH: '', ocupacaoLimiteBaixo: 60, ocupacaoLimiteAlto: 80, ocupacaoLimiteCritico: 100 }, projetoAtivoId: null },
   zoom: 14,
+  // O mapa de Gantt só se desenha quando a pessoa o pede (preferência deste browser): a lista de tarefas é o que mais se usa e o mapa
+  // é a parte mais pesada de um projeto longo.
+  ganttVisivel: false,
   selecionadaId: null,
   selecionadasIds: new Set(),
   colapsadas: new Set(),
@@ -297,6 +300,7 @@ const App = {
       modalCorpo: document.getElementById('modalCorpo'),
       toast: document.getElementById('toast'),
       chkMoverDependentes: document.getElementById('chkMoverDependentes'),
+      chkMostrarMapa: document.getElementById('chkMostrarMapa'),
       tabBtnAnalise: document.getElementById('tabBtnAnalise'),
       anKpis: document.getElementById('anKpis'), anPeriodo: document.getElementById('anPeriodo'), anDe: document.getElementById('anDe'), anAte: document.getElementById('anAte'),
       anAgrupar: document.getElementById('anAgrupar'), anGran: document.getElementById('anGran'), anDept: document.getElementById('anDept'), anEquipa: document.getElementById('anEquipa'),
@@ -4313,37 +4317,41 @@ const App = {
     });
   },
 
+  // Cada alteração chama renderTudo, e redesenhar TODOS os separadores a cada alteração custava quase um segundo num projeto grande.
+  // Agora só se refaz o separador que está à vista; os outros ficam marcados como "sujos" e refazem-se quando se abrem (irParaAba).
+  //  - REFEITAS_AO_ABRIR: o irParaAba já as desenha de qualquer maneira — basta não as desenhar enquanto o separador está escondido;
+  //  - ABAS_SUJAS: o irParaAba não as desenha, por isso ficam marcadas e refazem-se na abertura (refazerAbaSuja).
+  // O que é barato, ou que alimenta caixas de escolha usadas noutros sítios, continua a refazer-se sempre.
+  REFEITAS_AO_ABRIR: { dashboard: ['renderDashboard'], gantt: ['renderGanttAtual'], dia: ['renderRegistoDia'], alocacoes: ['renderCalendarioAlocacoes'] },
+  ABAS_SUJAS: {
+    gantt: ['renderTabelaTarefas'], projetos: ['renderTabelaProjetos'], portefolio: ['renderPortefolio'], orcprev: ['renderQuadroOrcprev'],
+    ausencias: ['renderTabelaAusencias', 'renderCalendarioEquipaAusencias', 'renderCalendarioFerias'],
+    capacidade: ['renderFiltroEquipaCap', 'renderCapacidade'], registo: ['renderTabelaRegistos'], faturacao: ['renderFaturacao'],
+    acompanhamento: ['renderAcompanhamento']
+  },
+  _abasSujas: new Set(),
+  refazerAbaSuja(aba) {
+    if (!this._abasSujas.has(aba)) return;
+    this._abasSujas.delete(aba);
+    (this.ABAS_SUJAS[aba] || []).forEach(f => this[f]());
+  },
   renderTudo() {
     // As horas reais podem ter mudado desde a última vez: atualiza a % das tarefas em modo automático.
     Object.values(this.state.projetos).forEach(pr => { if ((pr.tarefas || []).some(t => t.progAuto)) this.aplicarProgressoAuto(pr); });
     this.aplicarPermissoesUI();
     this.renderNotificacoes();
-    this.renderDashboard();
     this.renderInfoProjeto();
-    this.renderTabelaTarefas();
-    this.renderGanttAtual();
-    this.renderTabelaProjetos();
-    this.renderPortefolio();
+    Object.keys(this.ABAS_SUJAS).forEach(aba => { if (aba === this.abaAtiva) { this._abasSujas.add(aba); this.refazerAbaSuja(aba); } else this._abasSujas.add(aba); });
+    Object.entries(this.REFEITAS_AO_ABRIR).forEach(([aba, fns]) => { if (aba === this.abaAtiva) fns.forEach(f => this[f]()); });
     this.renderTabelaRecursosCentral();
     this.renderTabelaDepartamentos();
     this.renderTabelaEquipas();
     this.renderTabelaTiposTrabalho();
-    this.renderQuadroOrcprev();
     this.renderTabelaFeriados();
-    this.renderTabelaAusencias();
-    this.renderCalendarioEquipaAusencias();
-    this.renderCalendarioFerias();
-    this.renderFiltroEquipaCap();
-    this.renderCapacidade();
-    this.renderCalendarioAlocacoes();
     this.renderFormRegisto();
-    this.renderTabelaRegistos();
-    this.renderRegistoDia();
-    this.renderFaturacao();
     this.renderFormReservaViatura();
     this.renderTabelaReservasViatura();
     this.renderDefinicoes();
-    this.renderAcompanhamento();
     if (this.abaAtiva === 'analise') this.renderAnalise();
     if (this.abaAtiva === 'financeiro') this.renderFinanceiro();
     if (this.abaAtiva === 'previsao') Previsao.render();
@@ -9231,7 +9239,7 @@ const App = {
 
   renderGanttAtual() {
     const p = this.projetoAtivo();
-    if (!p) { this.els.ganttContainer.innerHTML = ''; return; }
+    if (!p || !this.ganttVisivel) { this.els.ganttContainer.innerHTML = ''; return; }
     const lista = this.flatten(p);
     Gantt.render(this.els.ganttContainer, p, lista, {
       zoom: this.zoom,
@@ -9322,6 +9330,7 @@ const App = {
   async exportarImagem() {
     const p = this.projetoAtivo();
     if (!p) { this.toast('Escolhe um projeto primeiro.'); return; }
+    if (!this.ganttVisivel) { this.toast('O mapa de Gantt está escondido: mostra-o primeiro (botão do gráfico na barra) para o exportar.'); return; }
     const svgs = this.els.ganttContainer.querySelectorAll('svg');
     if (svgs.length < 2) { this.toast('Nada para exportar.'); return; }
     const [headerSvg, bodySvg] = svgs;
@@ -10205,6 +10214,7 @@ const App = {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + nome));
     document.querySelectorAll('.grupo-btn').forEach(b => b.classList.toggle('active', b.dataset.grupo === grupo));
     document.querySelectorAll('.tabs-grupo').forEach(g => g.classList.toggle('active', g.dataset.grupo === grupo));
+    this.refazerAbaSuja(nome); // o que mudou enquanto este separador estava escondido (ver renderTudo)
     if (nome === 'dashboard') this.renderDashboard();
     if (nome === 'gantt') this.renderGanttAtual();
     if (nome === 'dia') { this.renderRegistoDia(); this.renderCalendarioRegisto(); this.centrarHojeCalendario(); }
@@ -11097,6 +11107,13 @@ const App = {
     document.getElementById('btnDelTarefa').addEventListener('click', () => this.eliminarTarefaSelecionada());
     e.btnToggleSidebar.addEventListener('click', () => this.alternarSidebar());
 
+    if (e.chkMostrarMapa) e.chkMostrarMapa.addEventListener('change', () => {
+      this.ganttVisivel = e.chkMostrarMapa.checked;
+      this.gravarPrefUI('ganttVisivel', this.ganttVisivel);
+      this.aplicarMapaVisivel();
+      this.renderGanttAtual();
+    });
+
     e.selZoom.addEventListener('input', () => {
       this.zoom = parseInt(e.selZoom.value, 10);
       this.els.zoomLabel.textContent = this.rotuloZoom(this.zoom);
@@ -11393,8 +11410,16 @@ const App = {
     if (px >= 9) return 'Semanas';
     return 'Meses';
   },
+  // Mostra/esconde o mapa de Gantt e arruma a lista de tarefas (largura toda quando o mapa está escondido).
+  aplicarMapaVisivel() {
+    const painel = document.getElementById('tab-gantt');
+    if (painel) painel.classList.toggle('sem-mapa', !this.ganttVisivel);
+    if (this.els.chkMostrarMapa) this.els.chkMostrarMapa.checked = this.ganttVisivel;
+  },
   wireResizers() {
     const prefs = this.lerPrefsUI();
+    this.ganttVisivel = prefs.ganttVisivel === true;
+    this.aplicarMapaVisivel();
     if (prefs.sidebarW) this.els.sidebarGantt.style.width = prefs.sidebarW + 'px';
     if (prefs.tabelaW) this.els.painelTabela.style.width = prefs.tabelaW + 'px';
     if (prefs.portGanttW) this.els.painelTabelaPortGantt.style.width = prefs.portGanttW + 'px';

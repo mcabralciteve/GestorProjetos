@@ -340,9 +340,18 @@ const Gantt = {
     svg.appendChild(g);
   },
 
+  // Os ouvintes de pointermove/pointerup vivem no document (ao arrastar, o rato sai do SVG) e registam-se UMA só vez. Antes registavam-se
+  // de novo a cada desenho e nunca se tiravam, e cada um mantinha vivo o SVG antigo inteiro (milhares de elementos): a app ia ficando
+  // mais lenta com o uso. O estado do desenho atual fica em this._ctx; um desenho novo substitui-o (e deita fora um arrastar a meio,
+  // cujo SVG já não existe).
   wireInteracoes(svg, projeto, lista, rangeStart, pxPerDia, opts) {
-    let drag = null;
-    let linkTemp = null;
+    const ctx = { svg, projeto, lista, rangeStart, pxPerDia, drag: null, linkTemp: null };
+    this._ctx = ctx;
+    if (!this._ouvintesDocumento) {
+      this._ouvintesDocumento = true;
+      document.addEventListener('pointermove', (e) => this._aoMover(e));
+      document.addEventListener('pointerup', (e) => this._aoSoltar(e));
+    }
 
     const posSvg = (evt) => {
       const rect = svg.getBoundingClientRect();
@@ -359,107 +368,110 @@ const Gantt = {
       if (!App.possoEditarProjeto(projeto.id)) { App.selecionarTarefa(taskId); return; }
 
       if (papel === 'conector') {
-        drag = { tipo: 'link', origemId: taskId };
+        ctx.drag = { tipo: 'link', origemId: taskId };
         const p0 = posSvg(e);
-        linkTemp = document.createElementNS(Gantt.SVGNS, 'path');
-        linkTemp.setAttribute('class', 'gantt-link temp');
-        linkTemp.dataset.origem = p0.x + ',' + p0.y;
-        svg.appendChild(linkTemp);
+        ctx.linkTemp = document.createElementNS(Gantt.SVGNS, 'path');
+        ctx.linkTemp.setAttribute('class', 'gantt-link temp');
+        ctx.linkTemp.dataset.origem = p0.x + ',' + p0.y;
+        svg.appendChild(ctx.linkTemp);
         e.preventDefault();
         return;
       }
       if (App.temFilhos(projeto, taskId)) { App.selecionarTarefa(taskId); return; }
 
       if (papel === 'handle') {
-        drag = { tipo: 'resize', taskId, lado: alvo.dataset.lado, startX: e.clientX, inicioOrig: t.inicio, fimOrig: t.fim, moveu: false };
+        ctx.drag = { tipo: 'resize', taskId, lado: alvo.dataset.lado, startX: e.clientX, inicioOrig: t.inicio, fimOrig: t.fim, moveu: false };
         e.preventDefault();
       } else if (papel === 'bar' || papel === 'row') {
-        drag = { tipo: 'mover', taskId, startX: e.clientX, inicioOrig: t.inicio, fimOrig: t.fim, moveu: false };
+        ctx.drag = { tipo: 'mover', taskId, startX: e.clientX, inicioOrig: t.inicio, fimOrig: t.fim, moveu: false };
         e.preventDefault();
       }
     });
+  },
 
-    document.addEventListener('pointermove', (e) => {
-      if (!drag) return;
-      if (drag.tipo === 'link') {
-        const rect = svg.getBoundingClientRect();
-        const p0 = drag.origemId != null ? null : null;
-        const origemTask = App.tarefaPorId(projeto, drag.origemId);
-        const idxOrigem = lista.findIndex(x => x.tarefa.id === drag.origemId);
-        const g0 = Gantt.barraGeom(origemTask, rangeStart, pxPerDia, idxOrigem);
-        const x1 = g0.x + g0.w, y1 = g0.y + Gantt.ROW_H / 2;
-        const x2 = e.clientX - rect.left, y2 = e.clientY - rect.top;
-        linkTemp.setAttribute('d', `M${x1},${y1} L${x2},${y2}`);
-        return;
+  _aoMover(e) {
+    const c = this._ctx;
+    if (!c || !c.drag) return;
+    const { drag, svg, projeto, lista, rangeStart, pxPerDia } = c;
+    if (drag.tipo === 'link') {
+      const rect = svg.getBoundingClientRect();
+      const origemTask = App.tarefaPorId(projeto, drag.origemId);
+      const idxOrigem = lista.findIndex(x => x.tarefa.id === drag.origemId);
+      const g0 = Gantt.barraGeom(origemTask, rangeStart, pxPerDia, idxOrigem);
+      const x1 = g0.x + g0.w, y1 = g0.y + Gantt.ROW_H / 2;
+      const x2 = e.clientX - rect.left, y2 = e.clientY - rect.top;
+      c.linkTemp.setAttribute('d', `M${x1},${y1} L${x2},${y2}`);
+      return;
+    }
+    const deltaPx = e.clientX - drag.startX;
+    const deltaDias = Math.round(deltaPx / pxPerDia);
+    if (deltaDias !== 0) drag.moveu = true;
+    const inicioOrig = DateUtil.parseISO(drag.inicioOrig);
+    const fimOrig = DateUtil.parseISO(drag.fimOrig);
+    let novoInicio = inicioOrig, novoFim = fimOrig;
+    if (drag.tipo === 'mover') {
+      novoInicio = DateUtil.addDays(inicioOrig, deltaDias);
+      novoFim = DateUtil.addDays(fimOrig, deltaDias);
+    } else if (drag.tipo === 'resize' && drag.lado === 'esq') {
+      novoInicio = DateUtil.addDays(inicioOrig, deltaDias);
+      if (novoInicio > fimOrig) novoInicio = fimOrig;
+    } else if (drag.tipo === 'resize' && drag.lado === 'dir') {
+      novoFim = DateUtil.addDays(fimOrig, deltaDias);
+      if (novoFim < inicioOrig) novoFim = inicioOrig;
+    }
+    const g = svg.querySelector(`g[data-task-id="${drag.taskId}"]`);
+    if (g) {
+      const bar = g.querySelector('[data-papel="bar"]');
+      const altura = parseFloat(bar.getAttribute('height'));
+      const barY = parseFloat(bar.getAttribute('y'));
+      const x = DateUtil.diffDays(rangeStart, novoInicio) * pxPerDia;
+      const w = Math.max((DateUtil.diffDays(novoInicio, novoFim) + 1) * pxPerDia, 4);
+      bar.setAttribute('x', x); bar.setAttribute('width', w);
+      const prog = g.querySelector('.gantt-bar-prog');
+      if (prog) { prog.setAttribute('x', x); }
+      let fimVisual = x + w;
+      const losango = g.querySelector('polygon.gantt-bar');
+      if (losango) {
+        const cx = x + w / 2, cy = barY + altura / 2, r = altura / 2 + 3;
+        losango.setAttribute('points', `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`);
+        fimVisual = cx + r;
       }
-      const deltaPx = e.clientX - drag.startX;
-      const deltaDias = Math.round(deltaPx / pxPerDia);
-      if (deltaDias !== 0) drag.moveu = true;
-      const inicioOrig = DateUtil.parseISO(drag.inicioOrig);
-      const fimOrig = DateUtil.parseISO(drag.fimOrig);
-      let novoInicio = inicioOrig, novoFim = fimOrig;
-      if (drag.tipo === 'mover') {
-        novoInicio = DateUtil.addDays(inicioOrig, deltaDias);
-        novoFim = DateUtil.addDays(fimOrig, deltaDias);
-      } else if (drag.tipo === 'resize' && drag.lado === 'esq') {
-        novoInicio = DateUtil.addDays(inicioOrig, deltaDias);
-        if (novoInicio > fimOrig) novoInicio = fimOrig;
-      } else if (drag.tipo === 'resize' && drag.lado === 'dir') {
-        novoFim = DateUtil.addDays(fimOrig, deltaDias);
-        if (novoFim < inicioOrig) novoFim = inicioOrig;
-      }
-      const g = svg.querySelector(`g[data-task-id="${drag.taskId}"]`);
-      if (g) {
-        const bar = g.querySelector('[data-papel="bar"]');
-        const altura = parseFloat(bar.getAttribute('height'));
-        const barY = parseFloat(bar.getAttribute('y'));
-        const x = DateUtil.diffDays(rangeStart, novoInicio) * pxPerDia;
-        const w = Math.max((DateUtil.diffDays(novoInicio, novoFim) + 1) * pxPerDia, 4);
-        bar.setAttribute('x', x); bar.setAttribute('width', w);
-        const prog = g.querySelector('.gantt-bar-prog');
-        if (prog) { prog.setAttribute('x', x); }
-        let fimVisual = x + w;
-        const losango = g.querySelector('polygon.gantt-bar');
-        if (losango) {
-          const cx = x + w / 2, cy = barY + altura / 2, r = altura / 2 + 3;
-          losango.setAttribute('points', `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`);
-          fimVisual = cx + r;
-        }
-        const label = g.querySelector('.gantt-label');
-        if (label) label.setAttribute('x', fimVisual + 6);
-        const hl = g.querySelector('[data-lado="esq"]'); if (hl) hl.setAttribute('x', x - 3);
-        const hr = g.querySelector('[data-lado="dir"]'); if (hr) hr.setAttribute('x', x + w - 3);
-        const conector = g.querySelector('[data-papel="conector"]'); if (conector) conector.setAttribute('cx', x + w + 8);
-      }
-      drag._novoInicio = DateUtil.toISO(novoInicio);
-      drag._novoFim = DateUtil.toISO(novoFim);
-    });
+      const label = g.querySelector('.gantt-label');
+      if (label) label.setAttribute('x', fimVisual + 6);
+      const hl = g.querySelector('[data-lado="esq"]'); if (hl) hl.setAttribute('x', x - 3);
+      const hr = g.querySelector('[data-lado="dir"]'); if (hr) hr.setAttribute('x', x + w - 3);
+      const conector = g.querySelector('[data-papel="conector"]'); if (conector) conector.setAttribute('cx', x + w + 8);
+    }
+    drag._novoInicio = DateUtil.toISO(novoInicio);
+    drag._novoFim = DateUtil.toISO(novoFim);
+  },
 
-    document.addEventListener('pointerup', (e) => {
-      if (!drag) return;
-      if (drag.tipo === 'link') {
-        if (linkTemp) linkTemp.remove();
-        linkTemp = null;
-        const alvoEl = document.elementFromPoint(e.clientX, e.clientY);
-        const destTaskId = alvoEl && alvoEl.dataset ? alvoEl.dataset.taskId : null;
-        if (destTaskId && destTaskId !== drag.origemId) {
-          if (App.temFilhos(projeto, destTaskId)) {
-            App.toast('Tarefas-resumo não podem ter predecessoras.');
-          } else {
-            if (App.ligarTarefas(destTaskId, drag.origemId, 'FS', 0)) {
-              App.renderTudo();
-            }
+  _aoSoltar(e) {
+    const c = this._ctx;
+    if (!c || !c.drag) return;
+    const { drag, projeto } = c;
+    if (drag.tipo === 'link') {
+      if (c.linkTemp) c.linkTemp.remove();
+      c.linkTemp = null;
+      c.drag = null;
+      const alvoEl = document.elementFromPoint(e.clientX, e.clientY);
+      const destTaskId = alvoEl && alvoEl.dataset ? alvoEl.dataset.taskId : null;
+      if (destTaskId && destTaskId !== drag.origemId) {
+        if (App.temFilhos(projeto, destTaskId)) {
+          App.toast('Tarefas-resumo não podem ter predecessoras.');
+        } else {
+          if (App.ligarTarefas(destTaskId, drag.origemId, 'FS', 0)) {
+            App.renderTudo();
           }
         }
-        drag = null;
-        return;
       }
-      if (drag.moveu) {
-        App.moverTarefa(drag.taskId, drag._novoInicio || drag.inicioOrig, drag._novoFim || drag.fimOrig);
-      } else {
-        App.selecionarTarefa(drag.taskId);
-      }
-      drag = null;
-    });
+      return;
+    }
+    c.drag = null; // antes de gravar: gravar redesenha o Gantt (e troca o contexto)
+    if (drag.moveu) {
+      App.moverTarefa(drag.taskId, drag._novoInicio || drag.inicioOrig, drag._novoFim || drag.fimOrig);
+    } else {
+      App.selecionarTarefa(drag.taskId);
+    }
   }
 };

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261103b">
+<link rel="stylesheet" href="css/style.css?v=20261103c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -281,6 +281,7 @@
         <button id="btnDelTarefa" class="ib ib-danger ib-sep" data-icone="trash" data-tip="Eliminar as tarefas selecionadas" aria-label="Eliminar tarefas"></button>
         <span class="spacer"></span>
         <label class="ib ib-toggle" data-icone="link" data-tip="Mover dependentes: ao mover uma tarefa (arrastar a barra ou mudar a data de início), as que dependem dela deslocam-se o mesmo número de dias, mantendo as folgas entre elas." aria-label="Mover dependentes"><input type="checkbox" id="chkMoverDependentes" checked></label>
+        <label class="ib ib-toggle" data-icone="chart-bar" data-tip="Mostrar o mapa de Gantt. Está escondido por omissão: a lista de tarefas é o que mais se usa, e sem o mapa tudo responde mais depressa." data-tip-r="1" aria-label="Mostrar o mapa de Gantt"><input type="checkbox" id="chkMostrarMapa"></label>
         <label class="zoom-label" data-tip="Zoom do Gantt: arrasta para ajustar" data-icone="zoom-in" data-tip-r="1"><span id="zoomLabel">Semanas</span>
           <input type="range" id="selZoom" class="zoom-slider" min="2" max="60" step="1" value="14" aria-label="Zoom do Gantt">
         </label>
@@ -1345,7 +1346,7 @@
 <script src="js/reunioes-logica.js?v=20261103a"></script>
 <script src="js/reunioes-ata.js?v=20261103a"></script>
 <script src="js/sync.js?v=20261101d"></script>
-<script src="js/gantt.js?v=20261101a"></script>
+<script src="js/gantt.js?v=20261103a"></script>
 <script src="js/capacidade.js?v=20261101a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
@@ -1370,6 +1371,6 @@
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261031e"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
-<script src="js/app.js?v=20261103a"></script>
+<script src="js/app.js?v=20261103c"></script>
 </body>
 </html>
