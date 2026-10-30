@@ -1258,6 +1258,8 @@ const Crm = {
       const mult = f.dir === 'desc' ? -1 : 1;
       Object.keys(g).forEach(k => g[k].sort((a, b) => { const va = valor(a), vb = valor(b); if (!va || !vb) return !va && !vb ? 0 : (!va ? 1 : -1); return String(va).localeCompare(String(vb), 'pt', { numeric: true, sensitivity: 'base' }) * mult; }));
     }
+    // As ações comerciais decididas em reuniões (por fazer) aparecem aqui, junto dos follow-ups — com a mesma escolha "Os meus / Todos".
+    const acoesReunioes = f.estado === 'concluidas' ? '' : Reunioes.htmlAcoesCrm(f.quem === 'todas' ? 'todas' : 'minhas', () => { if (el.isConnected) this.renderFollowups(el); });
     const rotulos = { atrasada: '⚠ Em atraso', hoje: 'Hoje', proxima: 'Próximos dias', 'sem-data': 'Sem data', concluida: 'Concluídas' };
     const blocos = Object.keys(rotulos).filter(k => g[k].length).map(k => `<h4 class="crm-h ${k === 'atrasada' ? 'crm-atrasada' : ''}">${rotulos[k]} (${g[k].length})</h4>
       <div class="crm-lista">${g[k].map(t => {
@@ -1276,9 +1278,10 @@ const Crm = {
         <label class="zoom-label">Ordenar por <select data-crm-filtro="tarefas.ordem">${[['prazo', 'Prazo'], ['descricao', 'Descrição'], ['oportunidade', 'Oportunidade'], ['conta', 'Conta'], ['resp', 'Responsável']].map(([k, v]) => `<option value="${k}"${f.ordem === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="zoom-label">Sentido <select data-crm-filtro="tarefas.dir"><option value="asc"${f.dir === 'asc' ? ' selected' : ''}>Crescente</option><option value="desc"${f.dir === 'desc' ? ' selected' : ''}>Decrescente</option></select></label>
         <span class="crm-barra-fim"><button type="button" class="ib ib-pri" data-crm-acao="nova-tarefa" data-tip="Criar um follow-up" aria-label="Novo follow-up">${Icones.svg('plus')}<span>Novo follow-up</span></button></span>
-      </div>${blocos || this.vazioHtml('Nada por fazer. 🎉')}`;
+      </div>${acoesReunioes}${blocos || (acoesReunioes ? '' : this.vazioHtml('Nada por fazer. 🎉'))}`;
     // Os "links" são âncoras: não saltar para o topo da página.
     el.querySelectorAll('a[data-crm-acao]').forEach(a => a.addEventListener('click', ev => ev.preventDefault()));
+    Reunioes.ligarAcoesCrm(el, () => this.renderFollowups(el));
   },
 
   // ---------- Secções da ficha da oportunidade ----------

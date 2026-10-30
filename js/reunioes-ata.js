@@ -47,6 +47,13 @@ const ReunioesAta = {
       f.tam ? `<w:sz w:val="${f.tam}"/><w:szCs w:val="${f.tam}"/>` : ''].join('');
     return `<w:r>${rpr ? `<w:rPr>${rpr}</w:rPr>` : ''}<w:t xml:space="preserve">${this.esc(texto)}</w:t></w:r>`;
   },
+  // O texto da ação e, numa segunda linha, a que se refere (tarefa do projeto ou ação comercial), quando foi indicado.
+  textoAcao(p, r) {
+    let ref = '';
+    if (p.natureza === 'projeto') ref = p.tarefa_nome ? `Tarefa: ${p.tarefa_nome}` : `Projeto${r.projeto_nome ? ': ' + r.projeto_nome : ''}`;
+    else if (p.natureza === 'comercial') ref = 'Ação comercial';
+    return ref ? `${p.texto}\n${ref}` : p.texto;
+  },
   titulo(texto) { return this.par(texto, { estilo: 'Heading1' }); },
   celula(texto, largura, o) {
     o = o || {};
@@ -94,7 +101,7 @@ const ReunioesAta = {
     if (acoes.length) {
       partes.push(this.titulo('Ações'));
       partes.push(this.tabela(
-        [['Ação', 'Responsável', 'Prazo', 'Estado']].concat(acoes.map(p => [p.texto, p.responsavel || '—', p.prazo ? L.formatarDia(p.prazo) : '—', p.concluida ? 'Concluída' : 'Por fazer'])),
+        [['Ação', 'Responsável', 'Prazo', 'Estado']].concat(acoes.map(p => [this.textoAcao(p, r), p.responsavel || '—', p.prazo ? L.formatarDia(p.prazo) : '—', p.concluida ? 'Concluída' : 'Por fazer'])),
         [4338, 2200, 1500, 1600], true));
     }
     const ficheiros = r.ficheiros || [];

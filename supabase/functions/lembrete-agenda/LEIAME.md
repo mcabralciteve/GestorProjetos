@@ -9,6 +9,7 @@ Cada secção só aparece se tiver conteúdo; quem não tem nada, ou está ausen
 | Tarefas de hoje | as do cartão "A minha agenda de hoje" do Início (tarefas-folha de projetos ativos com hoje no período), com % concluída, horas previstas (se definidas) e horas já registadas |
 | Em atraso | tarefas suas com data de fim passada e menos de 100% (as mais recentes primeiro) |
 | Next steps abertos | next steps de que é responsável (abertos ou em curso, não fechados), os atrasados primeiro |
+| Ações de reuniões | ações decididas em reuniões (módulo Reuniões) atribuídas à pessoa — só por fazer, de reuniões não canceladas, com prazo até daqui a 7 dias (as atrasadas primeiro). Cada linha diz de onde vem: projeto › tarefa, ação comercial (cliente · oportunidade) ou o cliente. As sem prazo não vão no email (ficam no cartão "As minhas ações de reuniões" do Início). Só entra quem é **colega da app** (responsável ligado a uma pessoa); responsáveis externos não recebem nada |
 | Nos próximos dias | tarefas que começam nos próximos 7 dias |
 | Pedidos de ausência por aprovar | só para quem decide: o Administrador (todos), o líder da equipa e o diretor do departamento (os da sua equipa/departamento, nunca o próprio pedido) |
 | Comercial — follow-ups | só para quem vê o Comercial (Administrador, diretores, líderes): os seus follow-ups por fazer até hoje, os atrasados primeiro |
@@ -17,6 +18,9 @@ Cada secção só aparece se tiver conteúdo; quem não tem nada, ou está ausen
 Cada lista mostra no máximo 8 tarefas / 10 next steps ("… e mais N"). As horas registadas só contam registos
 ligados à tarefa por id. Cada pessoa pode desligar estes emails, ou escolher só as secções que quer, em **A minha conta** (guarda em
 `recursos.resumo_secoes`; precisa de correr `supabase/resumo_preferencias.sql` uma vez).
+
+**Ações de reuniões** (novo): não precisa de SQL — lê a tabela `reunioes` que já existe. Basta republicar a função: `npx supabase functions deploy lembrete-agenda --no-verify-jwt`.
+Se a tabela não existir (ou a leitura falhar), o resumo segue sem esta secção. Cada pessoa pode desligá-la em **A minha conta**.
 
 Usa a mesma infraestrutura do lembrete de horas (Microsoft Graph, `CRON_SECRET`, Modo piloto, hora
 de envio configurável, parâmetros de teste `dry`/`apenas`/`destino`/`forcar`) — instala primeiro

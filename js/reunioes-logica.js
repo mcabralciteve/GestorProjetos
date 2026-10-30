@@ -5,11 +5,15 @@
 //     oportunidade_titulo, ordem_trabalhos, notas, participantes[], ficheiros[], pontos[], ata_versao, versao, ... }
 //   participante: { id, tipo: 'recurso'|'contacto'|'externo', ref_id, nome, organizacao, cargo, email, presente }
 //   ficheiro:     { id, nome, ligacao }
-//   ponto:        { id, tipo: 'decisao'|'acao', texto, responsavel, responsavel_recurso_id, prazo, concluida }
+//   ponto:        { id, tipo: 'decisao'|'acao', texto, responsavel, responsavel_recurso_id, prazo, concluida,
+//                   natureza ('' geral | 'projeto' | 'comercial'), tarefa_id + tarefa_nome (só com natureza 'projeto') }
+//   Uma ação cujo responsável é um colega da app (responsavel_recurso_id) entra nas tarefas dessa pessoa (Início, sino) e no resumo diário.
 const ReunioesLogica = {
   ESTADOS: { agendada: 'Agendada', realizada: 'Realizada', cancelada: 'Cancelada' },
   TIPOS_PONTO: { decisao: 'Decisão', acao: 'Ação' },
   TIPOS_PARTICIPANTE: { recurso: 'Colega', contacto: 'Cliente', externo: 'Externo' },
+  // A que se refere uma ação: ao projeto da reunião (opcionalmente a uma das suas tarefas) ou ao trabalho comercial (conta/oportunidade).
+  NATUREZAS: { '': 'Geral', projeto: 'Tarefa do projeto', comercial: 'Comercial' },
 
   novoId() { return globalThis.crypto.randomUUID(); },
 
@@ -20,7 +24,7 @@ const ReunioesLogica = {
   normalizar(l) {
     const lista = v => Array.isArray(v) ? v : [];
     return Object.assign({}, l, {
-      participantes: lista(l.participantes), ficheiros: lista(l.ficheiros), pontos: lista(l.pontos),
+      participantes: lista(l.participantes), ficheiros: lista(l.ficheiros), pontos: lista(l.pontos).map(p => this.normalizarPonto(p)),
       ata_versao: Number(l.ata_versao) || 0, versao: Number(l.versao) || 1
     });
   },
@@ -54,13 +58,14 @@ const ReunioesLogica = {
 
   // ---------- Quem vê / edita ----------
   // ctx: { userId, recursoId, admin, crmVer, veProjeto(id), editaProjeto(id), souResponsavelOp(id), souResponsavelConta(id) }
-  // Vê: o Administrador, quem criou, quem é participante (colega), quem vê o projeto ligado, quem tem acesso ao CRM numa
-  // reunião ligada a uma oportunidade ou a uma conta. Edita: Administrador, quem criou, quem edita o projeto ligado, o responsável
+  // Vê: o Administrador, quem criou, quem é participante (colega), quem é responsável por uma das ações (colega), quem vê o
+  // projeto ligado, quem tem acesso ao CRM numa reunião ligada a uma oportunidade ou a uma conta. Edita: Administrador, quem criou, quem edita o projeto ligado, o responsável
   // da oportunidade ou da conta.
   podeVer(r, ctx) {
     if (ctx.admin) return true;
     if (ctx.userId && r.criado_por_user === ctx.userId) return true;
     if (ctx.recursoId && (r.participantes || []).some(p => p.tipo === 'recurso' && p.ref_id === ctx.recursoId)) return true;
+    if (ctx.recursoId && (r.pontos || []).some(p => p.tipo === 'acao' && p.responsavel_recurso_id === ctx.recursoId)) return true;
     if (r.projeto_id && ctx.veProjeto && ctx.veProjeto(r.projeto_id)) return true;
     if ((r.oportunidade_id || r.conta_id) && ctx.crmVer) return true;
     return false;
@@ -115,10 +120,72 @@ const ReunioesLogica = {
   },
 
   // ---------- Pontos (decisões e ações) ----------
-  novoPonto(tipo) { return { id: this.novoId(), tipo: tipo === 'decisao' ? 'decisao' : 'acao', texto: '', responsavel: '', responsavel_recurso_id: null, prazo: null, concluida: false }; },
+  novoPonto(tipo, natureza) {
+    const acao = tipo !== 'decisao';
+    return this.normalizarPonto({ id: this.novoId(), tipo: acao ? 'acao' : 'decisao', texto: '', responsavel: '', responsavel_recurso_id: null, prazo: null, concluida: false, natureza: acao ? natureza : '' });
+  },
+  // Ponto com os campos de ligação sempre presentes e coerentes (os pontos antigos não tinham "natureza"; a tarefa só vale em ações do projeto).
+  normalizarPonto(p) {
+    const acao = p.tipo === 'acao';
+    const natureza = acao && Object.prototype.hasOwnProperty.call(this.NATUREZAS, p.natureza) ? p.natureza : '';
+    const tarefa = natureza === 'projeto' && p.tarefa_id ? String(p.tarefa_id) : null;
+    return Object.assign({}, p, { natureza, tarefa_id: tarefa, tarefa_nome: tarefa ? String(p.tarefa_nome || '') : '' });
+  },
+  // Natureza sugerida para uma ação nova, pelo que a reunião já tem ligado: projeto → do projeto; só conta/oportunidade → comercial.
+  naturezaPorOmissao(r) { return r.projeto_id ? 'projeto' : ((r.conta_id || r.oportunidade_id) ? 'comercial' : ''); },
+  // Liga o responsável de cada ação (o nome escrito) ao colega da app — é isso que a põe nas tarefas dessa pessoa e nos seus lembretes.
+  // Mantém a ligação que já existe enquanto o nome for o desse colega; senão procura o nome entre os colegas ativos. Altera e devolve "pontos".
+  resolverResponsaveis(pontos, recursos) {
+    (pontos || []).forEach(p => {
+      if (p.tipo !== 'acao') return;
+      const nome = this.norm(p.responsavel);
+      if (!nome) { p.responsavel_recurso_id = null; return; }
+      const atual = p.responsavel_recurso_id && (recursos || []).find(x => x.id === p.responsavel_recurso_id);
+      if (atual && this.norm(atual.nome) === nome) return;
+      const colega = (recursos || []).find(x => x.ativo !== false && this.norm(x.nome) === nome);
+      p.responsavel_recurso_id = colega ? colega.id : null;
+    });
+    return pontos;
+  },
   resumoPontos(r) {
     const pontos = r.pontos || [];
     return { decisoes: pontos.filter(p => p.tipo === 'decisao').length, acoes: pontos.filter(p => p.tipo === 'acao').length, acoesPorFechar: pontos.filter(p => p.tipo === 'acao' && !p.concluida).length };
+  },
+
+  // ---------- Ações como tarefas a executar ----------
+  // Ações por fazer, em todas as reuniões que não foram canceladas, que cumprem filtro(ponto, reunião) — as atrasadas primeiro (a mais antiga
+  // no topo), depois por prazo (sem prazo no fim). hojeISO = 'AAAA-MM-DD'. Não olha a quem pode ler a reunião: isso é do chamador.
+  acoesAbertas(lista, hojeISO, filtro) {
+    const sai = [];
+    (lista || []).forEach(r => {
+      if (r.estado === 'cancelada') return;
+      (r.pontos || []).forEach(p => {
+        if (p.tipo !== 'acao' || p.concluida || !filtro(p, r)) return;
+        sai.push({
+          reuniaoId: r.id, pontoId: p.id, texto: p.texto || '', prazo: p.prazo || null, atrasada: !!p.prazo && p.prazo < hojeISO,
+          natureza: p.natureza || '', tarefaId: p.tarefa_id || null, tarefaNome: p.tarefa_nome || '',
+          responsavel: p.responsavel || '', responsavelId: p.responsavel_recurso_id || null,
+          reuniaoTitulo: r.titulo || '', reuniaoData: r.data_hora, projetoId: r.projeto_id || null, projetoNome: r.projeto_nome || '',
+          cliente: r.cliente || '', oportunidadeTitulo: r.oportunidade_titulo || ''
+        });
+      });
+    });
+    return sai.sort((a, b) => Number(b.atrasada) - Number(a.atrasada) || (a.prazo || '9999').localeCompare(b.prazo || '9999') || new Date(b.reuniaoData) - new Date(a.reuniaoData));
+  },
+  // As ações por fazer de um colega (entram na sua lista de tarefas, no sino e no resumo diário).
+  acoesDe(lista, recursoId, hojeISO) {
+    return recursoId ? this.acoesAbertas(lista, hojeISO, p => p.responsavel_recurso_id === recursoId) : [];
+  },
+  contarAtrasadas(lista, recursoId, hojeISO) { return this.acoesDe(lista, recursoId, hojeISO).filter(a => a.atrasada).length; },
+  // As ações comerciais por fazer (de qualquer responsável, colega ou não) — para o separador Follow-ups do CRM.
+  acoesComerciais(lista, hojeISO, recursoId) {
+    return this.acoesAbertas(lista, hojeISO, p => p.natureza === 'comercial' && (!recursoId || p.responsavel_recurso_id === recursoId));
+  },
+  // "Projeto › tarefa", "Comercial · cliente · oportunidade" ou o cliente — de onde vem a ação. nomeTarefa: nome atual da tarefa, se a app o souber.
+  origemAcao(a, nomeTarefa) {
+    if (a.natureza === 'projeto') return [a.projetoNome, nomeTarefa || a.tarefaNome].filter(Boolean).join(' › ') || 'Projeto';
+    if (a.natureza === 'comercial') return ['Comercial', a.cliente, a.oportunidadeTitulo].filter(Boolean).join(' · ');
+    return a.cliente || '';
   },
 
   // ---------- Datas ----------

@@ -11,6 +11,7 @@ import {
   aprovacoesPendentes, resumoComercial, temAcessoCrm,
   type ContextoAprovacao, type ContextoComercial, type ItemAprovacao, type ItemFollowup, type ItemOportunidade,
 } from './extras.ts';
+import { acoesDeReunioes, type ItemAcao, type Reuniao } from './reunioes.ts';
 
 export interface Ausencia { recurso_id: string; data_inicio: string; data_fim: string; estado: string; tipo?: string | null }
 export interface Passo {
@@ -25,6 +26,8 @@ export interface ItemAgenda {
 export interface ItemPasso { descricao: string; projeto: string; tarefa: string | null; prazo: string | null; atrasado: boolean; estado: string }
 export interface ResumoDia {
   hoje: ItemAgenda[]; atrasadas: ItemAgenda[]; proximas: ItemAgenda[]; passos: ItemPasso[];
+  // Ações decididas em reuniões e atribuídas à pessoa (ver reunioes.ts); em falta = vazio.
+  acoes?: ItemAcao[];
   // Só para quem tem papel de chefia (ver extras.ts); em falta = vazio.
   aprovacoes?: ItemAprovacao[]; followups?: ItemFollowup[]; oportunidades?: ItemOportunidade[];
 }
@@ -103,6 +106,8 @@ export interface ContextoResumo {
   // Estrutura da organização (quem lidera quem) — para "por aprovar" e para saber quem vê o Comercial.
   org?: ContextoAprovacao;
   comercial?: ContextoComercial;
+  // Reuniões (não canceladas) com as suas ações; em falta (módulo não instalado) = sem a secção.
+  reunioes?: Reuniao[];
 }
 
 // Tudo o que a pessoa deve ver hoje. Tudo vazio se estiver ausente (de férias não se manda nada).
@@ -133,15 +138,16 @@ export function resumoDoDia(rec: { id: string; nome: string; acesso?: string | n
   }
   // Atrasados primeiro (o mais antigo no topo), depois por prazo; sem prazo no fim.
   passos.sort((a, b) => Number(b.atrasado) - Number(a.atrasado) || (a.prazo ?? '9999').localeCompare(b.prazo ?? '9999') || a.projeto.localeCompare(b.projeto, 'pt'));
+  const acoes = c.reunioes ? acoesDeReunioes(rec, hojeISO, c.reunioes, id => nomeTarefa.get(id), c.diasAFrente ?? 7) : [];
   const pessoa = { id: rec.id, nome: rec.nome, acesso: rec.acesso, equipa_id: null };
   const aprovacoes = c.org ? aprovacoesPendentes(pessoa, c.ausencias, c.org) : [];
   const comercial = c.org && c.comercial && temAcessoCrm(pessoa, c.org.equipas, c.org.departamentos)
     ? resumoComercial(rec, hojeISO, c.comercial, c.diasAFrente ?? 7) : { followups: [], oportunidades: [] };
-  return { hoje, atrasadas, proximas, passos, aprovacoes, followups: comercial.followups, oportunidades: comercial.oportunidades };
+  return { hoje, atrasadas, proximas, passos, acoes, aprovacoes, followups: comercial.followups, oportunidades: comercial.oportunidades };
 }
 
 // Aplica as escolhas da pessoa ("A minha conta"): uma secção marcada false fica vazia. Em falta = ligada.
-export const CHAVES_SECCOES = ['hoje', 'atrasadas', 'passos', 'proximas', 'aprovacoes', 'followups', 'oportunidades'] as const;
+export const CHAVES_SECCOES = ['hoje', 'atrasadas', 'passos', 'acoes', 'proximas', 'aprovacoes', 'followups', 'oportunidades'] as const;
 export function aplicarPreferencias(r: ResumoDia, prefs: Record<string, boolean> | null | undefined): ResumoDia {
   if (!prefs) return r;
   const copia: ResumoDia = { ...r };
@@ -150,9 +156,9 @@ export function aplicarPreferencias(r: ResumoDia, prefs: Record<string, boolean>
 }
 
 export const resumoVazio = (r: ResumoDia) =>
-  !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length &&
+  !r.hoje.length && !r.atrasadas.length && !r.proximas.length && !r.passos.length && !(r.acoes?.length) &&
   !(r.aprovacoes?.length) && !(r.followups?.length) && !(r.oportunidades?.length);
 
 export const totalItens = (r: ResumoDia) =>
-  r.hoje.length + r.atrasadas.length + r.proximas.length + r.passos.length +
+  r.hoje.length + r.atrasadas.length + r.proximas.length + r.passos.length + (r.acoes?.length ?? 0) +
   (r.aprovacoes?.length ?? 0) + (r.followups?.length ?? 0) + (r.oportunidades?.length ?? 0);

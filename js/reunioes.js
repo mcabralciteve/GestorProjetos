@@ -334,17 +334,60 @@ const Reunioes = {
   },
   secPontos() {
     const r = this.atual, ed = this.podeEditarAtual(), d = ed ? '' : ' disabled';
+    const meuId = (App.perfilAtual() || {}).recursoId;
     const nomes = [...new Set([...r.participantes.map(p => p.nome), ...App.recursosAtivos().map(x => x.nome)])];
-    const linhas = r.pontos.map((p, i) => `<div class="reu-ponto${p.tipo === 'acao' && p.concluida ? ' reu-feita' : ''}">
+    const proj = r.projeto_id ? App.state.projetos[r.projeto_id] : null;
+    const linhas = r.pontos.map((p, i) => {
+      // Quem só pode ler a reunião mas é o responsável da ação pode, mesmo assim, marcá-la como feita (grava só essa ação).
+      const minha = !ed && !!r.id && p.tipo === 'acao' && !!meuId && p.responsavel_recurso_id === meuId;
+      const feita = `<label class="reu-presente" title="Ação concluída"><input type="checkbox" ${minha ? `data-reu-feita="${escapeAttr(p.id)}"` : `data-reu-lista="pontos" data-i="${i}" data-k="concluida"`}${p.concluida ? ' checked' : ''}${ed || minha ? '' : ' disabled'}> feita</label>`;
+      return `<div class="reu-ponto-bloco"><div class="reu-ponto${p.tipo === 'acao' && p.concluida ? ' reu-feita' : ''}">
         <select data-reu-lista="pontos" data-i="${i}" data-k="tipo"${d}><option value="decisao"${p.tipo === 'decisao' ? ' selected' : ''}>Decisão</option><option value="acao"${p.tipo === 'acao' ? ' selected' : ''}>Ação</option></select>
         <input type="text" class="reu-ponto-texto" data-reu-lista="pontos" data-i="${i}" data-k="texto" value="${escapeAttr(p.texto)}" placeholder="${p.tipo === 'decisao' ? 'O que ficou decidido' : 'O que há a fazer'}"${d}>
         ${p.tipo === 'acao' ? `<input type="text" list="reuNomes" data-reu-lista="pontos" data-i="${i}" data-k="responsavel" value="${escapeAttr(p.responsavel || '')}" placeholder="Responsável"${d}>
         <input type="date" data-reu-lista="pontos" data-i="${i}" data-k="prazo" value="${escapeAttr(p.prazo || '')}" title="Prazo"${d}>
-        <label class="reu-presente" title="Ação concluída"><input type="checkbox" data-reu-lista="pontos" data-i="${i}" data-k="concluida"${p.concluida ? ' checked' : ''}${d}> feita</label>` : '<span class="reu-ponto-vazio"></span>'}
-        ${ed ? `<button type="button" class="btn-icon" data-reu-acao="rem-ponto" data-i="${i}" title="Remover">✕</button>` : '<span></span>'}</div>`).join('');
+        ${feita}` : '<span class="reu-ponto-vazio"></span>'}
+        ${ed ? `<button type="button" class="btn-icon" data-reu-acao="rem-ponto" data-i="${i}" title="Remover">✕</button>` : '<span></span>'}</div>${p.tipo === 'acao' ? this.linhaAssociacao(p, i, ed, proj) : ''}</div>`;
+    }).join('');
     return `${linhas || '<p class="hint">Sem decisões nem ações registadas.</p>'}
       <datalist id="reuNomes">${nomes.map(n => `<option value="${escapeAttr(n)}">`).join('')}</datalist>
-      ${ed ? `<div class="reu-add"><button type="button" class="btn btn-sm" data-reu-acao="add-ponto" data-tipo="decisao">+ Decisão</button><button type="button" class="btn btn-sm" data-reu-acao="add-ponto" data-tipo="acao">+ Ação</button></div>` : ''}`;
+      ${ed ? `<div class="reu-add"><button type="button" class="btn btn-sm" data-reu-acao="add-ponto" data-tipo="decisao">+ Decisão</button><button type="button" class="btn btn-sm" data-reu-acao="add-ponto" data-tipo="acao">+ Ação</button></div>` : ''}
+      <p class="hint" style="margin:8px 0 0">Uma ação entregue a um colega aparece nas tarefas dele (Início), no sino e no resumo diário por email até ser marcada como feita.</p>`;
+  },
+  // Etiqueta ao lado da linha de uma ação: diz se o responsável é um colega da app (recebe a ação e os lembretes) ou não.
+  etiquetaResponsavel(p) {
+    if (!String(p.responsavel || '').trim()) return '';
+    const col = p.responsavel_recurso_id && App.state.recursos.find(x => x.id === p.responsavel_recurso_id);
+    return col
+      ? `<span class="reu-tag reu-tag-ok" title="${escapeAttr(col.nome)} vê esta ação nas suas tarefas e recebe-a nos lembretes">✓ na agenda de ${escapeHtml(String(col.nome).split(' ')[0])}</span>`
+      : '<span class="reu-tag" title="Não é um colega da app: a ação fica registada na reunião (e na ata), mas não entra nas tarefas de ninguém nem gera lembretes">sem lembretes — não é colega</span>';
+  },
+  // Segunda linha de cada ação: a que se refere (geral / tarefa do projeto / comercial), a tarefa concreta e a etiqueta do responsável.
+  linhaAssociacao(p, i, ed, proj) {
+    const d = ed ? '' : ' disabled';
+    const nat = p.natureza || '';
+    const semProjeto = !this.atual.projeto_id && nat !== 'projeto';
+    const optNat = Object.entries(this.L.NATUREZAS).map(([k, v]) => `<option value="${k}"${nat === k ? ' selected' : ''}${k === 'projeto' && semProjeto ? ' disabled' : ''}>${escapeHtml(k === 'projeto' && semProjeto && ed ? v + ' (escolhe o projeto da reunião)' : v)}</option>`).join('');
+    let tarefa = '';
+    if (nat === 'projeto') {
+      const tarefas = proj ? proj.tarefas : [];
+      const existe = tarefas.some(t => t.id === p.tarefa_id);
+      tarefa = `<select class="reu-assoc-tarefa" data-reu-lista="pontos" data-i="${i}" data-k="tarefa_id" title="Tarefa do projeto a que a ação se refere"${d}>
+        <option value="">— o projeto em geral —</option>
+        ${p.tarefa_id && !existe ? `<option value="${escapeAttr(p.tarefa_id)}" selected>${escapeHtml(p.tarefa_nome || 'Tarefa')}</option>` : ''}
+        ${tarefas.map(t => `<option value="${escapeAttr(t.id)}"${t.id === p.tarefa_id ? ' selected' : ''}>${escapeHtml(App.rotuloTarefaComPai(proj, t))}</option>`).join('')}</select>`;
+    }
+    return `<div class="reu-ponto-extra"><label class="reu-assoc">Associada a <select data-reu-lista="pontos" data-i="${i}" data-k="natureza"${d}>${optNat}</select></label>${tarefa}<span data-reu-resp="${i}">${this.etiquetaResponsavel(p)}</span></div>`;
+  },
+  // O projeto da reunião mudou: as ações "do projeto" deixam de apontar para tarefas de outro projeto (e sem projeto passam a gerais).
+  ajustarAcoesAoProjeto() {
+    const r = this.atual, proj = r.projeto_id ? App.state.projetos[r.projeto_id] : null;
+    const ids = new Set(proj ? proj.tarefas.map(t => t.id) : []);
+    r.pontos.forEach(p => {
+      if (p.natureza !== 'projeto') return;
+      if (!proj) { p.natureza = ''; p.tarefa_id = null; p.tarefa_nome = ''; }
+      else if (p.tarefa_id && !ids.has(p.tarefa_id)) { p.tarefa_id = null; p.tarefa_nome = ''; }
+    });
   },
   secFicheiros() {
     const r = this.atual, ed = this.podeEditarAtual(), d = ed ? '' : ' disabled';
@@ -423,6 +466,8 @@ const Reunioes = {
       if (novo && t.tagName === 'INPUT') { novo.focus(); try { novo.setSelectionRange(pos, pos); } catch (e) { /* tipo sem seleção */ } }
       return;
     }
+    // Quem só lê a reunião mas é o responsável da ação pode marcá-la como feita (grava só essa ação).
+    if (t.dataset.reuFeita !== undefined) { if (mudou && this.atual) this.marcarAcaoNoEditor(t); return; }
     if (!this.atual || !this.podeEditarAtual()) return;
     const r = this.atual;
     if (t.dataset.reuRt !== undefined) { this.sincronizarRt(t); return; }
@@ -433,7 +478,15 @@ const Reunioes = {
       const k = t.dataset.k;
       item[k] = t.type === 'checkbox' ? t.checked : (t.type === 'date' ? (t.value || null) : t.value);
       if (mudou && t.dataset.reuLista === 'pontos') {
-        if (k === 'responsavel') { const col = App.state.recursos.find(x => this.L.norm(x.nome) === this.L.norm(item.responsavel)); item.responsavel_recurso_id = col ? col.id : null; }
+        const i = Number(t.dataset.i);
+        if (k === 'responsavel') {
+          this.L.resolverResponsaveis([item], App.state.recursos);
+          // só a etiqueta: redesenhar a secção inteira tirava o clique ao campo seguinte
+          const marca = document.querySelector(`#reuSecPontos [data-reu-resp="${i}"]`);
+          if (marca) marca.innerHTML = this.etiquetaResponsavel(item);
+        }
+        if (k === 'natureza') { Object.assign(item, this.L.normalizarPonto(item)); this.renderSecao('reuSecPontos', this.secPontos); }
+        if (k === 'tarefa_id') { item.tarefa_id = t.value || null; item.tarefa_nome = item.tarefa_id && t.selectedOptions[0] ? t.selectedOptions[0].textContent.trim() : ''; }
         if (k === 'tipo' || k === 'concluida') this.renderSecao('reuSecPontos', this.secPontos);
       }
     }
@@ -490,8 +543,10 @@ const Reunioes = {
     r.projeto_id = p ? p.id : null;
     r.projeto_nome = p ? App.rotuloProjetoCompleto(p) : '';
     if (p) this._clienteAutomatico(p.cliente, anterior);
+    this.ajustarAcoesAoProjeto();
     this.renderSecao('reuSecId', this.secIdentificacao);
     this.renderSecao('reuSecPart', this.secParticipantes);
+    this.renderSecao('reuSecPontos', this.secPontos);
   },
   escolherConta(id) {
     const r = this.atual, c = id && Crm.idx.conta ? Crm.idx.conta.get(id) : null;
@@ -516,6 +571,7 @@ const Reunioes = {
     }
     this.renderSecao('reuSecId', this.secIdentificacao);
     this.renderSecao('reuSecPart', this.secParticipantes);
+    this.renderSecao('reuSecPontos', this.secPontos);
   },
 
   acao(nome, el) {
@@ -551,7 +607,7 @@ const Reunioes = {
         return this.renderSecao('reuSecPart', this.secParticipantes);
       }
       case 'rem-participante': r.participantes.splice(i, 1); return this.renderSecao('reuSecPart', this.secParticipantes);
-      case 'add-ponto': r.pontos.push(this.L.novoPonto(el.dataset.tipo)); this.renderSecao('reuSecPontos', this.secPontos); { const f = document.querySelectorAll('#reuSecPontos .reu-ponto-texto'); if (f.length) f[f.length - 1].focus(); } return;
+      case 'add-ponto': r.pontos.push(this.L.novoPonto(el.dataset.tipo, this.L.naturezaPorOmissao(r))); this.renderSecao('reuSecPontos', this.secPontos); { const f = document.querySelectorAll('#reuSecPontos .reu-ponto-texto'); if (f.length) f[f.length - 1].focus(); } return;
       case 'rem-ponto': r.pontos.splice(i, 1); return this.renderSecao('reuSecPontos', this.secPontos);
       case 'add-ficheiro': r.ficheiros.push({ id: this.L.novoId(), nome: '', ligacao: '' }); this.renderSecao('reuSecFich', this.secFicheiros); { const f = document.querySelectorAll('#reuSecFich input'); if (f.length >= 2) f[f.length - 2].focus(); } return;
       case 'rem-ficheiro': r.ficheiros.splice(i, 1); return this.renderSecao('reuSecFich', this.secFicheiros);
@@ -572,7 +628,8 @@ const Reunioes = {
       local: r.local || '', estado: r.estado, projeto_id: r.projeto_id || null, conta_id: r.conta_id || null, oportunidade_id: r.oportunidade_id || null,
       cliente: (r.cliente || '').trim(), projeto_nome: r.projeto_nome || '', oportunidade_titulo: r.oportunidade_titulo || '',
       ordem_trabalhos: r.ordem_trabalhos || '', notas: this.L.limparHtml(r.notas || ''),
-      participantes: r.participantes, ficheiros: r.ficheiros.map(f => ({ id: f.id, nome: (f.nome || '').trim(), ligacao: (f.ligacao || '').trim() })), pontos: r.pontos
+      participantes: r.participantes, ficheiros: r.ficheiros.map(f => ({ id: f.id, nome: (f.nome || '').trim(), ligacao: (f.ligacao || '').trim() })),
+      pontos: this.L.resolverResponsaveis(r.pontos.map(p => this.L.normalizarPonto(p)), App.state.recursos)
     };
   },
   // Grava a reunião aberta (insert ou update com a versão que foi aberta). "extra": campos a gravar na mesma operação (ata).
@@ -626,6 +683,101 @@ const Reunioes = {
       App.toast('Reunião eliminada.');
     });
     this.renderTudo();
+  },
+
+  // ============================ Ações como tarefas das pessoas ============================
+  // Marca/desmarca uma ação como feita a partir de fora do editor (Início, CRM) ou por quem só lê a reunião. Grava só essa ação, com a
+  // versão da reunião: se outra pessoa mexeu entretanto, volta a ler a reunião e tenta mais uma vez (nunca pisa o trabalho de ninguém).
+  async alternarAcao(reuniaoId, pontoId, concluida) {
+    if (this._aGuardar) { App.toast('Há uma gravação em curso — tenta de novo daqui a pouco.'); return false; }
+    if (this.atual && this.atual.id === reuniaoId && this.sujo()) { App.toast('Esta reunião está aberta com alterações por guardar: marca a ação lá e guarda.'); return false; }
+    this._aGuardar = true;
+    try {
+      for (let tentativa = 0; tentativa < 2; tentativa++) {
+        const r = this.lista.find(x => x.id === reuniaoId);
+        if (!r || !r.pontos.some(p => p.id === pontoId)) throw new Error('Esta ação já não existe (a reunião foi alterada ou eliminada).');
+        const pontos = r.pontos.map(p => p.id === pontoId ? Object.assign({}, p, { concluida: !!concluida }) : p);
+        const res = await supabaseClient.from('reunioes').update({ pontos, versao: r.versao + 1, atualizado_em: new Date().toISOString(), atualizado_por_nome: this.meuNome() })
+          .eq('id', reuniaoId).eq('versao', r.versao).select();
+        if (res.error) throw res.error;
+        if (res.data && res.data.length === 1) {
+          const gravada = this.L.normalizar(res.data[0]);
+          this.lista[this.lista.findIndex(x => x.id === reuniaoId)] = gravada;
+          if (this.atual && this.atual.id === reuniaoId) {
+            this.atual = this.clonar(gravada); this.atual.notas = this.L.notasParaEditor(this.atual.notas); this.original = JSON.stringify(this.atual);
+            if (this.corpo()) this.renderEditor();
+          }
+          App.renderNotificacoes();
+          return true;
+        }
+        // a versão mudou: lê esta reunião outra vez e tenta de novo
+        const lida = await supabaseClient.from('reunioes').select('*').eq('id', reuniaoId).maybeSingle();
+        if (lida.error) throw lida.error;
+        if (!lida.data) { this.lista = this.lista.filter(x => x.id !== reuniaoId); throw new Error('Esta reunião foi eliminada.'); }
+        this.lista[this.lista.findIndex(x => x.id === reuniaoId)] = this.L.normalizar(lida.data);
+      }
+      throw new Error('A reunião está a ser alterada por outra pessoa — tenta de novo daqui a pouco.');
+    } catch (err) { App.toast(err.message || String(err)); return false; }
+    finally { this._aGuardar = false; }
+  },
+  async marcarAcaoNoEditor(chk) {
+    const ok = await this.alternarAcao(this.atual.id, chk.dataset.reuFeita, chk.checked);
+    if (!ok) chk.checked = !chk.checked;
+    else this.renderSecao('reuSecPontos', this.secPontos);
+  },
+  // Carrega as reuniões sem esperar (o Início e o sino precisam das ações de cada pessoa) e redesenha o que depende delas.
+  carregarEmFundo() {
+    if (this.carregado || this._aCarregar || this.erro) return;
+    this.carregar().finally(() => { App.renderNotificacoes(); if (App.abaAtiva === 'dashboard') App.renderDashboard(); });
+  },
+  meuRecursoId() { return (App.perfilAtual() || {}).recursoId || null; },
+  // Quantas das minhas ações estão em atraso (para o sino). 0 enquanto as reuniões não estiverem carregadas.
+  acoesAtrasadas() { return this.carregado ? this.L.contarAtrasadas(this.lista, this.meuRecursoId(), DateUtil.todayISO()) : 0; },
+  nomeTarefaAcao(a) {
+    const p = a.projetoId && App.state.projetos[a.projetoId];
+    const t = p && a.tarefaId ? p.tarefas.find(x => x.id === a.tarefaId) : null;
+    return t ? App.rotuloTarefaComPai(p, t) : '';
+  },
+  // Corpo do cartão "As minhas ações de reuniões" do Início (null = módulo não instalado: o cartão não aparece).
+  htmlCartaoAcoes() {
+    if (this.semTabela) return null;
+    if (!this.carregado) {
+      if (this.erro) return '<p class="hint">Não foi possível carregar as reuniões.</p>';
+      this.carregarEmFundo();
+      return '<p class="hint">A carregar…</p>';
+    }
+    const acoes = this.L.acoesDe(this.lista, this.meuRecursoId(), DateUtil.todayISO());
+    if (!acoes.length) return '<p class="hint">Sem ações de reuniões por fazer.</p>';
+    return acoes.map(a => {
+      const origem = this.L.origemAcao(a, this.nomeTarefaAcao(a));
+      return `<div class="dash-linha dash-linha-link" data-dash-acao="${escapeAttr(a.reuniaoId)}">
+        <span class="dash-linha-principal"><input type="checkbox" class="dash-acao-chk" data-dash-acao-feita="${escapeAttr(a.reuniaoId)}|${escapeAttr(a.pontoId)}" title="Marcar como feita" aria-label="Marcar como feita"> ${a.atrasada ? '⚠ ' : ''}${escapeHtml(a.texto)}</span>
+        <span class="dash-linha-sub"><span class="${a.atrasada ? 'crm-atrasada' : ''}">${a.prazo ? 'prazo ' + escapeHtml(this.L.formatarDia(a.prazo)) : 'sem prazo'}</span>${origem ? ' · ' + escapeHtml(origem) : ''} · reunião "${escapeHtml(a.reuniaoTitulo)}" (${escapeHtml(this.L.formatarData(a.reuniaoData))})</span></div>`;
+    }).join('');
+  },
+  // Bloco "Ações comerciais vindas de reuniões" do separador Follow-ups do CRM (quem: 'minhas' | 'todas'). Vazio se não houver nenhuma.
+  // "refazer" volta a desenhar o separador (quando as reuniões acabam de carregar, ou depois de marcar uma ação).
+  htmlAcoesCrm(quem, refazer) {
+    if (this.semTabela) return '';
+    if (!this.carregado) { if (!this.erro) this.carregar().then(refazer); return ''; }
+    const meu = this.meuRecursoId();
+    const acoes = this.L.acoesComerciais(this.visiveis(), DateUtil.todayISO(), quem === 'todas' ? null : (meu || '-'));
+    if (!acoes.length) return '';
+    return `<h4 class="crm-h">Ações comerciais vindas de reuniões (${acoes.length})</h4><div class="crm-lista">${acoes.map(a => {
+      const origem = this.L.origemAcao(a).replace(/^Comercial( · )?/, '');
+      return `<div class="crm-item crm-item-linha">
+        <input type="checkbox" data-reu-crm-feita="${escapeAttr(a.reuniaoId)}|${escapeAttr(a.pontoId)}" title="Marcar como feita">
+        <span class="crm-item-texto"><a href="#" data-reu-crm-abrir="${escapeAttr(a.reuniaoId)}" title="Abrir a reunião">${escapeHtml(a.texto)}</a>${origem ? ' · ' + escapeHtml(origem) : ''}</span>
+        <span class="${a.atrasada ? 'crm-atrasada' : 'hint'}">${a.prazo ? escapeHtml(this.L.formatarDia(a.prazo)) : 'sem data'} · ${escapeHtml(String(a.responsavel || '—').split(' ')[0])}</span></div>`;
+    }).join('')}</div>`;
+  },
+  ligarAcoesCrm(raiz, refazer) {
+    raiz.querySelectorAll('[data-reu-crm-abrir]').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); this.abrirDeFora(a.dataset.reuCrmAbrir); }));
+    raiz.querySelectorAll('[data-reu-crm-feita]').forEach(c => c.addEventListener('change', async () => {
+      const [rid, pid] = c.dataset.reuCrmFeita.split('|');
+      await this.alternarAcao(rid, pid, c.checked);
+      refazer();
+    }));
   },
 
   // ============================ Ata ============================

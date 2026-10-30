@@ -519,6 +519,7 @@ const App = {
       this.renderTudo();
       this.atualizarBotaoMigracao();
       Crm.atualizarContagemFollowups();
+      Reunioes.carregarEmFundo();
     } else if (!autenticadoAgora && this.sessaoAtiva) {
       this.sessaoAtiva = false;
       Crm.limpar();
@@ -4419,6 +4420,7 @@ const App = {
     { key: 'agendaHoje', label: 'A minha agenda de hoje' },
     { key: 'proximos7dias', label: 'Próximos 7 dias' },
     { key: 'meusPassos', label: 'Os meus Next Steps' },
+    { key: 'minhasAcoes', label: 'As minhas ações de reuniões' },
     { key: 'meusProjetos', label: 'Os meus projetos' },
     { key: 'registoRapido', label: 'Registar horas de hoje' },
     { key: 'meusDiasIncompletos', label: 'Os meus dias por preencher' },
@@ -4592,6 +4594,7 @@ const App = {
     let n = 0;
     if (meuRecurso) n += this.diasIncompletosRecurso(meuRecurso.id, this.DIAS_JANELA_REGISTO_INCOMPLETO).length;
     n += this.meusPassosAtrasadosCount();
+    n += Reunioes.acoesAtrasadas();
     if (Crm.podeVer()) n += Crm.followupsAtrasados;
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       n += this.faturasAVencerCount();
@@ -4630,6 +4633,8 @@ const App = {
     }
     const passosAtrasados = this.meusPassosAtrasadosCount();
     if (passosAtrasados) itens.push({ key: 'meusPassos', texto: `${passosAtrasados} next step(s) atrasado(s)`, sub: 'Os meus Next Steps' });
+    const acoesAtrasadas = Reunioes.acoesAtrasadas();
+    if (acoesAtrasadas) itens.push({ key: 'minhasAcoes', texto: `${acoesAtrasadas} ação(ões) de reuniões em atraso`, sub: 'As minhas ações de reuniões' });
     if (Crm.podeVer() && Crm.followupsAtrasados) itens.push({ key: 'crmFollowups', texto: `${Crm.followupsAtrasados} follow-up(s) comercial(is) em atraso`, sub: 'Comercial → Follow-ups' });
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       const faturas = this.faturasAVencerCount();
@@ -4759,6 +4764,12 @@ const App = {
           </div>`).join('') : '<p class="hint">Sem next steps atribuídos.</p>';
       }
       html += this.cartaoDashboard('✅ Os meus Next Steps', corpo, null, 'meusPassos');
+    }
+
+    // Ações atribuídas a mim nas reuniões (do projeto ou comerciais): são tarefas a executar, tal como os Next Steps.
+    if (!ocultos.has('minhasAcoes') && !Reunioes.semTabela) {
+      const corpo = meuRecurso ? Reunioes.htmlCartaoAcoes() : semRecurso;
+      if (corpo) html += this.cartaoDashboard('🗒 As minhas ações de reuniões', corpo, null, 'minhasAcoes');
     }
 
     if (!ocultos.has('meusProjetos')) {
@@ -4919,6 +4930,14 @@ const App = {
     // um único listener delegado no contentor, mesmo espírito do e.diaGrelha.onclick em
     // renderRegistoDia, em vez de um listener por linha.
     e.dashboardGrelha.onclick = (ev) => {
+      const elFeita = ev.target.closest('[data-dash-acao-feita]');
+      if (elFeita) {
+        const [reuniaoId, pontoId] = elFeita.dataset.dashAcaoFeita.split('|');
+        Reunioes.alternarAcao(reuniaoId, pontoId, elFeita.checked).then(() => { this.renderDashboard(); this.renderNotificacoes(); });
+        return;
+      }
+      const elAcaoReuniao = ev.target.closest('[data-dash-acao]');
+      if (elAcaoReuniao) { Reunioes.abrirDeFora(elAcaoReuniao.dataset.dashAcao); return; }
       const elTarefa = ev.target.closest('[data-dash-tarefa]');
       if (elTarefa) {
         const [pid, tid] = elTarefa.dataset.dashTarefa.split('|');
@@ -10282,6 +10301,7 @@ const App = {
     { k: 'hoje', rotulo: 'Tarefas de hoje (com horas previstas e registadas)' },
     { k: 'atrasadas', rotulo: 'Tarefas em atraso' },
     { k: 'passos', rotulo: 'Next steps abertos (os meus)' },
+    { k: 'acoes', rotulo: 'Ações de reuniões (as minhas, com prazo até 7 dias)' },
     { k: 'proximas', rotulo: 'Tarefas que começam nos próximos 7 dias' },
     { k: 'aprovacoes', rotulo: 'Pedidos de ausência por aprovar', so: 'decisor' },
     { k: 'followups', rotulo: 'Comercial — follow-ups', so: 'crm' },

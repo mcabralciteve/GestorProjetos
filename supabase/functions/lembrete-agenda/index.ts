@@ -12,6 +12,7 @@ import {
 import { ehDiaUtil, formatarDia, hojeEmLisboa, horaAtualEmLisboa } from '../lembrete-horas/logica.ts';
 import { montarEmail } from './email.ts';
 import type { CrmConta, CrmEtapa, CrmOportunidade, CrmTarefa, Departamento, Equipa } from './extras.ts';
+import type { Reuniao } from './reunioes.ts';
 import {
   aplicarPreferencias, indexarAgenda, indexarRegistadas, resumoDoDia, resumoVazio, totalItens,
   type Ausencia, type Passo, type Projeto, type RegistoHoras, type Tarefa, type TarefaRecurso,
@@ -73,9 +74,14 @@ Deno.serve(async (req) => {
     ]);
     comercial = { tarefas: ctarefas, oportunidades, etapas, contas };
   } catch (_) { comercial = undefined; }
+  // Ações decididas em reuniões (supabase/reunioes.sql). Sem a tabela (ou se falhar), o resumo segue sem a secção — nunca bloqueia o email.
+  let reunioes: Reuniao[] | undefined;
+  try {
+    reunioes = await lerTudo<Reuniao>((de, ate) => db.from('reunioes').select('id,titulo,data_hora,estado,projeto_id,projeto_nome,cliente,oportunidade_titulo,pontos').neq('estado', 'cancelada').range(de, ate));
+  } catch (_) { reunioes = undefined; }
   const contexto = {
     indice: indexarAgenda(projetos, tarefas, atribuicoes), ausencias, passos, projetos, tarefas, registadas: indexarRegistadas(registos),
-    org: { recursos, equipas, departamentos }, comercial,
+    org: { recursos, equipas, departamentos }, comercial, reunioes,
   };
 
   const candidatos = elegiveis(recursos, p.apenas, cfg?.lembretes_piloto_ativo === true);
