@@ -275,3 +275,28 @@ test('mailto do rascunho: codifica acentos e quebras de linha, e corta corpos de
   assert.ok(longo.url.length <= 1900);
   assert.equal(C.mailto({ para: '', assunto: '', corpo: '' }).url, 'mailto:?subject=&body=');
 });
+
+test('topOportunidades: só em curso, por valor (empate: ponderado), máximo n', () => {
+  const ops = [op('a', 'e1', 5000), op('b', 'e2', 20000), op('c', 'e3', 99999), op('d', 'e4', 88888), op('e', 'e2', 5000), op('f', 'e1', null)];
+  const top = C.topOportunidades(ops, porId);
+  assert.deepEqual(top.map(t => t.op.id), ['b', 'e', 'a', 'f']); // e (50%) antes de a (10%) com o mesmo valor
+  assert.deepEqual([top[0].valor, top[0].ponderado], [20000, 10000]);
+  assert.deepEqual(C.topOportunidades(ops, porId, 2).map(t => t.op.id), ['b', 'e']);
+  assert.deepEqual(C.topOportunidades([], porId), []);
+});
+
+test('topClientes: por valor em curso; ganhas só no período; sem valor em curso fica de fora', () => {
+  const contas = C.indexarPorId([{ id: 'c1', nome: 'Alfa' }, { id: 'c2', nome: 'Beta' }, { id: 'c3', nome: 'Gama' }]);
+  const ops = [
+    op('1', 'e2', 10000, { conta_id: 'c1' }), op('2', 'e1', 5000, { conta_id: 'c1' }), op('3', 'e3', 70000, { conta_id: 'c1', data_fecho: '2026-03-01' }),
+    op('4', 'e2', 30000, { conta_id: 'c2' }), op('5', 'e3', 90000, { conta_id: 'c2', data_fecho: '2024-01-01' }), op('6', 'e4', 99999, { conta_id: 'c2' }),
+    op('7', 'e3', 50000, { conta_id: 'c3', data_fecho: '2026-02-01' })   // só ganhas: sem valor em curso
+  ];
+  const top = C.topClientes(ops, porId, contas, '2026-01-01', '2026-12-31');
+  assert.deepEqual(top.map(t => t.contaId), ['c2', 'c1']);
+  assert.deepEqual([top[0].n, top[0].valor, top[0].ponderado, top[0].ganhasN, top[0].ganhasValor], [1, 30000, 15000, 0, 0]);
+  assert.deepEqual([top[1].n, top[1].valor, top[1].ponderado, top[1].ganhasN, top[1].ganhasValor], [2, 15000, 5500, 1, 70000]);
+  assert.equal(top[0].conta.nome, 'Beta');
+  assert.deepEqual(C.topClientes(ops, porId, contas, '2026-01-01', '2026-12-31', 1).map(t => t.contaId), ['c2']);
+  assert.equal(C.topClientes([op('x', 'e2', 100)], porId, contas)[0].conta, null); // sem conta: não rebenta
+});

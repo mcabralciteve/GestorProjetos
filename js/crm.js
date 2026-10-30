@@ -1703,8 +1703,25 @@ const Crm = {
         <span class="crm-atrasada">${escapeHtml(ms.join(' · '))}</span><span class="hint">${this.euro(op.valor_estimado)} · ${escapeHtml(this._primeiroNome(op.responsavel_id))}</span></div>`;
     }).join('')}${risco.length > 12 ? `<p class="hint">+ ${risco.length - 12} outras.</p>` : ''}</div>` : this.vazioHtml('Nada a precisar de atenção. 🎉');
 
+    // Top 10: oportunidades em curso e clientes, ambos por valor (os filtros de tipo e responsável aplicam-se).
+    const topOps = L.topOportunidades(ops, this.idx.etapa, 10);
+    const listaTopOps = topOps.length ? `<div class="crm-lista">${topOps.map((t, i) => {
+      const c = this.idx.conta.get(t.op.conta_id), e = this.idx.etapa.get(t.op.etapa_id);
+      return `<div class="crm-item crm-item-linha crm-linha" data-crm-acao="abrir-op" data-id="${escapeAttr(t.op.id)}">
+        <span class="crm-top-n">${i + 1}</span>
+        <span class="crm-item-texto"><b>${escapeHtml(t.op.titulo)}</b> · ${escapeHtml(c ? c.nome : '—')}<span class="hint"> · ${escapeHtml(e ? e.nome : '')} · ${escapeHtml(this._primeiroNome(t.op.responsavel_id))}</span></span>
+        <span class="crm-top-valor"><b>${this.euro(t.valor)}</b><span class="hint">pond. ${this.euro(t.ponderado)}</span></span></div>`;
+    }).join('')}</div>` : this.vazioHtml('Sem oportunidades em curso.');
+    const topCli = L.topClientes(ops, this.idx.etapa, this.idx.conta, per.de, per.ate, 10);
+    const listaTopCli = topCli.length ? `<div class="crm-lista">${topCli.map((t, i) => `<div class="crm-item crm-item-linha crm-linha"${t.contaId ? ` data-crm-acao="abrir-conta" data-id="${escapeAttr(t.contaId)}"` : ''}>
+        <span class="crm-top-n">${i + 1}</span>
+        <span class="crm-item-texto"><b>${escapeHtml(t.conta ? t.conta.nome : 'Sem conta')}</b><span class="hint"> · ${t.n} em curso${t.ganhasN ? ` · ganhas ${rotuloPer}: ${t.ganhasN} (${this.euro(t.ganhasValor)})` : ''}</span></span>
+        <span class="crm-top-valor"><b>${this.euro(t.valor)}</b><span class="hint">pond. ${this.euro(t.ponderado)}</span></span></div>`).join('')}</div>` : this.vazioHtml('Sem clientes com oportunidades em curso.');
+
     el.innerHTML = `${barra}${kpis}
       <div class="crm-grelha-dash">
+        <section class="crm-painel"><h3>Top 10 oportunidades <span class="hint">(em curso, por valor)</span></h3>${listaTopOps}</section>
+        <section class="crm-painel"><h3>Top 10 clientes <span class="hint">(valor em curso)</span></h3>${listaTopCli}</section>
         <section class="crm-painel"><h3>Funil em curso <span class="hint">(valor ponderado sobre o total)</span></h3>${funis || this.vazioHtml('Sem tipos.')}</section>
         <section class="crm-painel"><h3>Previsão de fecho <span class="hint">(em curso, por mês previsto)</span></h3>${this.htmlBarras(linhasPrev, 'Nada em curso.')}</section>
         <section class="crm-painel"><h3>Ganhas e perdidas por mês <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(linhasFech, 'Ainda sem oportunidades fechadas neste período.')}</section>

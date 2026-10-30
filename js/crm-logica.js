@@ -197,6 +197,30 @@ const CrmLogica = {
     r.conversao = f ? r.ganhas.n / f : null;
     return r;
   },
+  // As maiores oportunidades em curso, por valor estimado (empate: valor ponderado, depois título).
+  topOportunidades(ops, etapaPorId, n = 10) {
+    return ops.filter(o => this.categoriaDe(o, etapaPorId) === 'aberta')
+      .map(op => ({ op, valor: Number(op.valor_estimado) || 0, ponderado: this.valorPonderado(op, etapaPorId) }))
+      .sort((a, b) => b.valor - a.valor || b.ponderado - a.ponderado || String(a.op.titulo).localeCompare(String(b.op.titulo), 'pt'))
+      .slice(0, n);
+  },
+  // Os maiores clientes (contas) pelo valor em curso. Leva também o que ganharam no período (data de fecho entre de e ate). Contas sem
+  // valor em curso ficam de fora. contaPorId: Map id → conta.
+  topClientes(ops, etapaPorId, contaPorId, de, ate, n = 10) {
+    const por = new Map();
+    ops.forEach(op => {
+      const cat = this.categoriaDe(op, etapaPorId), v = Number(op.valor_estimado) || 0;
+      if (cat === 'perdida' || (cat === 'ganha' && !this._dentro(op.data_fecho, de, ate))) return;
+      const k = op.conta_id || '';
+      if (!por.has(k)) por.set(k, { contaId: k, conta: contaPorId.get(k) || null, n: 0, valor: 0, ponderado: 0, ganhasN: 0, ganhasValor: 0 });
+      const c = por.get(k);
+      if (cat === 'ganha') { c.ganhasN++; c.ganhasValor += v; }
+      else { c.n++; c.valor += v; c.ponderado += this.valorPonderado(op, etapaPorId); }
+    });
+    const nome = c => c.conta ? String(c.conta.nome) : '';
+    return [...por.values()].filter(c => c.valor > 0)
+      .sort((a, b) => b.valor - a.valor || b.ganhasValor - a.ganhasValor || nome(a).localeCompare(nome(b), 'pt')).slice(0, n);
+  },
   fechadasPorMes(ops, etapaPorId, de, ate) {
     const meses = new Map();
     ops.forEach(op => {

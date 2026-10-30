@@ -1044,6 +1044,8 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .crm-painel{background:var(--branco);border:1px solid var(--cinza-200);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow);min-width:0;}
 .crm-painel h3{margin:0 0 8px;font-size:14px;font-family:var(--display);color:var(--cinza-900);}
 .crm-painel-largo{grid-column:1 / -1;}
+.crm-top-n{flex:0 0 22px;text-align:right;font-weight:700;color:var(--cinza-500);font-size:12px;}
+.crm-top-valor{display:flex;flex-direction:column;align-items:flex-end;white-space:nowrap;font-size:12.5px;}
 .crm-barras{display:flex;flex-direction:column;gap:5px;}
 .crm-barra-linha{display:grid;grid-template-columns:minmax(110px,200px) 1fr minmax(120px,auto);gap:8px;align-items:center;font-size:12px;}
 .crm-barra-rotulo{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cinza-700);}
