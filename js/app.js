@@ -5041,6 +5041,7 @@ const App = {
     const e = this.els;
     const campos = [e.projIdInterno, e.projEstado, e.projNome, e.projCliente, e.projDescricao, e.projInicio, e.projFim, e.projHorasVendidas, e.projValorVendido];
     this.renderGestorConsultores(p);
+    Reunioes.renderCardProjeto(p);
     if (!p) {
       campos.forEach(c => { c.value = ''; c.disabled = true; });
       if (e.projTipoRef) e.projTipoRef.disabled = true;

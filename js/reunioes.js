@@ -132,6 +132,49 @@ const Reunioes = {
     App.fecharModal();
     App.irParaAba('reunioes');
   },
+  // Sai do editor para a lista (se houver reunião por guardar, pergunta antes). Devolve false se a pessoa preferir ficar.
+  _sairDoEditor() {
+    if (this.sujo() && !confirm('Tens uma reunião por guardar no separador Reuniões. Descartar o que lá escreveste e continuar?')) return false;
+    this.atual = null; this.original = '';
+    return true;
+  },
+  // Cartão "Reuniões" da barra lateral do Gantt (projeto ativo): as mais recentes, "Ver todas" e "+ Reunião" já ligada ao projeto.
+  renderCardProjeto(p) {
+    const card = document.getElementById('cardReunioes'), corpo = document.getElementById('reunioesProjetoCorpo');
+    if (!card || !corpo) return;
+    if (!p || this.semTabela) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    if (!corpo._reuLigado) {
+      corpo._reuLigado = true;
+      corpo.addEventListener('click', ev => {
+        const el = ev.target.closest('[data-reu-proj]');
+        const proj = App.projetoAtivo();
+        if (!el || !proj) return;
+        ev.preventDefault();
+        const acao = el.dataset.reuProj;
+        if (acao === 'abrir') this.abrirDeFora(el.dataset.id);
+        else if (acao === 'nova') this.abrirDeFora(null, { projetoId: proj.id });
+        else if (acao === 'todas') {
+          if (!this._sairDoEditor()) return;
+          this.filtros = { texto: '', estado: '', projeto: proj.id, periodo: '' };
+          App.irParaAba('reunioes');
+        }
+      });
+    }
+    if (!this.carregado) {
+      if (this.erro) { corpo.innerHTML = '<p class="hint" style="margin:0">Não foi possível carregar as reuniões.</p>'; return; }
+      corpo.innerHTML = '<p class="hint" style="margin:0">A carregar…</p>';
+      this.carregar().then(() => this.renderCardProjeto(App.projetoAtivo()));
+      return;
+    }
+    const lista = this.visiveis().filter(r => r.projeto_id === p.id).sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora));
+    const mostra = lista.slice(0, 4);
+    corpo.innerHTML = `${mostra.length ? mostra.map(r => `<div class="reu-mini"><a href="#" data-reu-proj="abrir" data-id="${escapeAttr(r.id)}" title="${escapeAttr(r.titulo)}"><b>${escapeHtml(this.L.formatarData(r.data_hora))}</b> ${escapeHtml(r.titulo)}</a>
+        <span class="reu-estado reu-estado-${escapeAttr(r.estado)}">${escapeHtml(this.L.ESTADOS[r.estado] || r.estado)}</span></div>`).join('')
+        : '<p class="hint" style="margin:0 0 6px">Ainda sem reuniões deste projeto.</p>'}
+      <div class="reu-mini-acoes">${lista.length > mostra.length ? `<a href="#" data-reu-proj="todas">Ver todas (${lista.length})</a>` : (lista.length ? '<a href="#" data-reu-proj="todas">Ver no separador Reuniões</a>' : '')}
+        <button type="button" class="btn btn-sm" data-reu-proj="nova">+ Reunião</button></div>`;
+  },
   // Secção "Reuniões" da ficha da conta (ctx.contaId) ou da oportunidade (ctx.opId): as que a pessoa pode ver, mais recentes primeiro.
   async secCrm(raiz, ctx) {
     if (!raiz) return;
@@ -479,7 +522,7 @@ const Reunioes = {
     const r = this.atual;
     const i = Number(el.dataset.i);
     switch (nome) {
-      case 'nova': return this.nova();
+      case 'nova': return this.nova(this.filtros.projeto ? { projetoId: this.filtros.projeto } : undefined); // com o filtro de projeto ligado, nasce nesse projeto
       case 'abrir': return this.abrir(el.dataset.id);
       case 'recarregar': return this.carregar(true).then(() => this.renderTudo());
       case 'voltar': return this.voltar();

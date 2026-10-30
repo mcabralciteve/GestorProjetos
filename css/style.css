@@ -1112,6 +1112,10 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .reu-ponto select,.reu-ponto input[type=text],.reu-ponto input[type=date]{min-width:0;width:100%;box-sizing:border-box;}
 .reu-ponto-vazio{grid-column:span 3;}
 .reu-feita .reu-ponto-texto{text-decoration:line-through;color:var(--cinza-500);}
+.reu-mini{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;font-size:12.5px;}
+.reu-mini a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--azul-esc);text-decoration:none;}
+.reu-mini a:hover{text-decoration:underline;}
+.reu-mini-acoes{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;}
 .reu-ficheiro{display:grid;grid-template-columns:minmax(120px,1fr) minmax(200px,2fr) 60px 24px;gap:6px;align-items:center;margin-bottom:6px;}
 .reu-ficheiro input{min-width:0;width:100%;box-sizing:border-box;}
 @media (max-width:760px){.reu-ponto{grid-template-columns:1fr 1fr;}.reu-ponto-vazio{display:none;}.reu-ficheiro{grid-template-columns:1fr 24px;}}
