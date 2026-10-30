@@ -17,7 +17,7 @@
 // passo manual. Por isso "recursos.auth_user_id" e "registos.user_id" saem sempre em branco.
 const Backup = {
   TABELAS_EM_ORDEM: [
-    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos', 'tarefa_comentarios',
+    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos', 'tarefa_comentarios', 'reunioes',
     'faturas', 'pontos_situacao', 'proximos_passos', 'registos', 'reservas_viatura'
   ],
   // Composta pelas mesmas transformações já usadas em js/sync.js para escrever cada tabela — se o
@@ -119,6 +119,19 @@ const Backup = {
       texto: c.texto, criado_em: c.criadoEm || null, editado_em: c.editadoEm || null
     }));
 
+    // Reuniões (vivem fora de state.projetos — ver js/reunioes.js; o app passa-as em state.reunioes). As listas (participantes, ficheiros,
+    // pontos) são JSON; criado_por_user sai em branco, como registos.user_id (as contas voltam a ser criadas com ids novos).
+    linhas.reunioes = (state.reunioes || []).map(r => ({
+      id: r.id, titulo: r.titulo, data_hora: r.data_hora, duracao_min: r.duracao_min == null ? null : r.duracao_min, local: r.local || '',
+      estado: r.estado || 'agendada', projeto_id: r.projeto_id || null, conta_id: r.conta_id || null, oportunidade_id: r.oportunidade_id || null,
+      cliente: r.cliente || '', projeto_nome: r.projeto_nome || '', oportunidade_titulo: r.oportunidade_titulo || '',
+      ordem_trabalhos: r.ordem_trabalhos || '', notas: r.notas || '',
+      participantes: JSON.stringify(r.participantes || []), ficheiros: JSON.stringify(r.ficheiros || []), pontos: JSON.stringify(r.pontos || []),
+      ata_versao: r.ata_versao || 0, ata_emitida_em: r.ata_emitida_em || null, ata_emitida_por: r.ata_emitida_por || '', versao: r.versao || 1,
+      criado_por_user: null, criado_por_nome: r.criado_por_nome || '', criado_em: r.criado_em || r.data_hora,
+      atualizado_por_nome: r.atualizado_por_nome || '', atualizado_em: r.atualizado_em || r.criado_em || r.data_hora // colunas NOT NULL na tabela
+    }));
+
     linhas.reservas_viatura = (state.reservasViatura || []).map(rv => ({
       id: rv.id, projeto_id: rv.projetoId || null, projeto_nome: rv.projetoNome || '',
       requisitante_id: rv.requisitanteId || null, requisitante_nome: rv.requisitanteNome || '',
@@ -147,7 +160,7 @@ const Backup = {
   linhaParaInsert(tabela, linha, onConflict) {
     const colunas = Object.keys(linha);
     const valores = colunas.map(c => {
-      if ((tabela === 'tarefas' && c === 'predecessores') || (tabela === 'projetos' && c === 'gestor_ids')) return `'${String(linha[c]).replace(/'/g, "''")}'::jsonb`;
+      if ((tabela === 'tarefas' && c === 'predecessores') || (tabela === 'projetos' && c === 'gestor_ids') || (tabela === 'reunioes' && ['participantes', 'ficheiros', 'pontos'].includes(c))) return `'${String(linha[c]).replace(/'/g, "''")}'::jsonb`;
       return this.sqlValor(linha[c]);
     });
     return `insert into public.${tabela} (${colunas.join(', ')}) values (${valores.join(', ')}) on conflict ${onConflict} do nothing;`;

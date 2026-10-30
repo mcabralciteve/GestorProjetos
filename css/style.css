@@ -1080,3 +1080,25 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .orc-estado-validado{background:#dcfce7;color:#166534;}
 .orc-estado-rejeitado{background:#fee2e2;color:#991b1b;}
 @media (max-width: 1000px){.orc-corpo{grid-template-columns:1fr;}.orc-lateral{position:static;}}
+
+/* Reuniões */
+.reu-estado{display:inline-block;padding:2px 8px;border-radius:var(--radius-pill);font-size:11px;font-weight:700;background:var(--cinza-200);color:var(--cinza-700);}
+.reu-estado-agendada{background:rgba(42,106,154,.16);color:var(--azul);}
+.reu-estado-realizada{background:rgba(31,138,91,.16);color:var(--verde);}
+.reu-estado-cancelada{background:rgba(192,57,43,.14);color:var(--vermelho);}
+.reu-topo{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;}
+.reu-topo-titulo{font-size:15px;}
+.reu-card{margin-bottom:12px;max-width:980px;}
+.reu-card .crm-h{margin-top:0;}
+.reu-card label{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;font-size:12px;color:var(--cinza-500);}
+.reu-card textarea{width:100%;box-sizing:border-box;resize:vertical;}
+.reu-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
+.reu-add select{min-width:240px;max-width:100%;}
+.reu-presente{display:inline-flex !important;flex-direction:row !important;align-items:center;gap:4px;margin:0 !important;white-space:nowrap;color:var(--cinza-900) !important;}
+.reu-ponto{display:grid;grid-template-columns:96px minmax(180px,1fr) 150px 140px 70px 24px;gap:6px;align-items:center;margin-bottom:6px;}
+.reu-ponto select,.reu-ponto input[type=text],.reu-ponto input[type=date]{min-width:0;width:100%;box-sizing:border-box;}
+.reu-ponto-vazio{grid-column:span 3;}
+.reu-feita .reu-ponto-texto{text-decoration:line-through;color:var(--cinza-500);}
+.reu-ficheiro{display:grid;grid-template-columns:minmax(120px,1fr) minmax(200px,2fr) 60px 24px;gap:6px;align-items:center;margin-bottom:6px;}
+.reu-ficheiro input{min-width:0;width:100%;box-sizing:border-box;}
+@media (max-width:760px){.reu-ponto{grid-template-columns:1fr 1fr;}.reu-ponto-vazio{display:none;}.reu-ficheiro{grid-template-columns:1fr 24px;}}

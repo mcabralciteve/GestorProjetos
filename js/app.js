@@ -522,6 +522,7 @@ const App = {
     } else if (!autenticadoAgora && this.sessaoAtiva) {
       this.sessaoAtiva = false;
       Crm.limpar();
+      Reunioes.limpar();
       this.state = this.estadoVazio();
       this.renderProjetoSelect();
       this.renderTudo();
@@ -10164,8 +10165,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', reunioes: 'reunioes', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', reunioes: 'reunioes', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
   irParaAba(nome) {
     this.abaAtiva = nome;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
@@ -10181,6 +10182,7 @@ const App = {
     if (nome === 'analise') this.renderAnalise();
     if (nome === 'financeiro') this.renderFinanceiro();
     if (nome === 'previsao') Previsao.aoAbrir();
+    if (nome === 'reunioes') Reunioes.aoAbrir();
     if (nome.startsWith('crm')) Crm.aoAbrirAba(nome);
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
@@ -10439,11 +10441,14 @@ const App = {
     e.btnExportarBackup.disabled = true;
     try {
       const dataStr = DateUtil.todayISO().replace(/-/g, '');
-      const sql = Backup.gerarSQL({ ...this.state, comentarios: this.comentarios });
+      // As reuniões só se leem quando se abre o separador: carrega-as agora para entrarem no backup (sem a tabela, ficam de fora).
+      try { await Reunioes.carregar(true); } catch (e) { /* tabela por criar */ }
+      const estadoBackup = { ...this.state, comentarios: this.comentarios, reunioes: Reunioes.lista };
+      const sql = Backup.gerarSQL(estadoBackup);
       this.descarregarBlob(new Blob([sql], { type: 'text/plain;charset=utf-8' }), `backup_dados_${dataStr}.sql`);
 
       if (typeof XLSX === 'undefined') await this.carregarScript('lib/xlsx.full.min.js');
-      const excelBlob = Backup.gerarExcelBlob({ ...this.state, comentarios: this.comentarios });
+      const excelBlob = Backup.gerarExcelBlob(estadoBackup);
       this.descarregarBlob(excelBlob, `backup_dados_${dataStr}.xlsx`);
 
       e.backupMsg.style.color = 'var(--verde)';

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261101h">
+<link rel="stylesheet" href="css/style.css?v=20261101i">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -73,6 +73,7 @@
   <button class="grupo-btn active" data-grupo="inicio">🏠 Início</button>
   <button class="grupo-btn" data-grupo="comercial" id="grupoBtnComercial" style="display:none;">💼 Comercial</button>
   <button class="grupo-btn" data-grupo="planeamento">📅 Planeamento</button>
+  <button class="grupo-btn" data-grupo="reunioes">🗓 Reuniões</button>
   <button class="grupo-btn" data-grupo="equipa" id="grupoBtnEquipa">👥 Equipa</button>
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
   <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Financeiro</button>
@@ -93,6 +94,9 @@
     <button class="tab-btn" data-tab="projetos">Projetos</button>
     <button class="tab-btn" data-tab="portefolio">Portefólio</button>
     <button class="tab-btn" data-tab="acompanhamento" id="tabBtnAcompanhamento">Acompanhamento</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="reunioes">
+    <button class="tab-btn" data-tab="reunioes">Reuniões</button>
   </div>
   <div class="tabs-grupo" data-grupo="equipa">
     <button class="tab-btn" data-tab="alocacoes" id="tabBtnAlocacoes">Alocações</button>
@@ -1209,6 +1213,13 @@
 </section>
 
 <!-- ===================== TAB: VIATURAS ===================== -->
+<section class="tab-panel" id="tab-reunioes">
+  <div class="pagina">
+    <div class="pagina-head"><h2>🗓 Reuniões</h2></div>
+    <p class="pagina-sub">Regista cada reunião com o cliente, o projeto ou a oportunidade, quem esteve presente, as notas, as decisões e ações — e emite a ata em Word.</p>
+    <div id="reunioesCorpo"></div>
+  </div>
+</section>
 <section class="tab-panel" id="tab-viaturas">
   <div class="pagina">
     <div class="pagina-head">
@@ -1328,12 +1339,14 @@
 <script src="js/supabase-config.js?v=20260928c"></script>
 <script src="js/auth.js?v=20260928c"></script>
 <script src="js/comentarios-logica.js?v=20261101a"></script>
+<script src="js/reunioes-logica.js?v=20261102a"></script>
+<script src="js/reunioes-ata.js?v=20261102a"></script>
 <script src="js/sync.js?v=20261101d"></script>
 <script src="js/gantt.js?v=20261101a"></script>
 <script src="js/capacidade.js?v=20261101a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
-<script src="js/backup.js?v=20261101d"></script>
+<script src="js/backup.js?v=20261102a"></script>
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261101a"></script>
@@ -1353,6 +1366,7 @@
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261031e"></script>
-<script src="js/app.js?v=20261101o"></script>
+<script src="js/reunioes.js?v=20261102a"></script>
+<script src="js/app.js?v=20261101p"></script>
 </body>
 </html>
