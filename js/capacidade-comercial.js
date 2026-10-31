@@ -51,6 +51,36 @@ const CapacidadeComercial = {
       r.linhas.push({ op, valor, peso, horas: m.total, inicio: m.inicio, duracao });
     });
     return r;
+  },
+
+  // Folga dos projetos de Serviços adjudicados: a diferença entre as horas VENDIDAS e a reprevisão (o que já foi gasto mais o que ainda
+  // está planeado por realizar). Não se sabe se vai ser usada nem por quem, por isso junta-se num "bolo" por mês — repartido pelos dias
+  // úteis que faltam até ao fim do projeto — e atribui-se à equipa do projeto. Só folgas positivas (um projeto a derrapar não tira horas).
+  // projetos: [{ id, nome, tipoCodigo ('servicos' | 'id' | '' sem tipo), ativo, estado, horasVendidas, equipaId, eac, fim ('AAAA-MM-DD') }]
+  // ctx: { equipasIds (Set ou null = todas), meses: ['AAAA-MM', …], hojeISO }.
+  // Devolve { porMes, total, foraDoHorizonte, linhas: [{ projeto, folga }], semEquipa, semTipo }; semEquipa = projetos com folga mas sem equipa
+  // definida (não entram quando se filtra por equipa); semTipo = projetos com folga cujo tipo (Serviços/I&D) ainda não está definido.
+  folgaProjetos(projetos, ctx) {
+    const P = this.P();
+    const porMes = P.vazio(ctx.meses);
+    const r = { porMes, total: 0, foraDoHorizonte: 0, linhas: [], semEquipa: 0, semTipo: 0 };
+    (projetos || []).forEach(p => {
+      if (!p.ativo || p.estado === 'Concluído' || p.estado === 'Cancelado') return;
+      if (p.tipoCodigo !== 'servicos' && p.tipoCodigo !== '') return;                 // I&D e outros tipos: fora
+      if (!(p.horasVendidas > 0)) return;
+      const folga = p.horasVendidas - (Number(p.eac) || 0);
+      if (!(folga > 0)) return;
+      if (ctx.equipasIds) {
+        if (!p.equipaId) { r.semEquipa++; return; }
+        if (!ctx.equipasIds.has(String(p.equipaId))) return;
+      }
+      if (p.tipoCodigo === '') { r.semTipo++; return; }
+      const d = P.distribuirHorasPorMes(ctx.hojeISO, p.fim || ctx.hojeISO, folga, ctx.hojeISO);
+      Object.entries(d).forEach(([mes, h]) => { if (mes in porMes) porMes[mes] += h; else r.foraDoHorizonte += h; });
+      r.total += folga;
+      r.linhas.push({ projeto: p, folga });
+    });
+    return r;
   }
 };
 if (typeof module !== 'undefined') module.exports = CapacidadeComercial;

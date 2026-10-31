@@ -80,3 +80,35 @@ test('soma várias oportunidades mês a mês', () => {
   // a: 400 h em jan–abr (100/mês); b: 400 h em mar–abr (200/mês)
   assert.deepEqual(MESES.map(m => r.porMes[m]), [100, 100, 300, 300, 0, 0]);
 });
+
+// ---------- Folga dos projetos de Serviços adjudicados ----------
+const proj = (id, extra) => Object.assign({ id, nome: 'Projeto ' + id, tipoCodigo: 'servicos', ativo: true, estado: 'Em curso', horasVendidas: 1000, equipaId: 'DCS', eac: 800, fim: '2027-03-31' }, extra);
+
+test('folga = horas vendidas − reprevisão, repartida pelos dias úteis que faltam e atribuída ao mês', () => {
+  // 200 h de folga; de 15/12/2026 a 31/03/2027 há 77 dias úteis; dezembro tem 13 (15–31/12, sem fins de semana)
+  const r = C.folgaProjetos([proj('a')], { equipasIds: new Set(['DCS']), meses: MESES, hojeISO: '2026-12-15' });
+  assert.equal(r.total, 200);
+  assert.equal(r.linhas.length, 1);
+  assert.ok(Math.abs(MESES.slice(0, 3).reduce((s, m) => s + r.porMes[m], 0) + r.foraDoHorizonte - 200) < 1e-9);
+  assert.ok(r.porMes['2027-01'] > 0 && r.porMes['2027-03'] > 0 && r.porMes['2027-04'] === 0);
+  assert.ok(r.foraDoHorizonte > 0);   // o que cai em dezembro/2026 fica antes do horizonte
+});
+
+test('folga: só Serviços ativos e adjudicados, com horas vendidas e folga positiva; a equipa do projeto é a do filtro', () => {
+  const projetos = [proj('ok'), proj('id', { tipoCodigo: 'id' }), proj('concluido', { estado: 'Concluído' }), proj('cancelado', { estado: 'Cancelado' }),
+    proj('suspenso', { ativo: false }), proj('semHoras', { horasVendidas: 0 }), proj('derrapa', { eac: 1200 }), proj('exato', { eac: 1000 }),
+    proj('outraEquipa', { equipaId: 'DAI' }), proj('semEquipa', { equipaId: '' }), proj('semTipo', { tipoCodigo: '' })];
+  const r = C.folgaProjetos(projetos, { equipasIds: new Set(['DCS']), meses: MESES, hojeISO: '2026-12-15' });
+  assert.deepEqual(r.linhas.map(l => l.projeto.id), ['ok']);
+  assert.equal(r.semEquipa, 1);
+  assert.equal(r.semTipo, 1);
+  const todas = C.folgaProjetos(projetos, { equipasIds: null, meses: MESES, hojeISO: '2026-12-15' });
+  assert.deepEqual(todas.linhas.map(l => l.projeto.id), ['ok', 'outraEquipa', 'semEquipa']);
+});
+
+test('folga: projeto que já devia ter acabado põe a folga no mês atual; soma vários projetos em bolo', () => {
+  const r = C.folgaProjetos([proj('a', { fim: '2026-11-30' }), proj('b', { fim: '2027-01-29', horasVendidas: 500, eac: 400 })], { equipasIds: null, meses: MESES, hojeISO: '2027-01-11' });
+  // a: 200 h todas em janeiro (fim já passou); b: 100 h de 11 a 29/01 (todas em janeiro)
+  assert.ok(Math.abs(r.porMes['2027-01'] - 300) < 1e-9);
+  assert.equal(r.foraDoHorizonte, 0);
+});
