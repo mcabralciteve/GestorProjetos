@@ -62,6 +62,13 @@ test('ficam de fora: perdidas, as que já são projeto, probabilidade zero e sem
   assert.equal(r.semValor, 1);
 });
 
+test('incluir: só entram as oportunidades que cumprem o critério (ex.: Serviços), e as outras nem contam como "sem área"', () => {
+  const ops = [op('serv'), op('id', { tipo_id: 'id' }), op('idSemArea', { tipo_id: 'id', equipa_id: null })];
+  const r = C.projetar(ops, ctx({ incluir: o => o.tipo_id === 't', equipasIds: new Set(['DCS']) }));
+  assert.deepEqual(r.linhas.map(l => l.op.id), ['serv']);
+  assert.equal(r.semArea, 0);
+});
+
 test('sem valor/hora de referência não há projeção', () => {
   const r = C.projetar([op('a')], ctx({ valorHora: 0 }));
   assert.equal(r.total, 0);

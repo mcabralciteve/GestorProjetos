@@ -18,6 +18,7 @@ const CapacidadeComercial = {
   // ops: oportunidades do CRM. ctx:
   //   categoriaDe(op) → 'aberta' | 'ganha' | 'perdida';   probabilidade(op) → 0..1 (das abertas);
   //   valorDe(op) → valor em €;   defeitosDoTipo(tipoId) → { apos, duracao };   temProjeto(op) → já é um projeto da app?
+  //   incluir(op) → (opcional) só entram as oportunidades que cumprem (ex.: só as de Serviços);
   //   equipasIds: Set de ids das equipas no ecrã, ou null para todas;   valorHora: € por hora;
   //   meses: ['AAAA-MM', …] do horizonte;   hojeISO: 'AAAA-MM-DD'.
   // Só entram as oportunidades da(s) equipa(s) pedida(s) (campo "área responsável" da oportunidade). Devolve
@@ -30,6 +31,7 @@ const CapacidadeComercial = {
     if (!(ctx.valorHora > 0)) return r;
     (ops || []).forEach(op => {
       const cat = ctx.categoriaDe(op);
+      if (ctx.incluir && !ctx.incluir(op)) return;
       if (cat === 'perdida' || ctx.temProjeto(op)) return;                       // já é projeto: conta pelas tarefas do projeto
       const peso = cat === 'ganha' ? 1 : ctx.probabilidade(op);
       if (!(peso > 0)) return;

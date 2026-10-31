@@ -6507,7 +6507,8 @@ const App = {
   renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula }) {
     const e = this.els, info = e.infoCapProjecao;
     const esconder = () => { if (info) info.hidden = true; };
-    if (parcial || !Crm.podeVer()) return esconder();
+    // A projeção é só das oportunidades de Serviços: aparece em qualquer filtro que inclua Serviços (Totalidade, Serviços, Serviços + I&D).
+    if (this.tipoCap === 'id' || !Crm.podeVer()) return esconder();
     if (!Crm.carregado) {
       // As oportunidades vivem no módulo Comercial: carrega-se à parte, uma vez, e a Capacidade volta a desenhar-se.
       if (!Crm.erroCarga && !this._aCarregarCapCrm) {
@@ -6528,6 +6529,7 @@ const App = {
     const equipasIds = this.filtroEquipasCap.size ? new Set(this.filtroEquipasCap) : new Set(recursosBase.map(r => String(r.equipaId || '')).filter(Boolean));
     const mesesISO = meses.map(m => `${m.ano}-${String(m.mes + 1).padStart(2, '0')}`);
     const proj = CapacidadeComercial.projetar(Crm.d.oportunidades, {
+      incluir: op => PrevisaoLogica.tipoDeProjeto({ tipoCrmNome: (Crm.idx.tipo.get(op.tipo_id) || {}).nome }).codigo === 'servicos',
       categoriaDe: op => CrmLogica.categoriaDe(op, Crm.idx.etapa),
       probabilidade: op => CrmLogica.probabilidadeDe(op, Crm.idx.etapa) / 100,
       // Mesmo valor do mapa de Previsão: o da proposta vigente (reflexo dos orçamentos) se existir, senão o valor estimado.
@@ -6537,23 +6539,33 @@ const App = {
       equipasIds: todas ? null : equipasIds, valorHora: vh.valor, meses: mesesISO, hojeISO: DateUtil.todayISO()
     });
     const AVISO = 'Projeção, sujeita a erros.';
-    const celulas = meses.map((m, i) => {
+    const fmtPct = (res) => isFinite(res.pct) ? Math.round(res.pct * 100) + '%' : '⚠';
+    const celulas = [], celulasSoma = [];
+    meses.forEach((m, i) => {
       const h = proj.porMes[mesesISO[i]] || 0, cap = totaisRes[i].capacidade, alocado = totaisRes[i].alocado;
-      const res = { alocado: h, capacidade: cap, pct: cap > 0 ? h / cap : (h > 0 ? Infinity : 0) };
-      const junto = cap > 0 ? ` Com o já alocado (${Math.round(alocado)}h), a ocupação seria de ${Math.round((alocado + h) / cap * 100)}%.` : '';
-      return `<td class="occ-projecao" title="${escapeAttr(`${Math.round(h)}h projetadas de oportunidades (ponderadas pela probabilidade) para ${m.label}. ${AVISO}${junto}`)}">${textoCelula(res)}</td>`;
-    }).join('');
+      const resProj = { alocado: h, capacidade: cap, pct: cap > 0 ? h / cap : (h > 0 ? Infinity : 0) };
+      celulas.push(`<td class="occ-projecao" title="${escapeAttr(`${Math.round(h)}h projetadas de oportunidades de Serviços (ponderadas pela probabilidade) para ${m.label}. ${AVISO}`)}">${textoCelula(resProj)}</td>`);
+      // Soma do real com a projeção (mesma capacidade): cor pelos mesmos limiares, exceto quando o ecrã só conta um tipo de projetos.
+      const resSoma = { alocado: alocado + h, capacidade: cap, pct: cap > 0 ? (alocado + h) / cap : (alocado + h > 0 ? Infinity : 0) };
+      const cls = parcial ? '' : ' occ-' + Capacidade.classeResumo(Object.assign({}, resSoma, { diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 }));
+      celulasSoma.push(`<td class="occ-total occ-soma${cls}" title="${escapeAttr(`${Math.round(alocado)}h alocadas + ${Math.round(h)}h projetadas = ${Math.round(alocado + h)}h / ${Math.round(cap)}h de capacidade (${fmtPct(resSoma)}). Inclui uma projeção, sujeita a erros.`)}">${textoCelula(resSoma)}</td>`);
+    });
     const tr = document.createElement('tr');
     tr.className = 'cap-projecao';
-    tr.innerHTML = `<th title="${escapeAttr('Horas das oportunidades comerciais ainda sem projeto, ponderadas pela probabilidade de sucesso. ' + AVISO)}">Oportunidades (projeção)<small>${AVISO}</small></th>${celulas}`;
+    tr.innerHTML = `<th title="${escapeAttr('Horas das oportunidades de Serviços ainda sem projeto, ponderadas pela probabilidade de sucesso. ' + AVISO)}">Oportunidades de Serviços (projeção)</th>${celulas.join('')}`;
     e.heatmapCapBody.appendChild(tr);
+    const trSoma = document.createElement('tr');
+    trSoma.className = 'cap-total cap-total-proj';
+    trSoma.innerHTML = `<th title="${escapeAttr('Horas alocadas (reais) mais a projeção das oportunidades de Serviços. ' + AVISO)}">Total + projeção</th>${celulasSoma.join('')}`;
+    e.heatmapCapBody.appendChild(trSoma);
     const euros = (v) => Math.round(v).toLocaleString('pt-PT') + ' €';
-    const partes = [`⚠ Linha «Oportunidades»: projeção, sujeita a erros. Soma as horas das oportunidades comerciais que ainda não são projetos: valor da oportunidade ÷ valor/hora médio${mostraValor ? ` (${euros(vh.valor)}/h, média do preço de venda de ${vh.n} consultor${vh.n === 1 ? '' : 'es'} no ecrã)` : ' dos consultores no ecrã'} × probabilidade de sucesso (as ganhas sem projeto contam a 100%), repartidas em partes iguais pela duração prevista de cada uma.`,
+    const partes = [`<b>⚠ Projeção, sujeita a erros.</b> A linha «Oportunidades de Serviços» soma as horas das oportunidades comerciais de Serviços que ainda não são projetos: valor da oportunidade ÷ valor/hora médio${mostraValor ? ` (${euros(vh.valor)}/h, média do preço de venda de ${vh.n} consultor${vh.n === 1 ? '' : 'es'} no ecrã)` : ' dos consultores no ecrã'} × probabilidade de sucesso (as ganhas sem projeto contam a 100%), repartidas em partes iguais pela duração prevista de cada uma.`,
       `Entram ${proj.linhas.length} oportunidade${proj.linhas.length === 1 ? '' : 's'} ${todas ? 'de todas as áreas' : 'da(s) área(s) escolhida(s)'}, num total de ${Math.round(proj.total).toLocaleString('pt-PT')}h ponderadas${proj.foraDoHorizonte > 0.5 ? ` (${Math.round(proj.foraDoHorizonte).toLocaleString('pt-PT')}h caem fora destes meses)` : ''}.`];
     if (proj.semArea) partes.push(`${proj.semArea} oportunidade${proj.semArea === 1 ? ' sem área responsável não entra' : 's sem área responsável não entram'} (define a área na oportunidade).`);
     if (proj.semValor) partes.push(`${proj.semValor} oportunidade${proj.semValor === 1 ? ' sem valor não entra' : 's sem valor não entram'}.`);
+    partes.push('A linha «Total + projeção» soma o que já está alocado com esta projeção. As oportunidades de I&D não entram.');
     info.hidden = false;
-    info.textContent = partes.join(' ');
+    info.innerHTML = partes.join(' ');
   },
   // Exporta para Excel os consultores e os meses que estão no ecrã da Capacidade (equipas e período escolhidos). Por
   // consultor e por mês: horas de Serviços, de I&D e Totais — o Total são TODAS as horas alocadas (inclui projetos sem
