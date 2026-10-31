@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261103c">
+<link rel="stylesheet" href="css/style.css?v=20261104a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -666,13 +666,20 @@
             <option value="3">3 meses</option>
             <option value="6" selected>6 meses</option>
             <option value="12">12 meses</option>
+            <option value="ano">Ano civil</option>
           </select>
         </label>
-        <label class="zoom-label">A partir de:
+        <label class="zoom-label" id="lblMesInicioCap">A partir de:
           <button id="btnCapMesAnt" class="btn btn-sm" title="Mês anterior">◀</button>
           <input type="month" id="selMesInicioCap">
           <button id="btnCapMesSeg" class="btn btn-sm" title="Mês seguinte">▶</button>
           <button id="btnCapHoje" class="btn btn-sm" title="Voltar ao mês atual">Hoje</button>
+        </label>
+        <label class="zoom-label" id="lblAnoCap" style="display:none;">Ano:
+          <button id="btnCapAnoAnt" class="btn btn-sm" title="Ano anterior">◀</button>
+          <input type="number" id="selAnoCap" min="2000" max="2100" step="1" style="width:80px;">
+          <button id="btnCapAnoSeg" class="btn btn-sm" title="Ano seguinte">▶</button>
+          <button id="btnCapAnoHoje" class="btn btn-sm" title="Voltar ao ano atual">Este ano</button>
         </label>
         <button type="button" id="btnCapExportar" class="ib ib-pri" data-icone="upload" data-tip="Exportar para Excel o que está no ecrã (equipas, tipo de horas e período)" aria-label="Exportar para Excel"><span>Excel</span></button>
       </div>
@@ -688,6 +695,7 @@
         <tbody id="heatmapCapBody"></tbody>
       </table>
     </div>
+    <p class="pagina-sub cap-projecao-info" id="infoCapProjecao" hidden></p>
 
     <h2 style="margin-top:24px;">Detalhe por Consultor</h2>
     <div class="grid-capacidade" id="gridCapacidade"></div>
@@ -1371,7 +1379,8 @@
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/orcprev-logica.js?v=20261031e"></script>
 <script src="js/horas-reais-logica.js?v=20261104a"></script>
+<script src="js/capacidade-comercial.js?v=20261104a"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
-<script src="js/app.js?v=20261104a"></script>
+<script src="js/app.js?v=20261104c"></script>
 </body>
 </html>

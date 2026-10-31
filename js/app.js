@@ -277,6 +277,10 @@ const App = {
       painelPersonalizarDashboard: document.getElementById('painelPersonalizarDashboard'),
       selHorizonteCap: document.getElementById('selHorizonteCap'),
       selMesInicioCap: document.getElementById('selMesInicioCap'),
+      selAnoCap: document.getElementById('selAnoCap'),
+      lblMesInicioCap: document.getElementById('lblMesInicioCap'),
+      lblAnoCap: document.getElementById('lblAnoCap'),
+      infoCapProjecao: document.getElementById('infoCapProjecao'),
       heatmapCapHead: document.getElementById('heatmapCapHead'),
       heatmapCapBody: document.getElementById('heatmapCapBody'),
       gridCapacidade: document.getElementById('gridCapacidade'),
@@ -6320,6 +6324,11 @@ const App = {
   // ---------- Tab: Capacidade ----------
   // Avança/recua um mês o "A partir de" da Capacidade — mantém o mesmo horizonte, só desloca o
   // início da janela (incluindo para trás, para ver meses já passados).
+  navegarAnoCap(delta) {
+    const e = this.els;
+    e.selAnoCap.value = String((parseInt(e.selAnoCap.value, 10) || new Date().getFullYear()) + delta);
+    this.renderCapacidade();
+  },
   navegarMesCap(delta) {
     const e = this.els;
     const atual = e.selMesInicioCap.value || DateUtil.todayISO().slice(0, 7);
@@ -6351,19 +6360,31 @@ const App = {
     // motor de capacidade calculado antes da última alteração a ausências/feriados/tarefas.
     Capacidade.limparCaches();
     this.limparCacheDiasUteisEntre();
-    const nMeses = parseInt(e.selHorizonteCap.value, 10) || 6;
-    // "A partir de" (input type=month) — por omissão o mês atual (mantém o comportamento de
-    // sempre mostrar os 6 meses seguintes), mas dá para recuar e ver meses passados.
-    if (!e.selMesInicioCap.value) {
-      const hoje = new Date();
-      e.selMesInicioCap.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    // Horizonte: N meses a partir de um mês, ou um ANO CIVIL inteiro (jan–dez) à escolha — para ver, por exemplo, todo o 2027.
+    const modoAno = e.selHorizonteCap.value === 'ano';
+    if (e.lblMesInicioCap) e.lblMesInicioCap.style.display = modoAno ? 'none' : '';
+    if (e.lblAnoCap) e.lblAnoCap.style.display = modoAno ? '' : 'none';
+    let nMeses, meses;
+    if (modoAno) {
+      if (!e.selAnoCap.value) e.selAnoCap.value = String(new Date().getFullYear());
+      nMeses = 12;
+      meses = Capacidade.horizonteMeses(12, { ano: parseInt(e.selAnoCap.value, 10) || new Date().getFullYear(), mes: 0 });
+    } else {
+      nMeses = parseInt(e.selHorizonteCap.value, 10) || 6;
+      // "A partir de" (input type=month) — por omissão o mês atual (mantém o comportamento de
+      // sempre mostrar os 6 meses seguintes), mas dá para recuar e ver meses passados.
+      if (!e.selMesInicioCap.value) {
+        const hoje = new Date();
+        e.selMesInicioCap.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+      }
+      const [anoIni, mesIni] = e.selMesInicioCap.value.split('-').map(Number);
+      meses = Capacidade.horizonteMeses(nMeses, { ano: anoIni, mes: mesIni - 1 });
     }
-    const [anoIni, mesIni] = e.selMesInicioCap.value.split('-').map(Number);
-    const meses = Capacidade.horizonteMeses(nMeses, { ano: anoIni, mes: mesIni - 1 });
 
     e.heatmapCapHead.innerHTML = '<th>Consultor</th>' + meses.map(m => `<th>${escapeHtml(m.label)}</th>`).join('');
     e.heatmapCapBody.innerHTML = '';
     e.gridCapacidade.innerHTML = '';
+    if (e.infoCapProjecao) e.infoCapProjecao.hidden = true; // volta a mostrar-se só se a linha das oportunidades for desenhada
 
     this.tipoCap = e.selTipoCap.value || 'total';
     this.vistaCap = e.selVistaCap.value || 'pct';
@@ -6476,7 +6497,63 @@ const App = {
     trTotal.innerHTML = `<th>Total (${recursosFiltrados.length})</th>` + totaisRes.map(res =>
       `<td class="occ-total" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade (${fmtPct(res)})">${textoCelula(res)}</td>`).join('');
     e.heatmapCapBody.appendChild(trTotal);
+    this.renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula });
     this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap) };
+  },
+  // Linha "Oportunidades (projeção)" da Capacidade: as horas que as oportunidades comerciais ainda sem projeto vão pedir, ponderadas pela
+  // probabilidade de sucesso, só das equipas que estão no filtro (campo "área responsável" da oportunidade). As contas estão em
+  // js/capacidade-comercial.js. É sempre apresentada como uma projeção sujeita a erros. Só para quem vê o Comercial; não se aplica
+  // quando o ecrã só conta um tipo de projetos (Serviços/I&D).
+  renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula }) {
+    const e = this.els, info = e.infoCapProjecao;
+    const esconder = () => { if (info) info.hidden = true; };
+    if (parcial || !Crm.podeVer()) return esconder();
+    if (!Crm.carregado) {
+      // As oportunidades vivem no módulo Comercial: carrega-se à parte, uma vez, e a Capacidade volta a desenhar-se.
+      if (!Crm.erroCarga && !this._aCarregarCapCrm) {
+        this._aCarregarCapCrm = true;
+        Crm.carregar().catch(() => {}).finally(() => { this._aCarregarCapCrm = false; if (this.abaAtiva === 'capacidade') this.renderCapacidade(); });
+      }
+      return esconder();
+    }
+    const vh = CapacidadeComercial.valorHoraMedio(recursosFiltrados);
+    const mostraValor = this.souAdmin();   // o preço/hora é dado sensível: só o Administrador o vê
+    if (!(vh.valor > 0)) {
+      info.hidden = false;
+      info.textContent = 'Projeção das oportunidades indisponível: os consultores no ecrã não têm preço de venda por hora definido (define-o em Pessoas), e é com ele que se converte o valor das oportunidades em horas.';
+      return;
+    }
+    // Sem filtro de equipas: o Administrador vê tudo; os restantes, as equipas que têm no ecrã.
+    const todas = !this.filtroEquipasCap.size && this.souAdmin();
+    const equipasIds = this.filtroEquipasCap.size ? new Set(this.filtroEquipasCap) : new Set(recursosBase.map(r => String(r.equipaId || '')).filter(Boolean));
+    const mesesISO = meses.map(m => `${m.ano}-${String(m.mes + 1).padStart(2, '0')}`);
+    const proj = CapacidadeComercial.projetar(Crm.d.oportunidades, {
+      categoriaDe: op => CrmLogica.categoriaDe(op, Crm.idx.etapa),
+      probabilidade: op => CrmLogica.probabilidadeDe(op, Crm.idx.etapa) / 100,
+      // Mesmo valor do mapa de Previsão: o da proposta vigente (reflexo dos orçamentos) se existir, senão o valor estimado.
+      valorDe: op => { const v = CrmLogica.propostaVigente(Crm.d.propostas, op.id); const vp = v ? Crm.valorProposta(v) : 0; return vp > 0 ? vp : (Number(op.valor_estimado) || 0); },
+      defeitosDoTipo: id => Crm.defeitosDoTipo(id),
+      temProjeto: op => !!(op.projeto_id && this.state.projetos[op.projeto_id]),
+      equipasIds: todas ? null : equipasIds, valorHora: vh.valor, meses: mesesISO, hojeISO: DateUtil.todayISO()
+    });
+    const AVISO = 'Projeção, sujeita a erros.';
+    const celulas = meses.map((m, i) => {
+      const h = proj.porMes[mesesISO[i]] || 0, cap = totaisRes[i].capacidade, alocado = totaisRes[i].alocado;
+      const res = { alocado: h, capacidade: cap, pct: cap > 0 ? h / cap : (h > 0 ? Infinity : 0) };
+      const junto = cap > 0 ? ` Com o já alocado (${Math.round(alocado)}h), a ocupação seria de ${Math.round((alocado + h) / cap * 100)}%.` : '';
+      return `<td class="occ-projecao" title="${escapeAttr(`${Math.round(h)}h projetadas de oportunidades (ponderadas pela probabilidade) para ${m.label}. ${AVISO}${junto}`)}">${textoCelula(res)}</td>`;
+    }).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'cap-projecao';
+    tr.innerHTML = `<th title="${escapeAttr('Horas das oportunidades comerciais ainda sem projeto, ponderadas pela probabilidade de sucesso. ' + AVISO)}">Oportunidades (projeção)<small>${AVISO}</small></th>${celulas}`;
+    e.heatmapCapBody.appendChild(tr);
+    const euros = (v) => Math.round(v).toLocaleString('pt-PT') + ' €';
+    const partes = [`⚠ Linha «Oportunidades»: projeção, sujeita a erros. Soma as horas das oportunidades comerciais que ainda não são projetos: valor da oportunidade ÷ valor/hora médio${mostraValor ? ` (${euros(vh.valor)}/h, média do preço de venda de ${vh.n} consultor${vh.n === 1 ? '' : 'es'} no ecrã)` : ' dos consultores no ecrã'} × probabilidade de sucesso (as ganhas sem projeto contam a 100%), repartidas em partes iguais pela duração prevista de cada uma.`,
+      `Entram ${proj.linhas.length} oportunidade${proj.linhas.length === 1 ? '' : 's'} ${todas ? 'de todas as áreas' : 'da(s) área(s) escolhida(s)'}, num total de ${Math.round(proj.total).toLocaleString('pt-PT')}h ponderadas${proj.foraDoHorizonte > 0.5 ? ` (${Math.round(proj.foraDoHorizonte).toLocaleString('pt-PT')}h caem fora destes meses)` : ''}.`];
+    if (proj.semArea) partes.push(`${proj.semArea} oportunidade${proj.semArea === 1 ? ' sem área responsável não entra' : 's sem área responsável não entram'} (define a área na oportunidade).`);
+    if (proj.semValor) partes.push(`${proj.semValor} oportunidade${proj.semValor === 1 ? ' sem valor não entra' : 's sem valor não entram'}.`);
+    info.hidden = false;
+    info.textContent = partes.join(' ');
   },
   // Exporta para Excel os consultores e os meses que estão no ecrã da Capacidade (equipas e período escolhidos). Por
   // consultor e por mês: horas de Serviços, de I&D e Totais — o Total são TODAS as horas alocadas (inclui projetos sem
@@ -11208,6 +11285,10 @@ const App = {
     e.selVistaCap.addEventListener('change', () => this.renderCapacidade());
     e.btnCapExportar.addEventListener('click', () => this.exportarCapacidadeExcel());
     e.selMesInicioCap.addEventListener('change', () => this.renderCapacidade());
+    e.selAnoCap.addEventListener('change', () => this.renderCapacidade());
+    document.getElementById('btnCapAnoAnt').addEventListener('click', () => this.navegarAnoCap(-1));
+    document.getElementById('btnCapAnoSeg').addEventListener('click', () => this.navegarAnoCap(1));
+    document.getElementById('btnCapAnoHoje').addEventListener('click', () => { e.selAnoCap.value = ''; this.renderCapacidade(); });
     document.getElementById('btnCapMesAnt').addEventListener('click', () => this.navegarMesCap(-1));
     document.getElementById('btnCapMesSeg').addEventListener('click', () => this.navegarMesCap(1));
     document.getElementById('btnCapHoje').addEventListener('click', () => { e.selMesInicioCap.value = ''; this.renderCapacidade(); });
