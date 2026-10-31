@@ -802,6 +802,8 @@ td.occ-neutro{background:#d6e6f4;color:#1d4466;font-family:var(--font-mono,monos
 /* Linha de projeção das oportunidades (Capacidade): traço diagonal e itálico — é uma estimativa, não horas já alocadas. */
 tr.cap-projecao th{background:var(--cinza-100);text-align:left;font-style:italic;font-weight:600;color:var(--cinza-700);}
 tr.cap-total-proj td,tr.cap-total-proj th{border-top:1px solid var(--cinza-300);}
+tr.cap-transicao th{background:var(--branco);text-align:left;font-style:italic;font-weight:500;color:var(--cinza-700);}
+td.occ-transicao{font-style:italic;color:var(--cinza-700);background:var(--branco);}
 td.occ-projecao{font-style:italic;color:var(--azul-esc);border-top:1px dashed var(--azul);background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--azul) 10%,transparent) 6px 12px);}
 .cap-projecao-info{border-left:3px solid var(--laranja);padding-left:10px;}
 tr.cap-capacidade th,td.occ-capacidade{background:var(--cinza-100);color:var(--cinza-700);font-weight:600;font-family:var(--font-mono,monospace);}

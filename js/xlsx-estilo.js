@@ -7,7 +7,9 @@
 //   congelar: { linhas: 5, colunas: 2 },                    // opcional: painéis fixos
 //   autofiltro: { linha: 5, de: 0, ate: 6, ultimaLinha: 20 },   // opcional (linhas 1-based, colunas 0-based)
 //   paisagem: true,
-//   linhas: [ { altura: 20, celulas: [ { v: 'texto' | 123 | null, e: estilo, colspan: 2, rowspan: 1 }, ... ] }, ... ]
+//   linhas: [ { altura: 20, celulas: [ { v: 'texto' | 123 | null, f: 'SUM(A1:A3)', e: estilo, colspan: 2, rowspan: 1 }, ... ] }, ... ]
+//   "f" (opcional) = fórmula do Excel, sem o "=" inicial; "v" passa a ser o valor já calculado (texto ou número), para quem abre o ficheiro
+//   sem recalcular — o Excel recalcula tudo ao abrir.
 // }
 // estilo e = { negrito, italico, tam, cor: 'RRGGBB', fundo: 'RRGGBB', alinha: 'left'|'center'|'right', quebra: true,
 //              formato: '0.0' | '0%' | '#,##0.0;-#,##0.0;"–"', borda: 'fina' | 'topo' }
@@ -93,7 +95,12 @@ const XlsxEstilo = {
         const ref = this.ref(r, c);
         const v = cel.v;
         let conteudo = '';
-        if (typeof v === 'number' && isFinite(v)) conteudo = `<c r="${ref}" s="${s}"><v>${v}</v></c>`;
+        if (cel.f) {
+          const fx = `<f>${this._esc(cel.f)}</f>`;
+          if (typeof v === 'number' && isFinite(v)) conteudo = `<c r="${ref}" s="${s}">${fx}<v>${v}</v></c>`;
+          else if (typeof v === 'string' && v !== '') conteudo = `<c r="${ref}" s="${s}" t="str">${fx}<v>${this._esc(v)}</v></c>`;
+          else conteudo = `<c r="${ref}" s="${s}">${fx}</c>`;
+        } else if (typeof v === 'number' && isFinite(v)) conteudo = `<c r="${ref}" s="${s}"><v>${v}</v></c>`;
         else if (v !== null && v !== undefined && v !== '') conteudo = `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${this._esc(v)}</t></is></c>`;
         else conteudo = `<c r="${ref}" s="${s}"/>`;
         celulas.push(conteudo);
@@ -152,7 +159,7 @@ const XlsxEstilo = {
       ? `<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${nome}'!$${this._letras(spec.autofiltro.de)}$${spec.autofiltro.linha}:$${this._letras(spec.autofiltro.ate)}$${spec.autofiltro.ultimaLinha}</definedName></definedNames>` : '';
     zip.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
       + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-      + `<sheets><sheet name="${nome}" sheetId="1" r:id="rId1"/></sheets>${nomesDefinidos}</workbook>`);
+      + `<sheets><sheet name="${nome}" sheetId="1" r:id="rId1"/></sheets>${nomesDefinidos}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
     zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
       + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
       + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
