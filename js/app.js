@@ -6498,7 +6498,7 @@ const App = {
       `<td class="occ-total" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade (${fmtPct(res)})">${textoCelula(res)}</td>`).join('');
     e.heatmapCapBody.appendChild(trTotal);
     this.renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula });
-    this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap) };
+    this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap), projecao: this._projecaoCap };
   },
   // Linhas de projeção da Capacidade (todas "projeção, sujeita a erros", só para filtros que incluam Serviços):
   //  - "Oportunidades de Serviços (projeção)": as horas que as oportunidades de Serviços ainda sem projeto vão pedir, ponderadas pela
@@ -6510,6 +6510,7 @@ const App = {
   renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula }) {
     const e = this.els, info = e.infoCapProjecao;
     const esconder = () => { if (info) info.hidden = true; };
+    this._projecaoCap = null;   // horas projetadas por mês, para o Excel (ver exportarCapacidadeExcel)
     if (this.tipoCap === 'id') return esconder();
     const AVISO = 'Projeção, sujeita a erros.';
     const mesesISO = meses.map(m => `${m.ano}-${String(m.mes + 1).padStart(2, '0')}`);
@@ -6590,6 +6591,7 @@ const App = {
     }
 
     // ---- 3) Total + projeção ----
+    this._projecaoCap = (horasOp || horasFolga) ? { op: horasOp, folga: horasFolga } : null;
     if (!horasOp && !horasFolga) {
       trs.forEach(tr => e.heatmapCapBody.appendChild(tr));
       if (partes.length > 1) { info.hidden = false; info.innerHTML = partes.join(' '); } else esconder();
@@ -6662,6 +6664,38 @@ const App = {
         linhaTotal.celulas.push(h(s.s), h(s.i), h(s.t), h(s.cap),
           { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'topo', negrito: true, fundo: 'DCE8F3' } });
       });
+      // Linhas de projeção (as mesmas do ecrã, quando aparecem lá): contam como horas de Serviços, por isso entram na coluna "Serviços" e no
+      // "Total"; a capacidade é a da equipa. São estimativas, sujeitas a erros — vão a itálico e com nota no fim.
+      const proj = d.projecao;
+      const linhasProj = [], notasProj = [];
+      if (proj) {
+        const FUNDO_P = 'EEF3F8', COR_P = '2A6A9A';
+        const linhaProjecao = (rotulo, horas) => ({ altura: 18, celulas: [{ v: rotulo, e: { negrito: true, italico: true, cor: COR_P, fundo: FUNDO_P, borda: 'fina' }, colspan: 2 }].concat(
+          horas.reduce((acc, h, mi) => {
+            const cap = somas[mi].cap, pct = cap > 0 ? h / cap : (h > 0 ? Infinity : 0);
+            const num = (v) => ({ v: r1(v), e: { formato: NUM, alinha: 'right', borda: 'fina', italico: true, cor: COR_P, fundo: FUNDO_P } });
+            return acc.concat([num(h), { v: '', e: { borda: 'fina', fundo: FUNDO_P } }, num(h), num(cap),
+              (cap <= 0 && h <= 0) ? { v: '–', e: { alinha: 'center', borda: 'fina', fundo: FUNDO_P, cor: '6B7280' } }
+                : { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'fina', italico: true, cor: COR_P, fundo: FUNDO_P } }]);
+          }, [])) });
+        const zeros = d.meses.map(() => 0);
+        const hOp = proj.op || zeros, hFolga = proj.folga || zeros;
+        if (proj.op) linhasProj.push(linhaProjecao('Oportunidades de Serviços (projeção)', hOp));
+        if (proj.folga) linhasProj.push(linhaProjecao('Folga de Serviços adjudicados (projeção)', hFolga));
+        linhasProj.push({ altura: 20, celulas: [{ v: 'Total + projeção', e: { negrito: true, fundo: 'DCE8F3', borda: 'topo' }, colspan: 2 }].concat(
+          somas.reduce((acc, s, mi) => {
+            const extra = hOp[mi] + hFolga[mi], t = s.t + extra, pct = s.cap > 0 ? t / s.cap : (t > 0 ? Infinity : 0);
+            const cls = Capacidade.classeResumo({ pct, diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 });
+            const h = (v) => ({ v: r1(v), e: { formato: NUM, alinha: 'right', borda: 'topo', negrito: true, fundo: 'DCE8F3' } });
+            return acc.concat([h(s.s + extra), h(s.i), h(t), h(s.cap),
+              (s.cap <= 0 && t <= 0) ? { v: '–', e: { alinha: 'center', borda: 'topo', fundo: 'DCE8F3', cor: '6B7280' } }
+                : { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'topo', negrito: true, fundo: COR[cls][0], cor: COR[cls][1] } }]);
+          }, [])) });
+        notasProj.push('PROJEÇÃO, SUJEITA A ERROS: as linhas de projeção (a itálico) são estimativas, não horas já alocadas; contam como horas de Serviços, com a capacidade da equipa.');
+        if (proj.op) notasProj.push('Oportunidades de Serviços = valor da oportunidade ÷ valor/hora médio dos consultores × probabilidade de sucesso, repartido pela duração prevista; só as das equipas escolhidas (área responsável) e que ainda não são projetos.');
+        if (proj.folga) notasProj.push('Folga de Serviços adjudicados = horas vendidas − reprevisão (já gasto + planeado por realizar) dos projetos de Serviços, repartida pelos dias úteis que faltam e atribuída à equipa do projeto; assume que será usada.');
+        notasProj.push('Total + projeção = Total + oportunidades + folga.');
+      }
       const nomesEq = this.state.equipas.filter(eq => d.equipasIds.includes(String(eq.id))).map(eq => eq.nome);
       const periodo = `${maiuscula(d.meses[0].label)} a ${maiuscula(d.meses[d.meses.length - 1].label)}`;
       const nota = (texto) => ({ celulas: [{ v: texto, e: { italico: true, tam: 9, cor: '6B7280' }, colspan: nColunas }] });
@@ -6675,10 +6709,10 @@ const App = {
           { v: 'Equipa', e: { negrito: true, cor: AZ, fundo: 'D3E3F3', borda: 'fina' } }
         ].concat(d.meses.reduce((acc, m, mi) => acc.concat(['Serviços (h)', 'I&D (h)', 'Total (h)', 'Capacidade (h)', 'Ocupação'].map(t =>
           ({ v: t, e: { negrito: true, cor: AZ, fundo: mi % 2 ? 'E3EEF8' : 'D3E3F3', alinha: 'center', quebra: true, borda: 'fina' } }))), [])) }
-      ].concat(linhasDados, [linhaTotal, { altura: 8, celulas: [] },
+      ].concat(linhasDados, [linhaTotal], linhasProj, [{ altura: 8, celulas: [] },
         nota('Total = todas as horas alocadas ao consultor no mês (inclui projetos sem tipo e outras atividades), por isso não é a soma de Serviços + I&D.'),
         nota('Ocupação = Total ÷ Capacidade. Cores: verde confortável · amarelo subutilizado · laranja perto do limite · vermelho sobre-alocado (limiares das Definições).'),
-        nota('Capacidade = dias úteis × 8h, a descontar feriados, ausências e horas registadas fora de projetos.')]);
+        nota('Capacidade = dias úteis × 8h, a descontar feriados, ausências e horas registadas fora de projetos.')], notasProj.map(t => nota(t)));
       const spec = {
         nome: 'Capacidade', paisagem: true,
         larguras: [26, 16].concat(d.meses.reduce((acc) => acc.concat([13, 12, 12, 15, 13]), [])),
