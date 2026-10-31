@@ -3922,7 +3922,25 @@ const App = {
   // Um registo com referência direta a uma tarefa do projeto (tarefaId) conta SÓ para essa tarefa, pelo
   // id — renomear ou reestruturar tarefas não lhe tira as horas. O nome é só o recurso dos registos
   // antigos/importados sem essa referência.
+  // Horas reais de uma tarefa. Dentro de comCacheHorasReais (um render inteiro) calculam-se TODAS as tarefas do projeto de uma vez
+  // (HorasReaisLogica, uma passagem pelos registos) em vez de percorrer os registos todos por cada tarefa; fora disso usa-se a conta
+  // tarefa a tarefa de sempre. As duas dão o mesmo resultado (tests/horas-reais-logica.test.js).
   horasReaisTarefa(p, t) {
+    if (!p || !t) return 0;
+    if (this._cacheHR) {
+      let porTarefa = this._cacheHR.get(p.id);
+      if (!porTarefa) { porTarefa = HorasReaisLogica.porTarefa(p, this.state.registos, this.state.recursos); this._cacheHR.set(p.id, porTarefa); }
+      if (porTarefa.has(t.id)) return porTarefa.get(t.id);
+    }
+    return this._horasReaisTarefaLenta(p, t);
+  },
+  // Corre fn com o cache das horas reais ligado — só vale durante fn (nada muda os registos a meio de um render).
+  comCacheHorasReais(fn) {
+    const novo = !this._cacheHR;
+    if (novo) this._cacheHR = new Map();
+    try { return fn(); } finally { if (novo) this._cacheHR = null; }
+  },
+  _horasReaisTarefaLenta(p, t) {
     if (!p || !t) return 0;
     const normalizar = (s) => String(s || '').trim().toLowerCase();
     const nomeTarefa = normalizar(t.nome);
@@ -3942,7 +3960,7 @@ const App = {
       return nomeUnico && nomeRegisto && nomeRegisto === nomeTarefa ? soma + (parseFloat(r.horas) || 0) : soma;
     }, 0);
     if (this.temFilhos(p, t.id)) {
-      return diretas + this.filhosDe(p, t.id).reduce((soma, filho) => soma + this.horasReaisTarefa(p, filho), 0);
+      return diretas + this.filhosDe(p, t.id).reduce((soma, filho) => soma + this._horasReaisTarefaLenta(p, filho), 0);
     }
     // Registos sem correspondência a nenhuma tarefa do projeto — em branco, ou texto livre vindo de
     // uma importação em bloco do "Registo Diário" — só são atribuídos a esta tarefa se for a ÚNICA
@@ -3970,7 +3988,8 @@ const App = {
   },
   // Põe em t.progresso o valor calculado das tarefas em modo automático (o valor fica gravado como as manuais, e os
   // restantes ecrãs — Gantt, portefólio, capacidade — leem-no sem saberem de modos).
-  aplicarProgressoAuto(p) {
+  aplicarProgressoAuto(p) { this.comCacheHorasReais(() => this._aplicarProgressoAuto(p)); },
+  _aplicarProgressoAuto(p) {
     let mudou = false;
     p.tarefas.forEach(t => {
       if (!t.progAuto || this.temFilhos(p, t.id) || !this.temPrevistasExplicitas(t)) return;
@@ -4335,7 +4354,8 @@ const App = {
     this._abasSujas.delete(aba);
     (this.ABAS_SUJAS[aba] || []).forEach(f => this[f]());
   },
-  renderTudo() {
+  renderTudo() { this.comCacheHorasReais(() => this._renderTudo()); },
+  _renderTudo() {
     // As horas reais podem ter mudado desde a última vez: atualiza a % das tarefas em modo automático.
     Object.values(this.state.projetos).forEach(pr => { if ((pr.tarefas || []).some(t => t.progAuto)) this.aplicarProgressoAuto(pr); });
     this.aplicarPermissoesUI();
@@ -9075,7 +9095,8 @@ const App = {
   },
 
   // ---------- Tab: Gantt (tabela de tarefas) ----------
-  renderTabelaTarefas() {
+  renderTabelaTarefas() { this.comCacheHorasReais(() => this._renderTabelaTarefas()); },
+  _renderTabelaTarefas() {
     const p = this.projetoAtivo();
     const tbody = this.els.corpoTabelaTarefas;
     tbody.innerHTML = '';
@@ -9099,6 +9120,7 @@ const App = {
     this.aplicarProgressoAuto(p);
     const lista = this.flatten(p);
     const hojeISO = DateUtil.todayISO();
+    const pendentesCap = [];
     lista.forEach(({ tarefa: t, nivel }) => {
       const filhos = this.temFilhos(p, t.id);
       const atrasada = t.fim < hojeISO && t.progresso < 100;
@@ -9114,13 +9136,11 @@ const App = {
         const horasFmt = Math.round(this.horasAlocadas(t, rid) * 100) / 100;
         const sufixoPct = explicito ? ` (${horasFmt}h)` : '';
         if (filhos) return `<span class="badge-rec">${escapeHtml(r.nome)}${sufixoPct}</span>`;
-        const resultado = Capacidade.avaliarAtribuicao(r, p.id, t.id, t.inicio, t.fim, pct);
-        // "subutilizado" não é um problema — é o oposto (pouca ocupação total nesse mês, quase
-        // garantido para uma tarefa pequena com prazo largo) — por isso não tem descrição em
-        // descreverProblema, e não deve acender ⚠ aqui; só "aviso"/"crítico" são alertas reais.
-        if (resultado.nivel !== 'aviso' && resultado.nivel !== 'critico') return `<span class="badge-rec">${escapeHtml(r.nome)}${sufixoPct}</span>`;
-        const dica = Capacidade.descreverProblema(r.nome, resultado);
-        return `<span class="badge-rec ${resultado.nivel}" title="${escapeAttr(dica)}">⚠ ${escapeHtml(r.nome)}${sufixoPct}</span>`;
+        // A verificação de sobrecarga é a parte pesada (percorre a agenda inteira da pessoa por cada par tarefa/consultor): a lista
+        // aparece já com os nomes e os avisos ⚠ chegam logo a seguir, por ordem de proximidade ao que está à vista (ver
+        // agendarAvaliacaoCapacidade). "subutilizado" não é um problema, só "aviso"/"crítico" acendem ⚠.
+        pendentesCap.push({ tr, r, t, rid, pct, sufixo: sufixoPct, idx: tbody.children.length });
+        return `<span class="badge-rec" data-cap="${escapeAttr(rid)}">${escapeHtml(r.nome)}${sufixoPct}</span>`;
       }).join('');
       const fixaComPred = t.modoData === 'fixa' && t.predecessores.length > 0;
       const chipsPred = (fixaComPred ? '<span title="Data fixa: as ligações não movem esta tarefa">📌</span> ' : '') + t.predecessores.map(pr => {
@@ -9179,6 +9199,35 @@ const App = {
       tbody.appendChild(tr);
     });
     this.atualizarBotoesTarefaSelecionada(p, podeEditar);
+    this.agendarAvaliacaoCapacidade(p, pendentesCap);
+  },
+  // Avalia a sobrecarga de cada (tarefa, consultor) aos poucos, sem bloquear: um pedaço de ~12 ms de cada vez, começando pelas linhas
+  // mais próximas do topo visível. Um desenho novo da tabela cancela o que ficou por fazer (this._tokenCap), e só acende ⚠ onde há
+  // mesmo aviso/crítico — exatamente o mesmo critério de antes, só que chega alguns instantes depois da lista.
+  agendarAvaliacaoCapacidade(p, pendentes) {
+    const token = this._tokenCap = (this._tokenCap || 0) + 1;
+    if (!pendentes.length) return;
+    const painel = this.els.painelTabela;
+    const topo = Math.floor(((painel && painel.scrollTop) || 0) / 34);
+    const ordem = pendentes.slice().sort((a, b) => Math.abs(a.idx - topo) - Math.abs(b.idx - topo));
+    let i = 0;
+    const passo = () => {
+      if (token !== this._tokenCap) return;
+      const limite = performance.now() + 12;
+      while (i < ordem.length && performance.now() < limite) {
+        const x = ordem[i++];
+        if (!x.tr.isConnected) continue;
+        const marca = [...x.tr.querySelectorAll('[data-cap]')].find(el => el.dataset.cap === x.rid);
+        if (!marca) continue;
+        const resultado = Capacidade.avaliarAtribuicao(x.r, p.id, x.t.id, x.t.inicio, x.t.fim, x.pct);
+        if (resultado.nivel !== 'aviso' && resultado.nivel !== 'critico') continue;
+        marca.className = 'badge-rec ' + resultado.nivel;
+        marca.title = Capacidade.descreverProblema(x.r.nome, resultado);
+        marca.textContent = '⚠ ' + x.r.nome + x.sufixo;
+      }
+      if (i < ordem.length) setTimeout(passo, 0);
+    };
+    setTimeout(passo, 0);
   },
   // Formatar e Comentários vivem na barra de cima e atuam na tarefa selecionada (a última em que se clicou).
   atualizarBotoesTarefaSelecionada(p, podeEditar) {
