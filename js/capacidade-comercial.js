@@ -53,6 +53,26 @@ const CapacidadeComercial = {
     return r;
   },
 
+  // Harmonização: o que um mês pede acima da capacidade da equipa não desaparece — transita para o mês seguinte, e se esse também ficar
+  // acima da capacidade, o que sobra transita para o seguinte, e assim por diante. procura[i] = horas pedidas no mês i (alocadas +
+  // projeções); capacidade[i] = capacidade da equipa no mês i; desde = índice do primeiro mês em que se harmoniza (os anteriores já
+  // passaram: ficam como são e não transitam nada). Devolve { carga[i] (o que fica no mês, nunca acima da capacidade), entrada[i] (o que
+  // chegou do mês anterior), transita[i] (o que passa para o seguinte), sobra (o que ainda transita para além do último mês) }.
+  harmonizar(procura, capacidade, desde) {
+    const carga = [], entrada = [], transita = [];
+    let resto = 0;
+    (procura || []).forEach((p, i) => {
+      if (i < (desde || 0)) { carga.push(p); entrada.push(0); transita.push(0); return; }
+      const total = p + resto;
+      const cap = Math.max(0, Number(capacidade && capacidade[i]) || 0);
+      const fica = Math.min(total, cap);
+      entrada.push(resto); carga.push(fica);
+      resto = total - fica;
+      transita.push(resto);
+    });
+    return { carga, entrada, transita, sobra: resto };
+  },
+
   // Folga dos projetos de Serviços adjudicados: a diferença entre as horas VENDIDAS e a reprevisão (o que já foi gasto mais o que ainda
   // está planeado por realizar). Não se sabe se vai ser usada nem por quem, por isso junta-se num "bolo" por mês — repartido pelos dias
   // úteis que faltam até ao fim do projeto — e atribui-se à equipa do projeto. Só folgas positivas (um projeto a derrapar não tira horas).

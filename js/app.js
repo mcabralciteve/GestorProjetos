@@ -6607,8 +6607,29 @@ const App = {
       return `<td class="occ-total occ-soma${cls}" title="${escapeAttr(`${conta} = ${Math.round(resSoma.alocado)}h / ${Math.round(cap)}h de capacidade (${fmtPct(resSoma)}). Inclui projeções, sujeitas a erros.`)}">${textoCelula(resSoma)}</td>`;
     });
     criarLinha('cap-total cap-total-proj', 'Total + projeção', `Horas alocadas (reais) mais ${[horasOp ? 'a projeção das oportunidades de Serviços' : '', horasFolga ? 'a folga dos Serviços adjudicados' : ''].filter(Boolean).join(' e ')}. ${AVISO}`, celulasSoma);
+    // ---- 4) Total + projeção harmonizado: o que excede a capacidade da equipa transita para o mês seguinte (só com a Totalidade das horas:
+    // com um só tipo de projetos a capacidade é a total e o que falta já não seria "tudo o que a equipa tem a fazer") ----
+    let harm = null;
+    if (this.tipoCap === 'total') {
+      const mesHoje = DateUtil.todayISO().slice(0, 7);
+      const primeiro = mesesISO.findIndex(m => m >= mesHoje);
+      const procura = meses.map((m, i) => totaisRes[i].alocado + (horasOp ? horasOp[i] : 0) + (horasFolga ? horasFolga[i] : 0));
+      harm = CapacidadeComercial.harmonizar(procura, totaisRes.map(t => t.capacidade), primeiro < 0 ? meses.length : primeiro);
+      const celulasHarm = meses.map((m, i) => {
+        const cap = totaisRes[i].capacidade, carga = harm.carga[i], sai = harm.transita[i], entra = harm.entrada[i];
+        const res = { alocado: carga, capacidade: cap, pct: cap > 0 ? carga / cap : (carga > 0 ? Infinity : 0) };
+        const cls = Capacidade.classeResumo(Object.assign({}, res, { diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 }));
+        const conta = mesesISO[i] < mesHoje ? 'Mês já passado: fica como está, sem transitar nada.'
+          : `${Math.round(procura[i])}h pedidas${entra > 0.5 ? ` + ${Math.round(entra)}h transitadas do mês anterior` : ''} para ${Math.round(cap)}h de capacidade: ficam ${Math.round(carga)}h neste mês${sai > 0.5 ? ` e ${Math.round(sai)}h transitam para o mês seguinte` : ''}.`;
+        return `<td class="occ-total occ-soma occ-${cls}" title="${escapeAttr(`${m.label}: ${conta} Projeção harmonizada, sujeita a erros.`)}">${textoCelula(res)}${sai > 0.5 ? ' ↷' : ''}</td>`;
+      });
+      criarLinha('cap-total cap-total-proj cap-harmonizado', 'Total + projeção (harmonizado)',
+        'O total com projeções, mas com o que excede a capacidade da equipa a transitar para o mês seguinte (e assim sucessivamente). ↷ marca os meses de onde transitam horas. ' + AVISO, celulasHarm);
+      if (this._projecaoCap) this._projecaoCap.harm = harm;
+    }
     trs.forEach(tr => e.heatmapCapBody.appendChild(tr));
     partes.push('A linha «Total + projeção» soma o que já está alocado com estas projeções. As oportunidades de I&D não entram.');
+    if (harm) partes.push(`A linha «Total + projeção (harmonizado)» faz transitar para o mês seguinte as horas que excedem a capacidade da equipa (e, se esse também ficar acima, o que sobra passa para o seguinte), a partir do mês atual; ↷ marca os meses de onde transitam horas.${harm.sobra > 0.5 ? ` Ainda ficam ${horasFmt(harm.sobra)} por alocar para além do último mês mostrado.` : ''}`);
     info.hidden = false;
     info.innerHTML = partes.join(' ');
   },
@@ -6691,10 +6712,23 @@ const App = {
               (s.cap <= 0 && t <= 0) ? { v: '–', e: { alinha: 'center', borda: 'topo', fundo: 'DCE8F3', cor: '6B7280' } }
                 : { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'topo', negrito: true, fundo: COR[cls][0], cor: COR[cls][1] } }]);
           }, [])) });
+        if (proj.harm) {
+          linhasProj.push({ altura: 20, celulas: [{ v: 'Total + projeção (harmonizado)', e: { negrito: true, fundo: 'DCE8F3', borda: 'fina' }, colspan: 2 }].concat(
+            somas.reduce((acc, s, mi) => {
+              const carga = proj.harm.carga[mi], pct = s.cap > 0 ? carga / s.cap : (carga > 0 ? Infinity : 0);
+              const cls = Capacidade.classeResumo({ pct, diasSobreAlocado: 0, diasConflitoDisponibilidade: 0 });
+              const vazio = { v: '', e: { borda: 'fina', fundo: 'DCE8F3' } };
+              const h = (v) => ({ v: r1(v), e: { formato: NUM, alinha: 'right', borda: 'fina', negrito: true, fundo: 'DCE8F3' } });
+              return acc.concat([vazio, vazio, h(carga), h(s.cap),
+                (s.cap <= 0 && carga <= 0) ? { v: '–', e: { alinha: 'center', borda: 'fina', fundo: 'DCE8F3', cor: '6B7280' } }
+                  : { v: isFinite(pct) ? pct : 'n/d', e: { formato: '0%', alinha: 'center', borda: 'fina', negrito: true, fundo: COR[cls][0], cor: COR[cls][1] } }]);
+            }, [])) });
+        }
         notasProj.push('PROJEÇÃO, SUJEITA A ERROS: as linhas de projeção (a itálico) são estimativas, não horas já alocadas; contam como horas de Serviços, com a capacidade da equipa.');
         if (proj.op) notasProj.push('Oportunidades de Serviços = valor da oportunidade ÷ valor/hora médio dos consultores × probabilidade de sucesso, repartido pela duração prevista; só as das equipas escolhidas (área responsável) e que ainda não são projetos.');
         if (proj.folga) notasProj.push('Folga de Serviços adjudicados = horas vendidas − reprevisão (já gasto + planeado por realizar) dos projetos de Serviços, repartida pelos dias úteis que faltam e atribuída à equipa do projeto; assume que será usada.');
         notasProj.push('Total + projeção = Total + oportunidades + folga.');
+        if (proj.harm) notasProj.push('Harmonizado = o total com projeções, mas com as horas acima da capacidade da equipa a transitar para o mês seguinte (a partir do mês atual); só na Totalidade das horas.' + (proj.harm.sobra > 0.5 ? ` Ficam ${Math.round(proj.harm.sobra)}h por alocar para além do último mês.` : ''));
       }
       const nomesEq = this.state.equipas.filter(eq => d.equipasIds.includes(String(eq.id))).map(eq => eq.nome);
       const periodo = `${maiuscula(d.meses[0].label)} a ${maiuscula(d.meses[d.meses.length - 1].label)}`;

@@ -112,3 +112,29 @@ test('folga: projeto que já devia ter acabado põe a folga no mês atual; soma 
   assert.ok(Math.abs(r.porMes['2027-01'] - 300) < 1e-9);
   assert.equal(r.foraDoHorizonte, 0);
 });
+
+// ---------- Harmonização (o excesso transita para o mês seguinte) ----------
+test('harmonizar: o que excede a capacidade transita para o mês seguinte, em cadeia', () => {
+  const h = C.harmonizar([150, 120, 50, 20], [100, 100, 100, 100], 0);
+  assert.deepEqual(h.carga, [100, 100, 100, 40]);       // 50 sobram do 1.º; 50+120=170 → 100 fica e 70 sobram; 70+50=120 → 100 e 20 sobram; 20+20=40 cabe
+  assert.deepEqual(h.transita, [50, 70, 20, 0]);
+  assert.deepEqual(h.entrada, [0, 50, 70, 20]);
+  assert.equal(h.sobra, 0);
+});
+
+test('harmonizar: sem excesso nada muda; o que sobra no fim do horizonte fica registado', () => {
+  const sem = C.harmonizar([50, 60], [100, 100], 0);
+  assert.deepEqual(sem.carga, [50, 60]);
+  assert.deepEqual(sem.transita, [0, 0]);
+  const com = C.harmonizar([300, 300], [100, 100], 0);
+  assert.deepEqual(com.carga, [100, 100]);
+  assert.equal(com.sobra, 400);
+});
+
+test('harmonizar: mês sem capacidade passa tudo ao seguinte; meses antes de "desde" ficam como estão e não transitam', () => {
+  const h = C.harmonizar([500, 80, 30], [100, 0, 100], 1);
+  assert.deepEqual(h.carga, [500, 0, 100]);              // o mês 0 já passou: 500 > 100 mas não transita
+  assert.deepEqual(h.transita, [0, 80, 10]);
+  assert.equal(h.sobra, 10);
+  assert.deepEqual(C.harmonizar([], [], 0), { carga: [], entrada: [], transita: [], sobra: 0 });
+});
