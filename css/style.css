@@ -804,6 +804,8 @@ tr.cap-projecao th{background:var(--cinza-100);text-align:left;font-style:italic
 tr.cap-total-proj td,tr.cap-total-proj th{border-top:1px solid var(--cinza-300);}
 td.occ-projecao{font-style:italic;color:var(--azul-esc);border-top:1px dashed var(--azul);background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--azul) 10%,transparent) 6px 12px);}
 .cap-projecao-info{border-left:3px solid var(--laranja);padding-left:10px;}
+tr.cap-capacidade th,td.occ-capacidade{background:var(--cinza-100);color:var(--cinza-700);font-weight:600;font-family:var(--font-mono,monospace);}
+tr.cap-capacidade th{text-align:left;}
 td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);font-weight:700;font-family:var(--font-mono,monospace);border-top:2px solid var(--cinza-300);}
 :root[data-tema="escuro"] td.occ-neutro{background:#1d3550;color:#a9cdee;}
 .cap-pct.cap-neutro{color:var(--azul);}

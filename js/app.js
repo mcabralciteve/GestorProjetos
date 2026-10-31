@@ -6497,6 +6497,12 @@ const App = {
     trTotal.innerHTML = `<th>Total (${recursosFiltrados.length})</th>` + totaisRes.map(res =>
       `<td class="occ-total" title="${res.alocado.toFixed(0)}h alocadas / ${res.capacidade.toFixed(0)}h capacidade (${fmtPct(res)})">${textoCelula(res)}</td>`).join('');
     e.heatmapCapBody.appendChild(trTotal);
+    // Capacidade total da equipa por mês, sempre em horas (as células do Total mostram o que está alocado; aqui vê-se o que a equipa pode dar).
+    const trCapacidade = document.createElement('tr');
+    trCapacidade.className = 'cap-capacidade';
+    trCapacidade.innerHTML = '<th title="Capacidade total da equipa em cada mês: soma, por consultor, dos dias úteis × 8h, a descontar feriados, ausências e horas registadas fora de projetos.">Capacidade da equipa</th>' + totaisRes.map((res, i) =>
+      `<td class="occ-capacidade" title="${escapeAttr(`${meses[i].label}: ${res.capacidade.toFixed(0)}h de capacidade (${recursosFiltrados.length} consultor${recursosFiltrados.length === 1 ? '' : 'es'})`)}">${fmtH(res.capacidade)}</td>`).join('');
+    e.heatmapCapBody.appendChild(trCapacidade);
     this.renderProjecaoComercialCap({ meses, totaisRes, recursosFiltrados, recursosBase, parcial, textoCelula });
     this._dadosCap = { meses, linhas: linhasCap, totais: totaisRes, tipo: this.tipoCap, equipasIds: Array.from(this.filtroEquipasCap), projecao: this._projecaoCap };
   },
