@@ -660,8 +660,36 @@ const Crm = {
     return (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
       .map(f => ({ mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0 })).sort((a, b) => a.mes.localeCompare(b.mes));
   },
+  // O projeto de uma oportunidade GANHA que já tem projeto na app (é então o projeto que conta na Previsão, não a oportunidade), ou null.
+  projetoDaOpGanha(o) {
+    const p = o && o.id && o.projeto_id ? App.state.projetos[o.projeto_id] : null;
+    return p && CrmLogica.categoriaDe(o, this.idx.etapa) === 'ganha' ? p : null;
+  },
+  // No lugar do editor de início/duração/área/plano: de onde vem a previsão de uma oportunidade ganha com projeto — o plano de faturação
+  // é o do PROJETO (é lá que se edita), por isso mostra-se aqui o resumo desse plano em vez de "sem plano".
+  htmlPrevisaoDoProjeto(p) {
+    const faturas = (p.faturas || []).slice().sort((a, b) => String(a.dataPrevista || '9999').localeCompare(String(b.dataPrevista || '9999')));
+    const veValores = App.estouEnvolvidoEm(p.id);   // os valores do projeto só para quem já os vê na app
+    let bloco;
+    if (!veValores) bloco = '<p class="hint" style="margin:0 0 6px;">O plano de faturação é o do projeto (os valores não estão disponíveis com o teu perfil).</p>';
+    else if (!faturas.length) bloco = '<p class="hint" style="margin:0 0 6px;">O projeto ainda não tem faturas planeadas — define-as em Faturação.</p>';
+    else {
+      const valor = f => App.valorFatura(f, p);
+      const emitidas = faturas.filter(f => f.emitida), porEmitir = faturas.filter(f => !f.emitida);
+      const soma = l => l.reduce((t, f) => t + valor(f), 0);
+      bloco = `<p style="margin:0 0 6px;"><b>${faturas.length} fatura${faturas.length === 1 ? '' : 's'}</b> no plano do projeto: <b>${emitidas.length}</b> emitida${emitidas.length === 1 ? '' : 's'} (${this.euro(soma(emitidas))}) e <b>${porEmitir.length}</b> por emitir (${this.euro(soma(porEmitir))}).</p>
+        <table class="crm-plano"><thead><tr><th>Data prevista</th><th>Valor</th><th>Estado</th></tr></thead><tbody>${faturas.map(f =>
+          `<tr><td>${f.dataPrevista ? this.data(f.dataPrevista) : 'sem data'}</td><td>${f.tipo === 'percentagem' ? Math.round(parseFloat(f.percentagem) || 0) + '% · ' : ''}${this.euro(valor(f))}</td><td>${f.emitida ? 'emitida' + (f.dataEmissao ? ' em ' + this.data(f.dataEmissao) : '') : 'prevista'}</td></tr>`).join('')}</tbody></table>`;
+    }
+    return `<h4 class="crm-h">Previsão de execução e faturação <span class="hint" style="font-weight:400;">(vem do projeto)</span></h4>
+      <p class="hint" style="margin:0 0 6px;">Esta oportunidade está ganha e já tem projeto, por isso a execução (Gantt) e o plano de faturação são os do projeto — não se preenchem aqui, e a oportunidade deixa de contar à parte em Financeiro → Previsão.</p>
+      ${bloco}
+      ${App.possoEditarProjeto(p.id) ? '<button type="button" class="btn btn-sm" id="opVerFaturacao">Ver o plano de faturação do projeto</button>' : ''}`;
+  },
   htmlPrevisaoOp(o) {
     if (this.temPrevisao === false) return '<p class="hint" style="margin:8px 0;">Previsão de execução e faturação: corre primeiro <b>supabase/previsao_oportunidades.sql</b> no Supabase para ativar.</p>';
+    const projeto = this.projetoDaOpGanha(o);
+    if (projeto) return this.htmlPrevisaoDoProjeto(projeto);
     const equipas = App.state.equipas.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
     const def = this.defeitosDoTipo(o.tipo_id);
     return `<h4 class="crm-h">Previsão de execução e faturação <span class="hint" style="font-weight:400;">(alimenta Financeiro → Previsão)</span></h4>
@@ -675,6 +703,8 @@ const Crm = {
   },
   // Editor do plano de faturas (mês + % do valor). Sem plano, a Previsão fatura ao ritmo do trabalho, com 1 mês de atraso.
   ligarPrevisaoOp(m, o, op) {
+    const ver = m.querySelector('#opVerFaturacao');
+    if (ver) ver.addEventListener('click', () => { App.fecharModal(); App.irParaFaturacaoDoProjeto(o.projeto_id); });
     const raiz = m.querySelector('#opPlanoFat');
     if (!raiz || this.temPrevisao === false) return;
     const inicial = op ? this.planoFaturasDaOp(op.id) : [];
