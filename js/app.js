@@ -762,6 +762,7 @@ const App = {
       if (p.tipoReferencia !== 'interno') p.tipoReferencia = 'giaf';
       if (p.tipoProjeto === undefined) p.tipoProjeto = '';
       if (p.semFaturacao === undefined) p.semFaturacao = false;
+      if (p.propostaLink === undefined) p.propostaLink = '';
       if (p.ativo === undefined) p.ativo = true;
       if (p.orcprevRef === undefined) p.orcprevRef = '';
       delete p.consultorIds; // versão manual descontinuada — consultor deriva-se das tarefas
@@ -1270,6 +1271,7 @@ const App = {
       tipoReferencia: 'giaf',
       tipoProjeto: '',
       semFaturacao: false,
+      propostaLink: '',
       versao: new Date().toISOString(),
       tarefas: [],
       faturas: [],
@@ -1480,6 +1482,8 @@ const App = {
     // Uma cópia não herda o orçamento do original: as faturas "por rubricas" ficam como valor fixo.
     copia.faturas.forEach(f => { if (f.tipo === 'rubricas') { f.valor = this.valorFatura(f, atual); f.tipo = 'valor'; f.rubricas = null; } f.id = crypto.randomUUID(); });
     copia.orcamentoBase = null;
+    copia.propostaLink = ''; // a proposta adjudicada é a do projeto original, não a da cópia
+    delete copia._propostaLinkAlterada;
     // Pontos de situação e next steps são histórico de reuniões do projeto original — a cópia
     // começa sem nenhum, não faz sentido herdar conversas de coaching de outro projeto.
     copia.pontosSituacao = [];
@@ -5108,6 +5112,7 @@ const App = {
       e.projHorasEAC.textContent = '—';
       e.projHorasSaldo.textContent = '—';
       e.projEstadoOrc.textContent = '—';
+      this.renderTopicosProjeto(null);
       return;
     }
     const podeEditar = this.possoEditarProjeto(p.id);
@@ -5155,6 +5160,79 @@ const App = {
     e.projHorasSaldo.style.color = orc.saldoDisponivel !== null && orc.saldoDisponivel < 0 ? 'var(--vermelho)' : '';
     e.projEstadoOrc.textContent = orc.motivo;
     e.projEstadoOrc.style.color = corNivel[orc.nivel] || '';
+    this.renderTopicosProjeto(p, orc, podeEditar);
+  },
+  // Cabeçalho, resumos de uma linha dos tópicos (vistos com o tópico fechado) e a proposta adjudicada do cartão "Dados do Projeto".
+  renderTopicosProjeto(p, orc, podeEditar) {
+    const $ = (id) => document.getElementById(id);
+    const txt = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    const ids = ['dpResIdentificacao', 'dpResPrazos', 'dpResValores', 'dpResPessoas', 'dpResDocumentos', 'dpResConsumo', 'dpResClassificacao'];
+    const ver = $('projPropostaVer'), editar = $('projPropostaEditar'), inp = $('projPropostaLink');
+    if (!p) {
+      txt('dpCabNome', '—'); txt('dpCabSub', '');
+      ids.forEach(id => txt(id, ''));
+      if (ver) ver.innerHTML = '';
+      if (editar) editar.style.display = 'none';
+      return;
+    }
+    const dmy = (iso) => iso ? String(iso).split('-').reverse().join('/') : '—';
+    const num = (n) => (Number(n) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 1 });
+    const euro = (n) => (Number(n) || 0).toLocaleString('pt-PT', { maximumFractionDigits: 0 }) + ' €';
+    const link = String(p.propostaLink || '').trim();
+    const consultores = new Set();
+    p.tarefas.forEach(t => (t.recursoIds || []).forEach(rid => consultores.add(rid)));
+    const gestores = PessoasLogica.gestoresDoProjeto(p).length;
+    const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    txt('dpCabNome', p.nome || 'Sem nome');
+    txt('dpCabSub', `${p.idInterno || 'sem referência'} · ${p.estado || 'Por iniciar'}`);
+    txt('dpResIdentificacao', p.cliente || 'sem cliente');
+    txt('dpResPrazos', `${dmy(p.dataInicio)} → ${dmy(p.dataFim)}`);
+    txt('dpResValores', (p.horasVendidas || p.valorVendido) ? `${num(p.horasVendidas)} h · ${euro(p.valorVendido)}` : 'sem valores');
+    txt('dpResPessoas', `${plural(gestores, 'gestor', 'gestores')} · ${plural(consultores.size, 'consultor', 'consultores')}`);
+    txt('dpResDocumentos', link ? 'proposta registada' : 'sem proposta');
+    txt('dpResConsumo', orc ? `${num(orc.totalReal)} h` + (p.horasVendidas > 0 ? ` / ${num(p.horasVendidas)} h (${Math.round(orc.pctConsumido * 100)}%)` : '') : '');
+    txt('dpResClassificacao', `${p.tipoReferencia === 'interno' ? 'Interno' : 'GIAF'} · ${{ servicos: 'Serviços', id: 'I&D' }[p.tipoProjeto] || 'por classificar'}`);
+
+    // Proposta adjudicada: o link abre-se daqui; quem pode editar o projeto (Administrador e gestores) também o escreve/corrige.
+    if (ver) {
+      const c = typeof CrmLogica !== 'undefined' ? CrmLogica.tipoCaminho(link) : { tipo: link ? 'caminho' : 'vazio', texto: link, href: link };
+      ver.innerHTML = c.tipo === 'vazio' ? '<span class="hint">Ainda sem proposta registada neste projeto.</span>'
+        : c.tipo === 'url' ? `<a href="${escapeAttr(c.href)}" target="_blank" rel="noopener noreferrer">Abrir proposta adjudicada ↗</a>`
+        : `<span>${escapeHtml(c.texto)}</span> <button type="button" class="btn btn-sm" data-dp-copiar="${escapeAttr(c.texto)}">Copiar</button>`;
+    }
+    if (editar && inp) {
+      const semSql = typeof Sync !== 'undefined' && Sync.temPropostaLink === false;
+      editar.style.display = podeEditar ? '' : 'none';
+      inp.disabled = !podeEditar || semSql;
+      inp.title = semSql ? 'Corre primeiro supabase/projeto_proposta.sql no Supabase.' : '';
+      if (document.activeElement !== inp) inp.value = link;
+    }
+  },
+  // Tópicos do cartão "Dados do Projeto": lembra, por pessoa e neste browser, quais ficam abertos.
+  ligarTopicosProjeto() {
+    const CHAVE = 'gestor.dadosProjeto.topicos';
+    const secs = [...document.querySelectorAll('#sidebarGantt details[data-dp]')];
+    if (!secs.length) return;
+    let guardado = {};
+    try { guardado = JSON.parse(localStorage.getItem(CHAVE) || '{}') || {}; } catch (err) { guardado = {}; }
+    secs.forEach(d => { if (typeof guardado[d.dataset.dp] === 'boolean') d.open = guardado[d.dataset.dp]; });
+    const gravar = () => {
+      const o = {};
+      secs.forEach(d => { o[d.dataset.dp] = d.open; });
+      try { localStorage.setItem(CHAVE, JSON.stringify(o)); } catch (err) { /* sem armazenamento: só não lembra */ }
+    };
+    secs.forEach(d => d.addEventListener('toggle', gravar));
+    const todos = (aberto) => (ev) => { ev.preventDefault(); secs.forEach(d => { d.open = aberto; }); };
+    const ab = document.getElementById('dpAbrirTudo'), fe = document.getElementById('dpFecharTudo');
+    if (ab) ab.addEventListener('click', todos(true));
+    if (fe) fe.addEventListener('click', todos(false));
+    const ver = document.getElementById('projPropostaVer');
+    if (ver) ver.addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-dp-copiar]');
+      if (!b) return;
+      try { await navigator.clipboard.writeText(b.dataset.dpCopiar); this.toast('Caminho copiado.'); }
+      catch (err) { window.prompt('Copia o caminho:', b.dataset.dpCopiar); }
+    });
   },
   formatarValorHoraMedio(p) {
     const horas = parseFloat(p.horasVendidas) || 0;
@@ -11282,6 +11360,15 @@ const App = {
     e.projValorVendido.addEventListener('change', () => { if (!this.projetoAtivo()) return; this.projetoAtivo().valorVendido = parseFloat(e.projValorVendido.value) || 0; this.persist(); this.renderInfoProjeto(); this.renderTabelaProjetos(); });
     e.btnProjGestores.addEventListener('click', () => { if (this.projetoAtivo() && this.souAdmin()) this.abrirModalGestoresProjeto(this.projetoAtivo().id); });
     if (e.projEquipaId) e.projEquipaId.addEventListener('change', () => { if (!this.projetoAtivo() || !this.souAdmin()) return; this.projetoAtivo().equipaId = e.projEquipaId.value || null; this.persist(); this.renderTudo(); });
+    const inpProposta = document.getElementById('projPropostaLink');
+    if (inpProposta) inpProposta.addEventListener('change', () => {
+      const p = this.projetoAtivo();
+      if (!p || !this.possoEditarProjeto(p.id)) return;
+      p.propostaLink = inpProposta.value.trim();
+      p._propostaLinkAlterada = true; // só assim o link segue na gravação (ver Sync): não se sobrepõe ao que o CRM escreveu na base de dados
+      this.persist(); this.renderInfoProjeto();
+    });
+    this.ligarTopicosProjeto();
 
     document.getElementById('btnAddTarefa').addEventListener('click', () => this.adicionarTarefa(false));
     document.getElementById('btnAddSubtarefa').addEventListener('click', () => this.adicionarTarefa(true));

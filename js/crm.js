@@ -609,6 +609,8 @@ const Crm = {
       onCriado: async (projeto) => {
         try {
           if (base) { projeto.orcamentoBase = base; App.persist(); }
+          // O link da proposta chega ao projeto pela base de dados (gatilho de supabase/projeto_proposta.sql); aqui só se mostra já.
+          if (vigente && String(vigente.caminho_documento || '').trim() && !projeto.propostaLink) { projeto.propostaLink = String(vigente.caminho_documento).trim(); App.renderInfoProjeto(); }
           // O projeto grava-se em segundo plano; a chave estrangeira só aceita a ligação depois.
           if (App._filaSincronizacao) await App._filaSincronizacao;
           await this.gravar('oportunidades', Object.assign({}, this.idx.op.get(opId), { projeto_id: projeto.id }));

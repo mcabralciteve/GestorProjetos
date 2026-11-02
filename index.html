@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261106b">
+<link rel="stylesheet" href="css/style.css?v=20261107a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -158,7 +158,7 @@
   <div class="layout" id="layoutGantt">
     <aside class="sidebar" id="sidebarGantt">
       <button id="btnToggleSidebar" class="sidebar-toggle" title="Fechar painel lateral">⟨</button>
-      <section class="card">
+      <section class="card card-projeto" id="cardDadosProjeto">
         <div class="card-header">
           <h3>Dados do Projeto</h3>
           <label class="check-ativo-projeto" title="Só o Administrador pode ativar/suspender este projeto">
@@ -166,98 +166,150 @@
           </label>
         </div>
         <div class="card-aviso-suspenso" id="projSuspensoAviso" style="display:none;">⏸ Suspenso — ninguém (nem o Gestor) edita ou regista horas aqui enquanto estiver assim. Só o Administrador pode reativar.</div>
-        <label><span class="rotulo-campo">Tipo de referência <span class="nota">(GIAF = sistema de faturação; Interno = gerada pela app)</span></span>
-          <select id="projTipoRef"><option value="giaf">GIAF</option><option value="interno">Interno (INT-AAAA-NNN)</option></select>
-        </label>
-        <div class="row-2">
-          <label><span class="rotulo-campo">Tipo de projeto <span class="nota">(para a Previsão)</span></span>
-            <select id="projTipoProjeto"><option value="">Por classificar</option><option value="servicos">Serviços</option><option value="id">I&amp;D</option></select>
-          </label>
-          <label class="check-ativo-projeto" style="align-self:end;padding-bottom:6px;" title="Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista">
-            <input type="checkbox" id="projSemFaturacao"> Sem faturação ao cliente
-          </label>
+        <div class="dp-cab" id="dpCabecalho">
+          <div class="dp-cab-nome" id="dpCabNome">—</div>
+          <div class="dp-cab-sub" id="dpCabSub"></div>
         </div>
-        <div class="row-2">
-          <label>Referência
-            <input type="text" id="projIdInterno" placeholder="ex.: 2026/384" autocomplete="new-password" spellcheck="false" readonly>
-          </label>
-          <label>Estado
-            <select id="projEstado">
-              <option>Adjudicado</option>
-              <option>Por iniciar</option>
-              <option>Em curso</option>
-              <option>Concluído</option>
-              <option>Cancelado</option>
-            </select>
-          </label>
-        </div>
-        <label>Nome
-          <input type="text" id="projNome" placeholder="Nome do projeto">
-        </label>
-        <label>Cliente
-          <input type="text" id="projCliente" placeholder="Nome do cliente">
-        </label>
-        <label>Descrição
-          <textarea id="projDescricao" rows="2" placeholder="Descrição / objetivo"></textarea>
-        </label>
-        <div class="row-2">
-          <label>Início
-            <input type="date" id="projInicio">
-          </label>
-          <label>Fim previsto
-            <input type="date" id="projFim">
-          </label>
-        </div>
-        <div class="row-2">
-          <label>Horas vendidas
-            <input type="number" min="0" id="projHorasVendidas" placeholder="0">
-          </label>
-          <label><span class="rotulo-campo">Valor vendido (€) <span class="nota">(I&amp;D: financiamento aprovado)</span></span>
-            <input type="number" min="0" id="projValorVendido" placeholder="0">
-          </label>
-        </div>
-        <div class="calc-line">€/hora médio: <b id="projValorHoraMedio">—</b></div>
-        <div class="calc-line" id="projVersaoLinha">Versão: <b id="projVersao">—</b></div>
-        <div class="calc-line" id="projFaturacaoLinha">Faturação planeada: <b id="projFaturacaoResumo">—</b></div>
-        <div class="calc-line" id="projOrcBaseLinha" style="display:none;">Orçamento base: <b id="projOrcBase">—</b></div>
-        <div class="calc-line"><a href="#" data-tab="faturacao" class="link-tab">💶 Ver faturação deste projeto</a></div>
-        <div class="calc-line" id="linhaRelatorioHorasProjeto"><a href="#" id="linkRelatorioHorasProjeto">📄 Relatório de horas deste projeto</a></div>
-        <div class="calc-line" style="align-items:center;gap:8px;flex-wrap:wrap;">Gestores de Projeto: <b id="projGestoresTexto">—</b>
-          <button type="button" class="btn btn-sm" id="btnProjGestores" style="display:none;">Alterar</button>
-        </div>
-        <label><span class="rotulo-campo">Equipa do Projeto <span class="nota">(pré-seleciona o filtro ao associar consultores)</span></span>
-          <select id="projEquipaId"><option value="">Sem equipa atribuída</option></select>
-        </label>
-      </section>
+        <div class="dp-tudo"><a href="#" id="dpAbrirTudo">Abrir tudo</a><a href="#" id="dpFecharTudo">Fechar tudo</a></div>
 
-      <section class="card" id="cardConsultores">
-        <h3>Consultores do Projeto</h3>
-        <div id="listaConsultoresProjeto" class="hint">Nenhum consultor atribuído.</div>
-        <p class="hint" style="margin-top:8px;">Associa/remove consultores atribuindo-os às tarefas, na tabela ao lado.</p>
-      </section>
+        <details class="dp-sec" data-dp="identificacao" open>
+          <summary><span class="dp-tit">Identificação</span><span class="dp-res" id="dpResIdentificacao"></span></summary>
+          <div class="dp-corpo">
+            <div class="row-2">
+              <label>Referência
+                <input type="text" id="projIdInterno" placeholder="ex.: 2026/384" autocomplete="new-password" spellcheck="false" readonly>
+              </label>
+              <label>Estado
+                <select id="projEstado">
+                  <option>Adjudicado</option>
+                  <option>Por iniciar</option>
+                  <option>Em curso</option>
+                  <option>Concluído</option>
+                  <option>Cancelado</option>
+                </select>
+              </label>
+            </div>
+            <label>Nome
+              <input type="text" id="projNome" placeholder="Nome do projeto">
+            </label>
+            <label>Cliente
+              <input type="text" id="projCliente" placeholder="Nome do cliente">
+            </label>
+            <label>Descrição
+              <textarea id="projDescricao" rows="2" placeholder="Descrição / objetivo"></textarea>
+            </label>
+          </div>
+        </details>
 
-      <section class="card" id="cardReunioes" style="display:none;">
-        <h3>Reuniões</h3>
-        <div id="reunioesProjetoCorpo"></div>
-      </section>
+        <details class="dp-sec" data-dp="prazos">
+          <summary><span class="dp-tit">Prazos</span><span class="dp-res" id="dpResPrazos"></span></summary>
+          <div class="dp-corpo">
+            <div class="row-2">
+              <label>Início
+                <input type="date" id="projInicio">
+              </label>
+              <label>Fim previsto
+                <input type="date" id="projFim">
+              </label>
+            </div>
+          </div>
+        </details>
 
-      <section class="card" id="cardConsumoHoras">
-        <h3>Consumo de Horas</h3>
-        <div class="calc-line">Real acumulado: <b id="projHorasReais">—</b></div>
-        <div class="calc-line">Reprevisão (EAC): <b id="projHorasEAC">—</b></div>
-        <div class="calc-line">Saldo disponível: <b id="projHorasSaldo">—</b></div>
-        <div class="calc-line" id="projEstadoOrcLinha">Estado: <b id="projEstadoOrc">—</b></div>
+        <details class="dp-sec" data-dp="valores">
+          <summary><span class="dp-tit">Valores e faturação</span><span class="dp-res" id="dpResValores"></span></summary>
+          <div class="dp-corpo">
+            <div class="row-2">
+              <label>Horas vendidas
+                <input type="number" min="0" id="projHorasVendidas" placeholder="0">
+              </label>
+              <label><span class="rotulo-campo">Valor vendido (€) <span class="nota">(I&amp;D: financiamento aprovado)</span></span>
+                <input type="number" min="0" id="projValorVendido" placeholder="0">
+              </label>
+            </div>
+            <div class="calc-line">€/hora médio: <b id="projValorHoraMedio">—</b></div>
+            <div class="calc-line" id="projFaturacaoLinha">Faturação planeada: <b id="projFaturacaoResumo">—</b></div>
+            <div class="calc-line" id="projOrcBaseLinha" style="display:none;">Orçamento base: <b id="projOrcBase">—</b></div>
+            <div class="calc-line"><a href="#" data-tab="faturacao" class="link-tab">💶 Ver faturação deste projeto</a></div>
+          </div>
+        </details>
+
+        <details class="dp-sec" data-dp="pessoas">
+          <summary><span class="dp-tit">Pessoas</span><span class="dp-res" id="dpResPessoas"></span></summary>
+          <div class="dp-corpo">
+            <div class="calc-line" style="align-items:center;gap:8px;flex-wrap:wrap;border-top:0;">Gestores de Projeto: <b id="projGestoresTexto">—</b>
+              <button type="button" class="btn btn-sm" id="btnProjGestores" style="display:none;">Alterar</button>
+            </div>
+            <label><span class="rotulo-campo">Equipa do Projeto <span class="nota">(pré-seleciona o filtro ao associar consultores)</span></span>
+              <select id="projEquipaId"><option value="">Sem equipa atribuída</option></select>
+            </label>
+            <div id="cardConsultores">
+              <div class="dp-sub">Consultores do Projeto</div>
+              <div id="listaConsultoresProjeto" class="hint">Nenhum consultor atribuído.</div>
+              <p class="hint" style="margin-top:8px;">Associa/remove consultores atribuindo-os às tarefas, na tabela ao lado.</p>
+            </div>
+          </div>
+        </details>
+
+        <details class="dp-sec" data-dp="documentos">
+          <summary><span class="dp-tit">Documentos e ligações</span><span class="dp-res" id="dpResDocumentos"></span></summary>
+          <div class="dp-corpo">
+            <div class="dp-proposta" id="dpProposta">
+              <div class="dp-sub" style="margin-top:0;">Proposta adjudicada</div>
+              <div id="projPropostaVer" class="dp-proposta-ver"></div>
+              <label id="projPropostaEditar" style="display:none;margin-top:6px;"><span class="rotulo-campo"><span class="nota">Link ou caminho da proposta (OneDrive / SharePoint)</span></span>
+                <input type="text" id="projPropostaLink" placeholder="https://… ou caminho da pasta/ficheiro" autocomplete="off" spellcheck="false">
+              </label>
+            </div>
+            <div class="calc-line" id="linhaRelatorioHorasProjeto"><a href="#" id="linkRelatorioHorasProjeto">📄 Relatório de horas deste projeto</a></div>
+            <div id="cardReunioes" style="display:none;">
+              <div class="dp-sub">Reuniões</div>
+              <div id="reunioesProjetoCorpo"></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="dp-sec" data-dp="consumo" id="cardConsumoHoras">
+          <summary><span class="dp-tit">Consumo de horas</span><span class="dp-res" id="dpResConsumo"></span></summary>
+          <div class="dp-corpo">
+            <div class="calc-line" style="border-top:0;">Real acumulado: <b id="projHorasReais">—</b></div>
+            <div class="calc-line">Reprevisão (EAC): <b id="projHorasEAC">—</b></div>
+            <div class="calc-line">Saldo disponível: <b id="projHorasSaldo">—</b></div>
+            <div class="calc-line" id="projEstadoOrcLinha">Estado: <b id="projEstadoOrc">—</b></div>
+          </div>
+        </details>
+
+        <details class="dp-sec" data-dp="classificacao">
+          <summary><span class="dp-tit">Classificação</span><span class="dp-res" id="dpResClassificacao"></span></summary>
+          <div class="dp-corpo">
+            <label><span class="rotulo-campo">Tipo de referência <span class="nota">(GIAF = sistema de faturação; Interno = gerada pela app)</span></span>
+              <select id="projTipoRef"><option value="giaf">GIAF</option><option value="interno">Interno (INT-AAAA-NNN)</option></select>
+            </label>
+            <div class="row-2">
+              <label><span class="rotulo-campo">Tipo de projeto <span class="nota">(para a Previsão)</span></span>
+                <select id="projTipoProjeto"><option value="">Por classificar</option><option value="servicos">Serviços</option><option value="id">I&amp;D</option></select>
+              </label>
+              <label class="check-ativo-projeto" style="align-self:end;padding-bottom:6px;" title="Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista">
+                <input type="checkbox" id="projSemFaturacao"> Sem faturação ao cliente
+              </label>
+            </div>
+            <div class="calc-line" id="projVersaoLinha">Versão: <b id="projVersao">—</b></div>
+          </div>
+        </details>
       </section>
 
       <section class="card">
-        <h3>Legenda</h3>
-        <div class="legenda-item"><span class="legenda-cor tarefa"></span> Tarefa</div>
-        <div class="legenda-item"><span class="legenda-cor subtarefa"></span> Subtarefa</div>
-        <div class="legenda-item"><span class="legenda-cor resumo"></span> Tarefa-resumo (auto)</div>
-        <div class="legenda-item"><span class="legenda-cor critico"></span> Atrasada</div>
-        <div class="legenda-item"><span class="legenda-marca fatura"></span> Fatura prevista</div>
-        <div class="legenda-item"><span class="legenda-marca fatura emitida"></span> Fatura emitida</div>
-        <p class="hint">Arraste a barra no Gantt para mover datas, os cantos para redimensionar, e o ponto ● na ponta direita para outra barra para criar uma dependência. Arraste as barras verticais ⋮⋮ para ajustar o tamanho dos painéis.</p>
+        <details class="dp-sec dp-legenda" data-dp="legenda">
+          <summary><span class="dp-tit">Legenda</span></summary>
+          <div class="dp-corpo">
+            <div class="legenda-item"><span class="legenda-cor tarefa"></span> Tarefa</div>
+            <div class="legenda-item"><span class="legenda-cor subtarefa"></span> Subtarefa</div>
+            <div class="legenda-item"><span class="legenda-cor resumo"></span> Tarefa-resumo (auto)</div>
+            <div class="legenda-item"><span class="legenda-cor critico"></span> Atrasada</div>
+            <div class="legenda-item"><span class="legenda-marca fatura"></span> Fatura prevista</div>
+            <div class="legenda-item"><span class="legenda-marca fatura emitida"></span> Fatura emitida</div>
+            <p class="hint">Arraste a barra no Gantt para mover datas, os cantos para redimensionar, e o ponto ● na ponta direita para outra barra para criar uma dependência. Arraste as barras verticais ⋮⋮ para ajustar o tamanho dos painéis.</p>
+          </div>
+        </details>
       </section>
     </aside>
 
@@ -1362,7 +1414,7 @@
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261106a"></script>
-<script src="js/crm.js?v=20261106b"></script>
+<script src="js/crm.js?v=20261107a"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
@@ -1382,6 +1434,6 @@
 <script src="js/capacidade-comercial.js?v=20261105b"></script>
 <script src="js/capacidade-excel.js?v=20261106a"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
-<script src="js/app.js?v=20261106a"></script>
+<script src="js/app.js?v=20261107a"></script>
 </body>
 </html>
