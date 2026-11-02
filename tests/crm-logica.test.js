@@ -300,3 +300,23 @@ test('topClientes: por valor em curso; ganhas só no período; sem valor em curs
   assert.deepEqual(C.topClientes(ops, porId, contas, '2026-01-01', '2026-12-31', 1).map(t => t.contaId), ['c2']);
   assert.equal(C.topClientes([op('x', 'e2', 100)], porId, contas)[0].conta, null); // sem conta: não rebenta
 });
+
+test('somarDias e diasEntre: atravessam meses e anos', () => {
+  assert.equal(C.somarDias('2026-12-28', 7), '2027-01-04');
+  assert.equal(C.somarDias('2027-03-01', -1), '2027-02-28');
+  assert.equal(C.diasEntre('2026-10-30', '2026-11-02'), 3);
+  assert.equal(C.diasEntre('2026-11-02', '2026-10-30'), -3);
+  assert.equal(C.diasEntre('2026-03-28', '2026-03-30'), 2);   // a mudança de hora não conta
+});
+
+test('aFechar: só em curso e com data; ultrapassadas (dias=0) ou também as dos próximos dias; mais atrasadas primeiro; filtro por responsável', () => {
+  const HOJE = '2026-11-02';
+  const o = (id, etapa, fecho, valor, resp) => op(id, etapa, valor, { data_prevista_fecho: fecho, responsavel_id: resp || 'r1' });
+  const ops = [o('velha', 'e2', '2026-10-01', 100), o('recente', 'e1', '2026-10-30', 50), o('hoje', 'e1', '2026-11-02', 10), o('daqui5', 'e1', '2026-11-07', 20),
+    o('daqui40', 'e1', '2026-12-12', 20), o('semData', 'e1', null, 99), o('ganha', 'e3', '2026-10-01', 999), o('perdida', 'e4', '2026-10-01', 999), o('deOutro', 'e1', '2026-10-15', 5, 'r2'),
+    o('empate', 'e1', '2026-10-30', 80)];
+  assert.deepEqual(C.aFechar(ops, porId, HOJE, 0).map(x => x.id), ['velha', 'deOutro', 'empate', 'recente']);   // "hoje" ainda não está ultrapassada; empate: o de maior valor primeiro
+  assert.deepEqual(C.aFechar(ops, porId, HOJE, 0, 'r1').map(x => x.id), ['velha', 'empate', 'recente']);
+  assert.deepEqual(C.aFechar(ops, porId, HOJE, 30).map(x => x.id), ['velha', 'deOutro', 'empate', 'recente', 'hoje', 'daqui5']);
+  assert.deepEqual(C.aFechar([], porId, HOJE, 0), []);
+});

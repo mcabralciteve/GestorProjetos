@@ -330,6 +330,7 @@ const Crm = {
       },
       'nova-op': () => this.abrirOportunidade(null, el.dataset.conta || null),
       'abrir-op': () => this.abrirOportunidade(id),
+      'rever-fechos': () => this.abrirRevisaoFechos({ resp: el.dataset.resp }),
       'nova-conta': () => this.abrirConta(null),
       'abrir-conta': () => this.abrirConta(id),
       'novo-contacto': () => this.abrirContacto(null, el.dataset.conta || null),
@@ -1718,6 +1719,10 @@ const Crm = {
         <span class="crm-item-texto"><b>${escapeHtml(t.conta ? t.conta.nome : 'Sem conta')}</b><span class="hint"> · ${t.n} em curso${t.ganhasN ? ` · ganhas ${rotuloPer}: ${t.ganhasN} (${this.euro(t.ganhasValor)})` : ''}</span></span>
         <span class="crm-top-valor"><b>${this.euro(t.valor)}</b><span class="hint">pond. ${this.euro(t.ponderado)}</span></span></div>`).join('')}</div>` : this.vazioHtml('Sem clientes com oportunidades em curso.');
 
+    // Atalho para pôr em dia, de uma vez, as datas de fecho que já passaram (ver abrirRevisaoFechos).
+    const nFechosAtrasados = L.aFechar(ops, this.idx.etapa, hoje, 0).length;
+    const botaoFechos = nFechosAtrasados ? `<p style="margin:0 0 8px;"><button type="button" class="btn btn-sm" data-crm-acao="rever-fechos" data-resp="${f.resp === 'meus' ? 'meus' : 'todos'}" title="Abre uma janela com todas estas oportunidades para escolheres a nova data de fecho de cada uma">📅 Rever as datas de fecho (${nFechosAtrasados} ultrapassada${nFechosAtrasados === 1 ? '' : 's'})</button></p>` : '';
+
     el.innerHTML = `${barra}${kpis}
       <div class="crm-grelha-dash">
         <section class="crm-painel"><h3>Top 10 oportunidades <span class="hint">(em curso, por valor)</span></h3>${listaTopOps}</section>
@@ -1728,7 +1733,7 @@ const Crm = {
         <section class="crm-painel"><h3>Motivos de perda <span class="hint">(${rotuloPer})</span></h3>${this.htmlBarras(motivos, 'Sem perdas neste período.')}</section>
         <section class="crm-painel"><h3>Ganhas sem projeto <span class="hint">(falta passar à execução)</span></h3>${this.htmlGanhasSemProjeto(ops)}</section>
         <section class="crm-painel"><h3>Do ganho à entrega <span class="hint">(faturado vs vendido, ganhas ${rotuloPer})</span></h3>${(() => { const e = this.linhasEntrega(ops, per.de, per.ate); return this.htmlBarras(e.linhas, 'Sem projetos ligados a oportunidades ganhas neste período.') + (e.semPermissao ? `<p class="hint">${e.semPermissao} projeto(s) sem permissão para ver os números.</p>` : ''); })()}</section>
-        <section class="crm-painel crm-painel-largo"><h3>A precisar de atenção</h3>${listaRisco}</section>
+        <section class="crm-painel crm-painel-largo"><h3>A precisar de atenção</h3>${botaoFechos}${listaRisco}</section>
       </div>`;
   },
 
@@ -1749,13 +1754,116 @@ const Crm = {
     const linhaT = t => { const atr = t.data_limite && t.data_limite < hoje;
       return `<div class="dash-linha dash-linha-link" data-dash-crm="tarefa|${escapeAttr(t.id)}"><span class="dash-linha-principal">${escapeHtml(t.descricao)}</span>
         <span class="dash-linha-sub"><span class="${atr ? 'crm-atrasada' : ''}">${t.data_limite ? (atr ? '⚠ ' : '') + this.data(t.data_limite) : 'sem data'}</span></span></div>`; };
+    const nFechos = CrmLogica.aFechar(this.d.oportunidades, this.idx.etapa, hoje, 0, meu).length;
+    const botaoFechos = nFechos ? `<p style="margin:8px 0 0;"><button type="button" class="btn btn-sm" data-dash-crm="rever|meus" title="Escolhe a nova data de fecho das tuas oportunidades com o fecho ultrapassado">📅 Rever as datas de fecho (${nFechos})</button></p>` : '';
     return `<p class="dash-sub"><b>Follow-ups</b> (atrasados e próximos 7 dias)</p>${tarefas.length ? tarefas.slice(0, 6).map(linhaT).join('') : '<p class="hint">Nenhum.</p>'}
       <p class="dash-sub" style="margin-top:8px;"><b>As minhas oportunidades em curso</b></p>${ops.length ? ops.slice(0, 5).map(linhaOp).join('') : '<p class="hint">Nenhuma.</p>'}
-      ${ops.length > 5 ? `<p class="hint">+ ${ops.length - 5} no separador Oportunidades.</p>` : ''}`;
+      ${ops.length > 5 ? `<p class="hint">+ ${ops.length - 5} no separador Oportunidades.</p>` : ''}${botaoFechos}`;
+  },
+
+  // ============================ Rever datas de fecho em lote ============================
+  // Janela com TODAS as oportunidades em curso com a data prevista de fecho ultrapassada (ou, à escolha, também as que fecham nos
+  // próximos 30 dias), cada uma com um campo para a nova data e atalhos (+1 semana, +1 mês, +3 meses). Só se grava o que tiver nova
+  // data; a nova data tem de ser de hoje em diante (uma oportunidade que já fechou muda de etapa, não de data). inicial.resp: 'meus' | 'todos'.
+  abrirRevisaoFechos(inicial) {
+    const hoje = this.hoje(), meu = this.meuRecursoId();
+    const est = { resp: inicial && inicial.resp === 'meus' ? 'meus' : 'todos', janela: '0', novas: {}, aGravar: false };
+    const lista = () => CrmLogica.aFechar(this.d.oportunidades, this.idx.etapa, hoje, Number(est.janela), est.resp === 'meus' ? meu : null);
+    const pendentes = () => Object.keys(est.novas).filter(id => est.novas[id]);
+    App.abrirModal('Rever datas de fecho', '<div id="crmRevFechos"></div>', { largo: true, alteracoes: () => pendentes().length > 0 });
+    const raiz = document.getElementById('crmRevFechos');
+    const rodape = () => {
+      const n = pendentes().length;
+      const el = raiz.querySelector('[data-rev-contagem]'), btn = raiz.querySelector('[data-rev-guardar]');
+      if (el) el.textContent = n ? `${n} data${n === 1 ? '' : 's'} por guardar` : 'Escolhe a nova data de cada oportunidade.';
+      if (btn) btn.disabled = !n || est.aGravar;
+    };
+    const desenhar = () => {
+      const ops = lista();
+      const opt = (v, t, sel) => `<option value="${v}"${sel === v ? ' selected' : ''}>${t}</option>`;
+      const linhas = ops.map(op => {
+        const c = this.idx.conta.get(op.conta_id), e = this.idx.etapa.get(op.etapa_id);
+        const atraso = CrmLogica.diasEntre(op.data_prevista_fecho, hoje);
+        const nova = est.novas[op.id] || '';
+        return `<tr data-id="${escapeAttr(op.id)}">
+          <td><b>${escapeHtml(op.titulo)}</b><div class="hint" style="margin:0">${escapeHtml(c ? c.nome : '—')}</div></td>
+          <td>${escapeHtml(e ? e.nome : '—')} <span class="hint">${Math.round(CrmLogica.probabilidadeDe(op, this.idx.etapa))}%</span></td>
+          <td style="text-align:right;white-space:nowrap">${this.euro(op.valor_estimado)}</td>
+          <td>${escapeHtml(this._primeiroNome(op.responsavel_id))}</td>
+          <td style="white-space:nowrap"><span class="crm-atrasada">${this.data(op.data_prevista_fecho)}</span>${atraso > 0 ? `<div class="hint" style="margin:0">há ${atraso} dia${atraso === 1 ? '' : 's'}</div>` : '<div class="hint" style="margin:0">ainda a decorrer</div>'}</td>
+          <td style="white-space:nowrap"><input type="date" data-rev-nova="${escapeAttr(op.id)}" min="${hoje}" value="${escapeAttr(nova)}" style="width:140px;"
+            ${nova && nova < hoje ? ' class="crm-invalido"' : ''}>
+            <span class="crm-rev-atalhos"><button type="button" class="btn btn-sm" data-rev-atalho="7" data-id="${escapeAttr(op.id)}" title="Daqui a uma semana">+1 sem</button><button type="button" class="btn btn-sm" data-rev-atalho="30" data-id="${escapeAttr(op.id)}" title="Daqui a 30 dias">+1 mês</button><button type="button" class="btn btn-sm" data-rev-atalho="90" data-id="${escapeAttr(op.id)}" title="Daqui a 90 dias">+3 meses</button></span></td></tr>`;
+      }).join('');
+      raiz.innerHTML = `<p class="hint" style="margin-top:0">Oportunidades em curso com o fecho previsto ${est.janela === '0' ? 'ultrapassado' : 'ultrapassado ou nos próximos 30 dias'}. Escolhe a nova data de cada uma (ou usa os atalhos) e guarda; as que deixares em branco ficam como estão.</p>
+        <div class="filters crm-barra">
+          <label class="zoom-label">De quem <select data-rev-resp>${opt('todos', 'Todos', est.resp)}${opt('meus', 'Os meus', est.resp)}</select></label>
+          <label class="zoom-label">Mostrar <select data-rev-janela>${opt('0', 'Fecho ultrapassado', est.janela)}${opt('30', 'Ultrapassado + próximos 30 dias', est.janela)}</select></label>
+          <label class="zoom-label">Mesma data para todas <input type="date" id="crmRevTodas" min="${hoje}" style="width:140px;"></label>
+          <button type="button" class="btn btn-sm" data-rev-todas ${ops.length ? '' : 'disabled'}>Preencher todas</button>
+        </div>
+        ${ops.length ? `<div class="table-scroll" style="max-height:55vh;"><table class="tabela-crud"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Valor</th><th>Responsável</th><th>Fecho previsto</th><th>Nova data de fecho</th></tr></thead><tbody>${linhas}</tbody></table></div>`
+          : '<p class="hint" style="margin:14px 0;">Nenhuma oportunidade nesta situação. 🎉</p>'}
+        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;">
+          <button type="button" class="btn btn-primary" data-rev-guardar disabled>Guardar datas</button>
+          <button type="button" class="btn" data-rev-cancelar>Cancelar</button>
+          <span class="hint" data-rev-contagem style="margin:0 0 0 auto"></span>
+        </div>`;
+      rodape();
+    };
+    const gravarTudo = async () => {
+      if (est.aGravar) return;
+      const ids = pendentes();
+      if (ids.some(id => est.novas[id] < hoje)) { App.toast('A nova data tem de ser hoje ou posterior (corrige as datas assinaladas).'); desenhar(); return; }
+      est.aGravar = true; rodape();
+      let ok = 0; const erros = [];
+      for (const id of ids) {
+        const op = this.idx.op.get(id);
+        if (!op) { delete est.novas[id]; continue; }
+        try { await this.gravar('oportunidades', Object.assign({}, op, { data_prevista_fecho: est.novas[id] })); ok++; delete est.novas[id]; }
+        catch (err) { erros.push(`${op.titulo}: ${this.msgErro(err)}`); }
+      }
+      est.aGravar = false;
+      this.renderAtual();
+      if (App.abaAtiva === 'dashboard') App.renderDashboard();
+      if (erros.length) { App.toast(`${ok} atualizada${ok === 1 ? '' : 's'}; não foi possível gravar: ${erros.join(' · ')}`); desenhar(); return; }
+      App.fecharModal();
+      App.toast(`${ok} data${ok === 1 ? '' : 's'} de fecho atualizada${ok === 1 ? '' : 's'}.`);
+    };
+    raiz.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.matches('[data-rev-resp]')) { est.resp = t.value; desenhar(); }
+      else if (t.matches('[data-rev-janela]')) { est.janela = t.value; desenhar(); }
+      else if (t.matches('[data-rev-nova]')) {
+        if (t.value) est.novas[t.dataset.revNova] = t.value; else delete est.novas[t.dataset.revNova];
+        t.classList.toggle('crm-invalido', !!t.value && t.value < hoje);
+        rodape();
+      }
+    });
+    raiz.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      if (!b || !raiz.contains(b)) return;
+      if (b.dataset.revAtalho) {
+        const nova = CrmLogica.somarDias(hoje, Number(b.dataset.revAtalho));
+        est.novas[b.dataset.id] = nova;
+        const campo = raiz.querySelector(`[data-rev-nova="${b.dataset.id}"]`);
+        if (campo) { campo.value = nova; campo.classList.remove('crm-invalido'); }
+        rodape();
+      } else if ('revTodas' in b.dataset) {
+        const d = (document.getElementById('crmRevTodas') || {}).value;
+        if (!d) { App.toast('Escolhe primeiro a data a aplicar a todas.'); return; }
+        if (d < hoje) { App.toast('A data tem de ser hoje ou posterior.'); return; }
+        lista().forEach(op => { est.novas[op.id] = d; });
+        desenhar();
+      } else if ('revGuardar' in b.dataset) gravarTudo();
+      else if ('revCancelar' in b.dataset) { if (!pendentes().length || confirm('Descartar as datas que escolheste e fechar?')) App.fecharModal(); }
+    });
+    desenhar();
   },
   // Abre uma ficha a partir de fora do módulo (cartão do Início): vai ao separador e abre-a quando os
   // dados estiverem carregados.
   async irPara(tipo, id) {
+    if (tipo === 'rever') { this.abrirRevisaoFechos({ resp: id }); return; }   // janela de revisão das datas de fecho (cartão do Início)
     App.irParaAba(tipo === 'tarefa' ? 'crmFollowups' : 'crmOportunidades');
     try { await this.carregar(); } catch (e) { return; }
     if (tipo === 'tarefa') this.abrirTarefa(id); else this.abrirOportunidade(id);

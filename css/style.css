@@ -1003,6 +1003,8 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .crm-ed-gravado{border-color:#16a34a !important;background:#dcfce7 !important;transition:background .6s,border-color .6s;}
 .crm-linha:hover td{background:var(--cinza-100);}
 .crm-atrasada{color:var(--vermelho);font-weight:600;}
+.crm-rev-atalhos{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle;}
+input.crm-invalido{border-color:var(--vermelho);outline:1px solid var(--vermelho);}
 .crm-badge{display:inline-block;padding:1px 7px;border-radius:var(--radius-pill);background:var(--cinza-200);color:var(--cinza-700);font-size:10.5px;font-weight:600;}
 .crm-estado{display:inline-block;padding:2px 8px;border-radius:var(--radius-pill);font-size:11px;font-weight:700;background:var(--cinza-200);color:var(--cinza-700);}
 .crm-estado-ativo,.crm-estado-aceite{background:rgba(31,138,91,.16);color:var(--verde);}

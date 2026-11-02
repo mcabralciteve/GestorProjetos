@@ -259,6 +259,28 @@ const CrmLogica = {
     return lista.sort((a, b) => b.motivos.length - a.motivos.length || (Number(b.op.valor_estimado) || 0) - (Number(a.op.valor_estimado) || 0));
   },
 
+  // "AAAA-MM-DD" + n dias (n pode ser negativo).
+  somarDias(iso, n) {
+    const d = new Date(iso + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  },
+  // Dias de calendário de "de" até "ate" (positivo se "ate" é depois).
+  diasEntre(de, ate) {
+    return Math.round((Date.parse(ate + 'T12:00:00Z') - Date.parse(de + 'T12:00:00Z')) / 86400000);
+  },
+  // Oportunidades em curso com a data prevista de fecho já ultrapassada (dias = 0) ou que a ultrapassam/fecham nos próximos "dias" dias
+  // (dias > 0, inclui as já ultrapassadas) — as mais atrasadas primeiro, e a mais valiosa primeiro em caso de empate. Sem data não entram.
+  // responsavelId (opcional): só as desse responsável.
+  aFechar(ops, etapaPorId, hojeISO, dias, responsavelId) {
+    const limite = this.somarDias(hojeISO, dias > 0 ? dias : 0);
+    return (ops || []).filter(op => {
+      if (this.categoriaDe(op, etapaPorId) !== 'aberta' || !op.data_prevista_fecho) return false;
+      if (responsavelId && op.responsavel_id !== responsavelId) return false;
+      return dias > 0 ? op.data_prevista_fecho <= limite : op.data_prevista_fecho < hojeISO;
+    }).sort((a, b) => a.data_prevista_fecho.localeCompare(b.data_prevista_fecho) || (Number(b.valor_estimado) || 0) - (Number(a.valor_estimado) || 0));
+  },
+
   // ============================ Fase 2: importação ============================
   // Texto CSV → matriz de células. Deteta o separador (; , ou tab) pela 1.ª linha e respeita aspas.
   parseCsv(texto) {
