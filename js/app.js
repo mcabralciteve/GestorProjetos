@@ -4267,21 +4267,20 @@ const App = {
   },
   recomputarResumos(p) {
     const raizes = p.tarefas.filter(t => t.parentId === null);
+    // Devolve as horas previstas (escritas de propósito) da tarefa e de tudo o que está por baixo dela — o peso da tarefa na % do resumo acima.
     const visitar = (t) => {
       const filhos = this.filhosDe(p, t.id);
-      if (filhos.length === 0) return;
-      filhos.forEach(visitar);
+      if (filhos.length === 0) return this.temPrevistasExplicitas(t) ? this.horasPrevistasTarefa(t) : 0;
+      const previstas = filhos.map(visitar);
       const inicios = filhos.map(f => DateUtil.parseISO(f.inicio).getTime());
       const fins = filhos.map(f => DateUtil.parseISO(f.fim).getTime());
       t.inicio = DateUtil.toISO(new Date(Math.min(...inicios)));
       t.fim = DateUtil.toISO(new Date(Math.max(...fins)));
-      let totalDur = 0, somaPond = 0;
-      filhos.forEach(f => {
-        const dur = DateUtil.diffDays(DateUtil.parseISO(f.inicio), DateUtil.parseISO(f.fim)) + 1;
-        totalDur += dur;
-        somaPond += dur * (f.progresso || 0);
-      });
-      t.progresso = totalDur ? Math.round(somaPond / totalDur) : 0;
+      // % do resumo: média das % das filhas pesada pelas horas previstas (js/progresso-logica.js).
+      t.progresso = ProgressoLogica.mediaResumo(filhos.map((f, i) => ({
+        progresso: f.progresso, previstas: previstas[i], dias: DateUtil.diffDays(DateUtil.parseISO(f.inicio), DateUtil.parseISO(f.fim)) + 1
+      })));
+      return previstas.reduce((a, b) => a + b, 0);
     };
     raizes.forEach(visitar);
   },
@@ -9342,6 +9341,7 @@ const App = {
       this.atualizarBotoesTarefaSelecionada(null, false);
       return;
     }
+    this.recomputarResumos(p); // as % das tarefas-resumo seguem sempre a regra atual (pesadas pelas horas previstas), mesmo em projetos gravados antes
     this.aplicarProgressoAuto(p);
     const lista = this.flatten(p);
     const hojeISO = DateUtil.todayISO();

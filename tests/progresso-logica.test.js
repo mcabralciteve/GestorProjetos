@@ -27,3 +27,21 @@ test('reprevisão em automático: o maior entre previstas e reais', () => {
   assert.equal(P.eacAuto(14, 10), 14);
   assert.equal(P.eacAuto(0, 0), 0);
 });
+
+test('resumo: média das % das filhas pesada pelas horas previstas', () => {
+  // 10h a 100% e 30h a 0% → 25% (e não a média simples, 50%, nem a dos dias)
+  assert.equal(P.mediaResumo([{ progresso: 100, previstas: 10, dias: 20 }, { progresso: 0, previstas: 30, dias: 1 }]), 25);
+  assert.equal(P.mediaResumo([{ progresso: 80, previstas: 5, dias: 3 }]), 80);
+});
+
+test('resumo: as filhas sem horas previstas ficam de fora', () => {
+  assert.equal(P.mediaResumo([{ progresso: 100, previstas: 0, dias: 50 }, { progresso: 50, previstas: 8, dias: 1 }]), 50);
+  assert.equal(P.mediaResumo([{ progresso: 100, dias: 50 }, { progresso: 40, previstas: '10', dias: 1 }]), 40);
+});
+
+test('resumo: sem nenhuma hora previstas pesa pela duração (como antes) e sem filhas dá 0', () => {
+  // 10 dias a 100% + 30 dias a 0% → 25%
+  assert.equal(P.mediaResumo([{ progresso: 100, previstas: 0, dias: 10 }, { progresso: 0, dias: 30 }]), 25);
+  assert.equal(P.mediaResumo([]), 0);
+  assert.equal(P.mediaResumo([{ progresso: 70, previstas: 0, dias: 0 }]), 0);
+});
