@@ -229,6 +229,7 @@ const App = {
       grupoBtnEquipa: document.getElementById('grupoBtnEquipa'),
       grupoBtnComercial: document.getElementById('grupoBtnComercial'),
       grupoBtnFaturacao: document.getElementById('grupoBtnFaturacao'),
+      grupoBtnAtivos: document.getElementById('grupoBtnAtivos'),
       tabBtnAcompanhamento: document.getElementById('tabBtnAcompanhamento'),
       acompanhamentoProjetoNome: document.getElementById('acompanhamentoProjetoNome'),
       acompanhamentoSemProjeto: document.getElementById('acompanhamentoSemProjeto'),
@@ -532,6 +533,7 @@ const App = {
       this.sessaoAtiva = false;
       Crm.limpar();
       Reunioes.limpar();
+      Licencas.limpar();
       this.state = this.estadoVazio();
       this.renderProjetoSelect();
       this.renderTudo();
@@ -4430,6 +4432,10 @@ const App = {
     if (e.btnModoAusEquipa) e.btnModoAusEquipa.style.display = (admin || liderDeAlgo) ? '' : 'none';
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
+    // Ativos → Licenças: valores de custo, só Administrador e Diretores (a base de dados aplica a mesma regra — ver supabase/licencas.sql).
+    const verLicencas = Licencas.podeVer();
+    if (e.grupoBtnAtivos) e.grupoBtnAtivos.style.display = verLicencas ? '' : 'none';
+    if (!verLicencas && this.abaAtiva === 'licencas') this.irParaAba('dashboard');
     if (e.tabBtnAcompanhamento) e.tabBtnAcompanhamento.style.display = gestorDeAlgo ? '' : 'none';
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.style.display = admin ? '' : 'none';
     ['btnNovoProjeto', 'btnNovoProjeto2', 'btnDuplicarProjeto', 'btnEliminarProjeto'].forEach(id => {
@@ -10470,8 +10476,8 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', reunioes: 'planeamento', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
-  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', configuracoes: 'recursos' },
+  gruposAbas: { dashboard: 'inicio', reunioes: 'planeamento', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', licencas: 'ativos', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
+  primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', ativos: 'licencas', configuracoes: 'recursos' },
   // "Reuniões" aparece nos submenus de Comercial e de Planeamento (é o mesmo ecrã): fica no grupo de onde se veio, ou no último usado.
   ultimoGrupoReunioes: 'planeamento',
   grupoDaAba(nome) { return nome === 'reunioes' ? this.ultimoGrupoReunioes : this.gruposAbas[nome]; },
@@ -10500,6 +10506,7 @@ const App = {
     if (nome === 'financeiro') this.renderFinanceiro();
     if (nome === 'previsao') Previsao.aoAbrir();
     if (nome === 'reunioes') Reunioes.aoAbrir();
+    if (nome === 'licencas') Licencas.aoAbrir();
     if (nome.startsWith('crm')) Crm.aoAbrirAba(nome);
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje
@@ -10761,7 +10768,8 @@ const App = {
       const dataStr = DateUtil.todayISO().replace(/-/g, '');
       // As reuniões só se leem quando se abre o separador: carrega-as agora para entrarem no backup (sem a tabela, ficam de fora).
       try { await Reunioes.carregar(true); } catch (e) { /* tabela por criar */ }
-      const estadoBackup = { ...this.state, comentarios: this.comentarios, reunioes: Reunioes.lista };
+      try { await Licencas.carregar(true); } catch (e) { /* tabela por criar */ } // o backup é só do Administrador, que vê todas as licenças
+      const estadoBackup = { ...this.state, comentarios: this.comentarios, reunioes: Reunioes.lista, licencas: Licencas.lista };
       const sql = Backup.gerarSQL(estadoBackup);
       this.descarregarBlob(new Blob([sql], { type: 'text/plain;charset=utf-8' }), `backup_dados_${dataStr}.sql`);
 

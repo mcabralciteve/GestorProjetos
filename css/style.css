@@ -1169,3 +1169,19 @@ input.crm-invalido{border-color:var(--vermelho);outline:1px solid var(--vermelho
 .reu-ficheiro{display:grid;grid-template-columns:minmax(120px,1fr) minmax(200px,2fr) 60px 24px;gap:6px;align-items:center;margin-bottom:6px;}
 .reu-ficheiro input{min-width:0;width:100%;box-sizing:border-box;}
 @media (max-width:760px){.reu-ponto{grid-template-columns:1fr 1fr;}.reu-ponto-extra{margin-left:0;}.reu-ponto-vazio{display:none;}.reu-ficheiro{grid-template-columns:1fr 24px;}}
+/* Ativos → Licenças */
+.tabela-crud th.num,.tabela-crud td.num{text-align:right;white-space:nowrap;}
+.lic-ren{font-size:12.5px;}
+.lic-ren-atrasada{color:var(--vermelho);font-weight:700;}
+.lic-ren-proxima{color:var(--laranja);font-weight:700;}
+.lic-estado-ativa{background:rgba(31,138,91,.16);color:var(--verde);}
+.lic-estado-cancelada{background:rgba(192,57,43,.14);color:var(--vermelho);}
+.lic-estado-expirada{background:var(--cinza-200);color:var(--cinza-700);}
+.an-kpi.lic-kpi-alerta{border-color:var(--vermelho);}
+.an-kpi.lic-kpi-alerta b{color:var(--vermelho);}
+.lic-resumos{margin-top:14px;display:flex;flex-direction:column;gap:8px;}
+.lic-resumo summary{cursor:pointer;font-weight:600;color:var(--cinza-700);padding:4px 0;}
+.lic-calculo{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0;padding:8px 12px;background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:var(--radius);font-size:12.5px;color:var(--cinza-700);}
+.lic-calculo b{color:var(--cinza-900);font-family:var(--display);}
+.lic-form-acoes{display:flex;gap:8px;align-items:center;margin-top:10px;}
+.lic-form-acoes .crm-barra-fim{margin-left:auto;}

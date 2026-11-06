@@ -17,7 +17,7 @@
 // passo manual. Por isso "recursos.auth_user_id" e "registos.user_id" saem sempre em branco.
 const Backup = {
   TABELAS_EM_ORDEM: [
-    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos', 'tarefa_comentarios', 'reunioes',
+    'equipas', 'recursos', 'departamentos', 'feriados', 'ausencias', 'projetos', 'tarefas', 'tarefa_recursos', 'tarefa_comentarios', 'reunioes', 'licencas',
     'faturas', 'pontos_situacao', 'proximos_passos', 'registos', 'reservas_viatura'
   ],
   // Composta pelas mesmas transformações já usadas em js/sync.js para escrever cada tabela — se o
@@ -130,6 +130,19 @@ const Backup = {
       ata_versao: r.ata_versao || 0, ata_emitida_em: r.ata_emitida_em || null, ata_emitida_por: r.ata_emitida_por || '', versao: r.versao || 1,
       criado_por_user: null, criado_por_nome: r.criado_por_nome || '', criado_em: r.criado_em || r.data_hora,
       atualizado_por_nome: r.atualizado_por_nome || '', atualizado_em: r.atualizado_em || r.criado_em || r.data_hora // colunas NOT NULL na tabela
+    }));
+
+    // Licenças de software (vivem fora de state.projetos — ver js/licencas.js; o app passa-as em state.licencas). criado_por_user sai em
+    // branco, como registos.user_id (as contas voltam a ser criadas com ids novos). Colunas NOT NULL com valor por omissão ficam preenchidas.
+    linhas.licencas = (state.licencas || []).map(l => ({
+      id: l.id, nome: l.nome, fornecedor: l.fornecedor || '', tipo: l.tipo || 'subscricao', periodicidade: l.periodicidade || 'anual',
+      n_licencas: l.n_licencas == null ? null : l.n_licencas, valor: l.valor || 0,
+      responsavel_id: l.responsavel_id || null, departamento_id: l.departamento_id || null,
+      data_inicio: l.data_inicio || null, data_renovacao: l.data_renovacao || null, renovacao_automatica: l.renovacao_automatica !== false,
+      projeto_id: l.projeto_id || null, projeto_nome: l.projeto_nome || '', taxa_financiamento: l.taxa_financiamento || 0,
+      estado: l.estado || 'ativa', ligacao: l.ligacao || '', notas: l.notas || '',
+      criado_por_user: null, criado_por_nome: l.criado_por_nome || '', criado_em: l.criado_em || new Date().toISOString(),
+      atualizado_por_nome: l.atualizado_por_nome || '', atualizado_em: l.atualizado_em || l.criado_em || new Date().toISOString()
     }));
 
     linhas.reservas_viatura = (state.reservasViatura || []).map(rv => ({

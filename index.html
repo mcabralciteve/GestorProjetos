@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261107a">
+<link rel="stylesheet" href="css/style.css?v=20261108a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -77,6 +77,7 @@
   <button class="grupo-btn" data-grupo="horas">🕒 Horas</button>
   <button class="grupo-btn" data-grupo="faturacao" id="grupoBtnFaturacao">💶 Financeiro</button>
   <button class="grupo-btn" data-grupo="viaturas">🚗 Viaturas</button>
+  <button class="grupo-btn" data-grupo="ativos" id="grupoBtnAtivos" style="display:none;">🗂 Ativos</button>
   <button class="grupo-btn" data-grupo="configuracoes" id="grupoBtnConfiguracoes">⚙ Configurações</button>
 </nav>
 <nav class="tabs" id="tabsNav">
@@ -114,6 +115,9 @@
   </div>
   <div class="tabs-grupo" data-grupo="viaturas">
     <button class="tab-btn" data-tab="viaturas">Pedido</button>
+  </div>
+  <div class="tabs-grupo" data-grupo="ativos">
+    <button class="tab-btn" data-tab="licencas" id="tabBtnLicencas">Licenças</button>
   </div>
   <div class="tabs-grupo" data-grupo="configuracoes">
     <button class="tab-btn" data-tab="recursos">Pessoas</button>
@@ -1284,6 +1288,14 @@
     <div id="reunioesCorpo"></div>
   </div>
 </section>
+<!-- ===================== TAB: ATIVOS → LICENÇAS ===================== -->
+<section class="tab-panel" id="tab-licencas">
+  <div class="pagina">
+    <div class="pagina-head"><h2>🗂 Licenças de software</h2></div>
+    <p class="pagina-sub">Regista as licenças e subscrições de software: valor, a quem pertencem e a que departamento, data de renovação, projeto que as suporta e taxa de financiamento.</p>
+    <div id="licencasCorpo"></div>
+  </div>
+</section>
 <section class="tab-panel" id="tab-viaturas">
   <div class="pagina">
     <div class="pagina-head">
@@ -1410,7 +1422,7 @@
 <script src="js/capacidade.js?v=20261106a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
-<script src="js/backup.js?v=20261102a"></script>
+<script src="js/backup.js?v=20261108a"></script>
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261106a"></script>
@@ -1434,6 +1446,8 @@
 <script src="js/capacidade-comercial.js?v=20261105b"></script>
 <script src="js/capacidade-excel.js?v=20261106a"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
-<script src="js/app.js?v=20261108c"></script>
+<script src="js/licencas-logica.js?v=20261108a"></script>
+<script src="js/licencas.js?v=20261108a"></script>
+<script src="js/app.js?v=20261108d"></script>
 </body>
 </html>
