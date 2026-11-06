@@ -723,7 +723,7 @@
         </label>
         <label class="zoom-label" id="lblMesInicioCap">A partir de:
           <button id="btnCapMesAnt" class="btn btn-sm" title="Mês anterior">◀</button>
-          <input type="month" id="selMesInicioCap">
+          <input type="month" id="selMesInicioCap" autocomplete="off">
           <button id="btnCapMesSeg" class="btn btn-sm" title="Mês seguinte">▶</button>
           <button id="btnCapHoje" class="btn btn-sm" title="Voltar ao mês atual">Hoje</button>
         </label>
@@ -944,12 +944,12 @@
 
     <div class="card" style="max-width:480px;margin-top:16px;">
       <h3 style="margin-top:0;">Cores de Ocupação/Alocação</h3>
-      <p class="pagina-sub" style="margin-top:0;">Limiares (% da capacidade diária de 8h) que definem as cores usadas em Capacidade, Alocações e nos avisos de sobreposição no Gantt. Abaixo do 1º limiar = subutilizado (amarelo); entre o 1º e o 2º = confortável (verde); entre o 2º e o 3º = perto do limite (laranja); a partir do 3º = sobre-alocado (vermelho).</p>
+      <p class="pagina-sub" style="margin-top:0;">Limiares (% da capacidade diária de 8h) que definem as cores usadas em Capacidade, Alocações e nos avisos de sobreposição no Gantt. Abaixo do 1º limiar = subutilizado (amarelo); entre o 1º e o 2º = confortável (verde); entre o 2º e o 3º = perto do limite (laranja); acima do 3º = sobre-alocado (vermelho) — exatamente no 3º (ex.: 100%) ainda é perto do limite.</p>
       <div class="row-2">
         <label>Subutilizado abaixo de (%) <input type="number" id="ocupLimiteBaixo" min="1" max="99" step="1"></label>
         <label>Perto do limite a partir de (%) <input type="number" id="ocupLimiteAlto" min="1" max="199" step="1"></label>
       </div>
-      <label>Sobre-alocado a partir de (%) <input type="number" id="ocupLimiteCritico" min="1" max="300" step="1"></label>
+      <label>Sobre-alocado acima de (%)<input type="number" id="ocupLimiteCritico" min="1" max="300" step="1"></label>
       <button class="btn btn-primary" id="btnGuardarOcupacao" style="margin-top:10px;">Guardar</button>
       <span id="ocupMsg" class="calc-line" style="border:none;display:block;margin-top:6px;"></span>
     </div>
@@ -1407,7 +1407,7 @@
 <script src="js/reunioes-ata.js?v=20261103a"></script>
 <script src="js/sync.js?v=20261101d"></script>
 <script src="js/gantt.js?v=20261103a"></script>
-<script src="js/capacidade.js?v=20261101a"></script>
+<script src="js/capacidade.js?v=20261106a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20261102a"></script>
@@ -1434,6 +1434,6 @@
 <script src="js/capacidade-comercial.js?v=20261105b"></script>
 <script src="js/capacidade-excel.js?v=20261106a"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
-<script src="js/app.js?v=20261108a"></script>
+<script src="js/app.js?v=20261108b"></script>
 </body>
 </html>

@@ -6532,7 +6532,8 @@ const App = {
       tr.innerHTML = `<th>${escapeHtml(r.nome)}</th>${celulas}`;
       e.heatmapCapBody.appendChild(tr);
 
-      const mesAtual = resumos[0];
+      // O cartão mostra o MÊS ATUAL quando ele está dentro do horizonte (mesmo que "A partir de" ainda esteja num mês passado); senão, o primeiro mês da janela.
+      const mesAtual = resumos[Math.max(0, meses.findIndex(m => m.ano === new Date().getFullYear() && m.mes === new Date().getMonth()))];
       const equipa = this.state.equipas.find(eq => eq.id === r.equipaId);
       // Previsão de faturação (preço de venda × horas) fica reservada ao Administrador e ao Diretor
       // do departamento DESTA pessoa — um Gestor de Projeto ou Team Leader normal já vê aqui a

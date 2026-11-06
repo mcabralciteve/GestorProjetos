@@ -430,8 +430,8 @@ const Capacidade = {
   },
   // Classificação visual (heatmap/cartões/badges/calendário de Alocações) a partir de um resumo,
   // por ordem de gravidade — os mesmos 3 limiares e as mesmas cores em toda a app:
-  // "crítico" (vermelho) — sobre-alocação real (ver intervalosCriticos), OU a % total atinge/
-  // ultrapassa o limiar crítico;
+  // "crítico" (vermelho) — sobre-alocação real (ver intervalosCriticos), OU a % total (arredondada) fica acima do limiar crítico:
+  // exatamente no limiar (ex.: 100%) ainda é "aviso" (capacidade cheia, não excedida);
   // "conflito" (laranja) — trabalho agendado num dia sem disponibilidade (feriado/ausência), não é
   // sobre-alocação, é a agenda a ignorar uma indisponibilidade conhecida;
   // "aviso" (laranja) — entre o limiar alto e o crítico, perto do limite;
@@ -440,7 +440,8 @@ const Capacidade = {
   // "vazio" (cinza) — 0%, sem alocação nenhuma.
   classeResumo(resumo) {
     const lim = this.limiaresOcupacao();
-    if (resumo.diasSobreAlocado > 0 || resumo.pct >= lim.critico) return 'critico';
+    // Só é sobre-alocado ACIMA do limiar (100% certos = a capacidade cheia, não excedida), comparando as % arredondadas — as que se veem no ecrã.
+    if (resumo.diasSobreAlocado > 0 || Math.round(resumo.pct * 100) > Math.round(lim.critico * 100)) return 'critico';
     if (resumo.diasConflitoDisponibilidade > 0) return 'conflito';
     if (resumo.pct >= lim.alto) return 'aviso';
     if (resumo.pct >= lim.baixo) return 'ok';
