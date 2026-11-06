@@ -644,6 +644,7 @@ const App = {
       this.selecionadasIds = new Set();
       this.renderProjetoSelect();
       this.renderTudo();
+      Crm.renderAtual(); // se estás num separador do CRM, relê-o e redesenha-o (renderTudo não o faz)
       this.atualizarBotaoMigracao();
       if (!opts.silencioso) this.toast('Dados atualizados.');
     } catch (err) {

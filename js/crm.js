@@ -233,7 +233,11 @@ const Crm = {
     })[aba]();
   },
   renderAtual() {
-    if (this.ABAS[App.abaAtiva]) this.render(App.abaAtiva);
+    if (!this.ABAS[App.abaAtiva]) return;
+    // "Atualizar dados" (e o regresso ao separador do browser) marcam o CRM como "por recarregar": render() não desenha nada
+    // nesse estado e a lista ficava parada com valores antigos (ex.: "sem orçamento" depois de gravar um orçamento). Recarrega e desenha.
+    if (!this.carregado) { this.carregar().then(() => this.render(App.abaAtiva)).catch(err => console.error(err)); return; }
+    this.render(App.abaAtiva);
   },
   // Um único conjunto de listeners delegados por contentor (ligado uma vez).
   ligarEventos(el, aba) {
