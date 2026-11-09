@@ -1185,3 +1185,13 @@ input.crm-invalido{border-color:var(--vermelho);outline:1px solid var(--vermelho
 .lic-calculo b{color:var(--cinza-900);font-family:var(--display);}
 .lic-form-acoes{display:flex;gap:8px;align-items:center;margin-top:10px;}
 .lic-form-acoes .crm-barra-fim{margin-left:auto;}
+.lic-estado-em_aquisicao{background:rgba(230,126,34,.18);color:#a85a0a;}
+.lic-estado-recusada{background:rgba(192,57,43,.14);color:var(--vermelho);}
+.lic-pendente{background:rgba(230,126,34,.07);}
+.lic-dec{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+.an-kpi.lic-kpi-pend{border-color:var(--laranja);}
+.an-kpi.lic-kpi-pend b{color:var(--laranja);}
+.lic-aviso{margin:0 0 12px;padding:10px 14px;background:rgba(230,126,34,.09);border:1px solid var(--laranja);border-radius:var(--radius);}
+.lic-aviso-titulo{font-weight:700;color:var(--cinza-900);margin-bottom:6px;}
+.lic-aviso-linha{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;padding:4px 0;border-top:1px solid rgba(230,126,34,.25);font-size:13px;}
+.lic-aviso-acoes{display:flex;flex-wrap:wrap;gap:6px;}

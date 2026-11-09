@@ -142,7 +142,8 @@ const Backup = {
       projeto_id: l.projeto_id || null, projeto_nome: l.projeto_nome || '', taxa_financiamento: l.taxa_financiamento || 0,
       estado: l.estado || 'ativa', ligacao: l.ligacao || '', notas: l.notas || '',
       criado_por_user: null, criado_por_nome: l.criado_por_nome || '', criado_em: l.criado_em || new Date().toISOString(),
-      atualizado_por_nome: l.atualizado_por_nome || '', atualizado_em: l.atualizado_em || l.criado_em || new Date().toISOString()
+      atualizado_por_nome: l.atualizado_por_nome || '', atualizado_em: l.atualizado_em || l.criado_em || new Date().toISOString(),
+      decisao_por_nome: l.decisao_por_nome || '', decisao_em: l.decisao_em || null, motivo_decisao: l.motivo_decisao || ''
     }));
 
     linhas.reservas_viatura = (state.reservasViatura || []).map(rv => ({

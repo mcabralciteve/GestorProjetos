@@ -123,3 +123,54 @@ test('formatação de data e de euros', () => {
   assert.match(L.eur(1234.5), /1\s?234,50\s?€/);
   assert.equal(L.nomeFicheiroExcel('2026-11-06'), 'Licencas_20261106.xlsx');
 });
+
+// ---------- Em processo de aquisição (aprovação pelo Diretor) ----------
+test('estados: "em aquisição" não conta para os custos mas aparece como previsão, e vem primeiro na lista', () => {
+  const a = lic({ id: 'a', valor: 100 });
+  const p1 = lic({ id: 'p1', estado: 'em_aquisicao', periodicidade: 'mensal', valor: 18, taxa_financiamento: 50 });
+  const p2 = lic({ id: 'p2', estado: 'em_aquisicao', periodicidade: 'anual', valor: 155.21, taxa_financiamento: 85 });
+  const r = L.resumo([a, p1, p2], '2026-11-09');
+  assert.equal(r.n, 1);
+  assert.equal(r.anual, 100);                      // as pendentes não entram
+  assert.equal(r.previsto.n, 2);
+  assert.equal(r.previsto.base, 371.21);           // 18×12 + 155,21
+  assert.equal(r.previsto.financiado, 239.93);     // 108 + 131,93 (155,21×85% arredondado por licença)
+  assert.equal(L.ordenar([a, p1, p2], '2026-11-09')[0].estado, 'em_aquisicao');
+  assert.equal(L.diasParaRenovacao(Object.assign({}, p1, { data_renovacao: '2026-12-01' }), '2026-11-09'), null); // sem alertas de renovação
+});
+
+test('filtrar por estado: "abertas" = ativas + em aquisição; os outros filtram um só', () => {
+  const todas = ['ativa', 'em_aquisicao', 'recusada', 'cancelada', 'expirada'].map(e => lic({ id: e, estado: e }));
+  assert.deepEqual(L.filtrar(todas, { estado: 'abertas' }, {}).map(x => x.id), ['ativa', 'em_aquisicao']);
+  assert.deepEqual(L.filtrar(todas, { estado: 'recusada' }, {}).map(x => x.id), ['recusada']);
+  assert.equal(L.filtrar(todas, { estado: '' }, {}).length, 5);
+  assert.deepEqual(L.paraAprovar(todas).map(x => x.id), ['em_aquisicao']);
+});
+
+test('agrupar: as em aquisição somam à parte (nPend/basePend) sem tocar nos totais das ativas', () => {
+  const a = lic({ id: 'a', departamento_id: 'd1', valor: 100 });
+  const p = lic({ id: 'p', departamento_id: 'd1', valor: 50, estado: 'em_aquisicao' });
+  const q = lic({ id: 'q', departamento_id: 'd2', valor: 70, estado: 'em_aquisicao' });
+  const g = L.agrupar([a, p, q], 'departamento', id => id);
+  assert.deepEqual(g.map(x => [x.nome, x.n, x.base, x.nPend, x.basePend]), [['d1', 1, 100, 1, 50], ['d2', 0, 0, 1, 70]]);
+});
+
+test('aprovar: passa a ativa, início hoje e primeira renovação um período depois; mantém datas já preenchidas', () => {
+  const m = lic({ estado: 'em_aquisicao', periodicidade: 'mensal', valor: 18 });
+  assert.deepEqual(L.patchAprovar(m, '2026-11-09', 'Ana', 'T'), { estado: 'ativa', data_inicio: '2026-11-09', data_renovacao: '2026-12-09', decisao_por_nome: 'Ana', decisao_em: 'T', motivo_decisao: '' });
+  const an = lic({ estado: 'em_aquisicao', periodicidade: 'anual' });
+  assert.equal(L.patchAprovar(an, '2026-11-30', 'Ana', 'T').data_renovacao, '2027-11-30');
+  const jaTem = lic({ estado: 'em_aquisicao', data_inicio: '2026-12-01', data_renovacao: '2027-12-01' });
+  const p = L.patchAprovar(jaTem, '2026-11-09', 'Ana', 'T');
+  assert.equal(p.data_inicio, '2026-12-01'); assert.equal(p.data_renovacao, '2027-12-01');
+  const perp = lic({ estado: 'em_aquisicao', tipo: 'perpetua', periodicidade: 'unica', valor: 500 });
+  assert.equal(L.patchAprovar(perp, '2026-11-09', 'Ana', 'T').data_renovacao, null);   // perpétua: sem renovação inventada
+});
+
+test('recusar: guarda o motivo sem espaços; linha de pedido para o email', () => {
+  assert.deepEqual(L.patchRecusar('  Sem orçamento ', 'Ana', 'T'), { estado: 'recusada', decisao_por_nome: 'Ana', decisao_em: 'T', motivo_decisao: 'Sem orçamento' });
+  const l = lic({ nome: 'Claude Team', periodicidade: 'mensal', valor: 18, taxa_financiamento: 50 });
+  const txt = L.linhaPedido(l, 'Milton Cabral', 'DIH 2.0');
+  assert.match(txt, /^• Claude Team — Milton Cabral — 18,00\s?€ \/ mês \(216,00\s?€\/ano\) — financiada a 50% — DIH 2\.0$/);
+  assert.match(L.linhaPedido(lic({ n_licencas: 6, periodicidade: 'anual', valor: 408 }), '', ''), /^• Office \(6 lic\.\) — sem responsável — 408,00\s?€ \/ ano$/);
+});

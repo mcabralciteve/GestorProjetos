@@ -529,6 +529,7 @@ const App = {
       this.atualizarBotaoMigracao();
       Crm.atualizarContagemFollowups();
       Reunioes.carregarEmFundo();
+      Licencas.carregarEmFundo();
     } else if (!autenticadoAgora && this.sessaoAtiva) {
       this.sessaoAtiva = false;
       Crm.limpar();
@@ -4638,6 +4639,7 @@ const App = {
     n += this.meusPassosAtrasadosCount();
     n += Reunioes.acoesAtrasadas();
     if (Crm.podeVer()) n += Crm.followupsAtrasados;
+    if (Licencas.podeVer()) n += Licencas.contarParaAprovar(); // licenças em processo de aquisição para o Diretor aprovar
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       n += this.faturasAVencerCount();
       n += this.consultoresRiscoCount();
@@ -4678,6 +4680,10 @@ const App = {
     const acoesAtrasadas = Reunioes.acoesAtrasadas();
     if (acoesAtrasadas) itens.push({ key: 'minhasAcoes', texto: `${acoesAtrasadas} ação(ões) de reuniões em atraso`, sub: 'As minhas ações de reuniões' });
     if (Crm.podeVer() && Crm.followupsAtrasados) itens.push({ key: 'crmFollowups', texto: `${Crm.followupsAtrasados} follow-up(s) comercial(is) em atraso`, sub: 'Comercial → Follow-ups' });
+    if (Licencas.podeVer()) {
+      const lic = Licencas.contarParaAprovar();
+      if (lic) itens.push({ key: 'licencasAprovar', texto: `${lic} licença(s) para aprovar`, sub: 'Ativos → Licenças: em processo de aquisição' });
+    }
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       const faturas = this.faturasAVencerCount();
       if (faturas) itens.push({ key: 'faturacaoAVencer', texto: `${faturas} fatura(s) a vencer`, sub: 'Faturação a vencer (próx. 30 dias)' });
@@ -4715,6 +4721,7 @@ const App = {
   irParaCartaoDashboard(key) {
     // Follow-ups do CRM não são um cartão do Dashboard: levam ao separador respetivo.
     if (key === 'crmFollowups') { this.irParaAba('crmFollowups'); return; }
+    if (key === 'licencasAprovar') { Licencas.verParaAprovar(); return; }
     if (this.dashboardWidgetsOcultosSet().has(key)) this.alternarWidgetDashboard(key);
     this.irParaAba('dashboard');
     this.renderDashboard();

@@ -10,7 +10,9 @@
 const LicencasLogica = {
   TIPOS: { subscricao: 'Subscrição', perpetua: 'Perpétua (aquisição única)' },
   PERIODICIDADES: { mensal: 'Mensal', anual: 'Anual', unica: 'Única' },
-  ESTADOS: { ativa: 'Ativa', cancelada: 'Cancelada', expirada: 'Expirada' },
+  // "em_aquisicao" = pedida e a aguardar a aprovação do Diretor do departamento; "recusada" = o Diretor não aprovou.
+  // Só as "ativa" contam para os custos; as "em_aquisicao" entram à parte, como previsão.
+  ESTADOS: { em_aquisicao: 'Em processo de aquisição', ativa: 'Ativa', cancelada: 'Cancelada', expirada: 'Expirada', recusada: 'Recusada' },
   MESES_POR_PERIODO: { mensal: 1, anual: 12 },
 
   // Sem acentos e em minúsculas — para procurar.
@@ -102,7 +104,8 @@ const LicencasLogica = {
       if (f.responsavel && l.responsavel_id !== f.responsavel) return false;
       if (f.projeto === '_sem') { if (l.projeto_id || l.projeto_nome) return false; }
       else if (f.projeto && l.projeto_id !== f.projeto) return false;
-      if (f.estado && l.estado !== f.estado) return false;
+      if (f.estado === 'abertas') { if (l.estado !== 'ativa' && l.estado !== 'em_aquisicao') return false; } // ativas + a aguardar aprovação
+      else if (f.estado && l.estado !== f.estado) return false;
       if (f.tipo && l.tipo !== f.tipo) return false;
       if (f.renovacao) {
         const dias = this.diasParaRenovacao(l, ctx.hoje);
@@ -117,10 +120,12 @@ const LicencasLogica = {
       return true;
     });
   },
-  // Ordem da lista: renovação mais próxima primeiro (as sem data, no fim), depois por nome.
+  // Ordem da lista: as que aguardam aprovação primeiro; depois renovação mais próxima (as sem data, no fim), depois por nome.
   ordenar(lista, hoje) {
     const chave = l => { const d = this.diasParaRenovacao(l, hoje); return d == null ? Infinity : d; };
     return (lista || []).slice().sort((a, b) => {
+      const pa = a.estado === 'em_aquisicao' ? 0 : 1, pb = b.estado === 'em_aquisicao' ? 0 : 1;
+      if (pa !== pb) return pa - pb;
       const ca = chave(a), cb = chave(b);
       if (ca !== cb) return ca < cb ? -1 : 1;
       return String(a.nome).localeCompare(String(b.nome), 'pt');
@@ -143,23 +148,56 @@ const LicencasLogica = {
     });
     ['anual', 'aquisicoes', 'financiado', 'liquido'].forEach(k => { r[k] = this.r2(r[k]); });
     ['atrasadas', 'ate30', 'ate60', 'ate90'].forEach(k => { r[k].valor = this.r2(r[k].valor); });
+    // Previsão: o que passa a custar se tudo o que aguarda aprovação for aprovado (não entra nos totais acima).
+    r.previsto = this.resumoPendentes(lista);
     return r;
   },
-  // Totais por departamento ou por projeto (só licenças ativas). chave: 'departamento' | 'projeto'.
+  // Licenças em processo de aquisição: quantas e quanto custariam (anual/aquisição, financiado e a cargo do departamento).
+  resumoPendentes(lista) {
+    const p = (lista || []).filter(l => l.estado === 'em_aquisicao');
+    const r = { n: p.length, base: 0, financiado: 0, liquido: 0 };
+    p.forEach(l => { r.base += this.valorBase(l); r.financiado += this.valorFinanciado(l); r.liquido += this.valorLiquido(l); });
+    ['base', 'financiado', 'liquido'].forEach(k => { r[k] = this.r2(r[k]); });
+    return r;
+  },
+  // Totais por departamento ou por projeto (licenças ativas; as em aquisição somam à parte em nPend/basePend). chave: 'departamento' | 'projeto'.
   // nomeDe(id, licenca) devolve o rótulo da chave; as licenças sem chave juntam-se em "(sem …)".
   agrupar(lista, chave, nomeDe) {
     const campo = chave === 'projeto' ? 'projeto_id' : 'departamento_id';
     const sem = chave === 'projeto' ? '(sem projeto)' : '(sem departamento)';
     const mapa = new Map();
-    (lista || []).filter(l => l.estado === 'ativa').forEach(l => {
+    (lista || []).filter(l => l.estado === 'ativa' || l.estado === 'em_aquisicao').forEach(l => {
       // um projeto fora da app (só texto) agrupa pelo texto
       const k = l[campo] || (chave === 'projeto' && l.projeto_nome ? 'txt:' + this.norm(l.projeto_nome) : '');
-      if (!mapa.has(k)) mapa.set(k, { chave: k, nome: k ? (l[campo] ? nomeDe(l[campo], l) : l.projeto_nome) : sem, n: 0, base: 0, financiado: 0, liquido: 0 });
+      if (!mapa.has(k)) mapa.set(k, { chave: k, nome: k ? (l[campo] ? nomeDe(l[campo], l) : l.projeto_nome) : sem, n: 0, base: 0, financiado: 0, liquido: 0, nPend: 0, basePend: 0 });
       const g = mapa.get(k);
+      if (l.estado === 'em_aquisicao') { g.nPend++; g.basePend += this.valorBase(l); return; }
       g.n++; g.base += this.valorBase(l); g.financiado += this.valorFinanciado(l); g.liquido += this.valorLiquido(l);
     });
-    return [...mapa.values()].map(g => Object.assign(g, { base: this.r2(g.base), financiado: this.r2(g.financiado), liquido: this.r2(g.liquido) }))
-      .sort((a, b) => b.base - a.base || String(a.nome).localeCompare(String(b.nome), 'pt'));
+    return [...mapa.values()].map(g => Object.assign(g, { base: this.r2(g.base), financiado: this.r2(g.financiado), liquido: this.r2(g.liquido), basePend: this.r2(g.basePend) }))
+      .sort((a, b) => b.base - a.base || b.basePend - a.basePend || String(a.nome).localeCompare(String(b.nome), 'pt'));
+  },
+
+  // ---------- Aprovação da aquisição ----------
+  paraAprovar(lista) { return (lista || []).filter(l => l.estado === 'em_aquisicao'); },
+  // Campos a gravar quando o Diretor APROVA: passa a ativa; o início fica hoje (se não tinha) e, numa subscrição sem data de
+  // renovação, a primeira renovação cai um período depois do início (a pessoa ajusta se for outra).
+  patchAprovar(l, hoje, quem, agoraIso) {
+    const inicio = l.data_inicio || hoje, meses = this.MESES_POR_PERIODO[l.periodicidade];
+    const renov = l.data_renovacao || (this.ehSubscricao(l) && meses ? this.somarMeses(inicio, meses) : null);
+    return { estado: 'ativa', data_inicio: inicio, data_renovacao: renov, decisao_por_nome: quem || '', decisao_em: agoraIso, motivo_decisao: '' };
+  },
+  patchRecusar(motivo, quem, agoraIso) {
+    return { estado: 'recusada', decisao_por_nome: quem || '', decisao_em: agoraIso, motivo_decisao: String(motivo || '').trim() };
+  },
+  // Uma linha de texto por licença, para o email ao Diretor: "• Claude Team — Milton Cabral — 18,00 € / mês (216,00 €/ano) — financ. 50% — DIH 2.0".
+  linhaPedido(l, nomePessoa, projeto) {
+    const sub = this.ehSubscricao(l), per = l.periodicidade === 'mensal' ? ' / mês' : l.periodicidade === 'anual' ? ' / ano' : '';
+    const partes = [l.nome + (l.n_licencas > 1 ? ` (${l.n_licencas} lic.)` : ''), nomePessoa || 'sem responsável',
+      `${this.eur(l.valor)}${per}${sub && l.periodicidade === 'mensal' ? ` (${this.eur(this.valorAnual(l))}/ano)` : ''}`];
+    if (this.taxa(l)) partes.push(`financiada a ${String(this.taxa(l)).replace('.', ',')}%`);
+    if (projeto) partes.push(projeto);
+    return '• ' + partes.join(' — ');
   },
 
   // ---------- Validação ----------
