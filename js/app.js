@@ -2502,11 +2502,108 @@ const App = {
   },
 
   // ---------- Recursos (central) ----------
-  adicionarRecurso() {
-    this.state.recursos.push(this.novoRecursoObj('Novo consultor', '', 0, 0, null, ''));
-    this.persist();
-    this.renderTabelaRecursosCentral();
-    this.renderCapacidade();
+  // "+ Pessoa" e "Editar" abrem a mesma janela (formulário). A pessoa nova só é criada ao Guardar — cancelar não deixa nada.
+  adicionarRecurso() { this.abrirModalPessoa(null); },
+  abrirModalPessoa(id) {
+    const existente = id ? this.state.recursos.find(x => x.id === id) : null;
+    if (id && !existente) return;
+    const novo = !existente;
+    const r = existente || Object.assign(this.novoRecursoObj('', '', 0, 0, null, ''), { nome: '' }); // novoRecursoObj poria 'Recurso' num nome vazio e saltava a validação
+    const perfil = existente ? this.state.utilizadores.find(u => u.recursoId === r.id) : null;
+    const opcoesEquipas = '<option value="">Sem equipa</option>' + this.state.equipas.map(eq => `<option value="${escapeAttr(eq.id)}">${escapeHtml(eq.nome)}</option>`).join('');
+    // Acesso ao CRM: só se edita aqui para quem ainda não tem acesso pelo cargo (admin/diretor/líder), e só o Administrador.
+    const crmPorCargo = !!existente && ['admin', 'cargo'].includes(PessoasLogica.acessoCrm(r, this.state));
+    const crmEditavel = !!existente && this.souAdmin() && !crmPorCargo;
+    const semSqlCrm = typeof Sync !== 'undefined' && Sync.temCrmAcesso === false;
+    const html = `
+      <label><span class="rotulo-campo"><span class="obrig">*</span> Nome</span>
+        <input type="text" id="pessoaNome" value="${escapeAttr(r.nome)}" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row-2">
+        <label>Email <input type="text" id="pessoaEmail" value="${escapeAttr(r.email || '')}" placeholder="email@exemplo.com" autocomplete="off" spellcheck="false"></label>
+        <label>Cargo <input type="text" id="pessoaPapel" value="${escapeAttr(r.papel || '')}" autocomplete="off"></label>
+      </div>
+      <label>Equipa <select id="pessoaEquipa">${opcoesEquipas}</select></label>
+      <div class="row-2">
+        <label>Preço custo (€/h) <input type="number" id="pessoaCusto" min="0" step="0.5" value="${r.precoCusto}"></label>
+        <label>Preço venda (€/h) <input type="number" id="pessoaVenda" min="0" step="0.5" value="${r.precoVenda}"></label>
+      </div>
+      <p class="hint" style="margin:0;">Margem bruta: <b id="pessoaMargem"></b></p>
+      ${perfil ? `<label>Acesso à plataforma
+        <select id="pessoaAcesso"><option value="user" ${perfil.papel === 'user' ? 'selected' : ''}>Utilizador</option><option value="admin" ${perfil.papel === 'admin' ? 'selected' : ''}>Administrador</option></select>
+      </label>` : ''}
+      <label style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="pessoaPiloto" ${r.pilotoLembretes ? 'checked' : ''}>
+        <span>Recebe os lembretes automáticos por email <span class="hint">(enquanto o Modo piloto estiver ligado em Configurações → Definições)</span></span>
+      </label>
+      ${crmPorCargo ? '<p class="hint" style="margin:0;">✔ Acesso ao CRM: já tem pelo cargo.</p>' : ''}
+      ${crmEditavel ? `<label style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="pessoaCrm" ${r.crmAcesso ? 'checked' : ''} ${semSqlCrm ? 'disabled' : ''}>
+        <span>Acesso ao módulo Comercial (CRM) <span class="hint">${semSqlCrm ? '— corre primeiro supabase/crm_acesso_pessoas.sql no Supabase' : '— e pode ser responsável por oportunidades, contas e tarefas'}</span></span>
+      </label>` : ''}
+      ${novo ? '<p class="hint" style="margin:0;">O acesso ao CRM e à plataforma definem-se depois de a pessoa existir (o acesso à plataforma, só quando criar conta).</p>' : ''}
+      <p id="pessoaMsg" class="hint" style="margin:6px 0 0;min-height:16px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+        <button class="btn btn-primary" id="btnPessoaGuardar">${novo ? 'Criar pessoa' : 'Guardar'}</button>
+        <button class="btn" id="btnPessoaCancelar">Cancelar</button>
+      </div>`;
+    this.abrirModal(novo ? 'Nova pessoa' : `Editar — ${r.nome}`, html);
+    const corpo = this.els.modalCorpo;
+    const q = sel => corpo.querySelector(sel);
+    const inpNome = q('#pessoaNome'), inpEmail = q('#pessoaEmail'), inpCusto = q('#pessoaCusto'), inpVenda = q('#pessoaVenda');
+    const msg = q('#pessoaMsg');
+    q('#pessoaEquipa').value = r.equipaId || '';
+    this.bloquearPreenchimentoAutomatico(inpNome);
+    this.bloquearPreenchimentoAutomatico(inpEmail);
+    const erro = (t, campo) => { msg.style.color = 'var(--vermelho)'; msg.textContent = t; if (campo) campo.focus(); };
+    const margem = () => {
+      const c = parseFloat(inpCusto.value) || 0, v = parseFloat(inpVenda.value) || 0;
+      q('#pessoaMargem').textContent = v ? `${((v - c) / v * 100).toFixed(1)}%` : '—';
+    };
+    inpCusto.addEventListener('input', margem);
+    inpVenda.addEventListener('input', margem);
+    margem();
+    inpNome.focus();
+    q('#btnPessoaCancelar').addEventListener('click', () => this.fecharModal());
+    q('#btnPessoaGuardar').addEventListener('click', async () => {
+      const nome = inpNome.value.trim();
+      const email = inpEmail.value.trim();
+      if (!nome) return erro('Indica o nome.', inpNome);
+      if (email) {
+        const outra = this.state.recursos.find(x => x.id !== r.id && (x.email || '').trim().toLowerCase() === email.toLowerCase());
+        if (outra) return erro(`O email ${email} já está associado a ${outra.nome}.`, inpEmail);
+      }
+      const equipaId = q('#pessoaEquipa').value || null;
+      if (existente && equipaId !== (r.equipaId || null)) this.registarMudancaEquipa(r, equipaId);
+      r.nome = nome;
+      r.email = email;
+      r.papel = q('#pessoaPapel').value.trim();
+      r.equipaId = equipaId;
+      r.precoCusto = parseFloat(inpCusto.value) || 0;
+      r.precoVenda = parseFloat(inpVenda.value) || 0;
+      r.pilotoLembretes = q('#pessoaPiloto').checked;
+      if (novo && !this.state.recursos.includes(r)) this.state.recursos.push(r); // (duplo clique em Guardar não cria duas)
+      this.persist();
+      // Acesso à plataforma e ao CRM gravam-se à parte (direto na base de dados), só se mudaram.
+      const selAcesso = q('#pessoaAcesso');
+      const erros = [];
+      if (selAcesso && perfil && selAcesso.value !== perfil.papel) {
+        if (perfil.id === this.usuarioAtualId && selAcesso.value !== 'admin' && !confirm('Vais remover o teu próprio papel de Administrador. Continuar?')) {
+          selAcesso.value = perfil.papel;
+        } else {
+          try { await Sync.atualizarUtilizador(perfil.id, { papel: selAcesso.value }); perfil.papel = selAcesso.value; }
+          catch (err) { erros.push('acesso: ' + err.message); }
+        }
+      }
+      const chkCrm = q('#pessoaCrm');
+      if (chkCrm && !chkCrm.disabled && chkCrm.checked !== !!r.crmAcesso) {
+        try { await Sync.definirAcessoCrm(r.id, chkCrm.checked); r.crmAcesso = chkCrm.checked; }
+        catch (err) { erros.push('CRM: ' + err.message); }
+      }
+      this.fecharModal();
+      this.renderTudo();
+      this.toast(erros.length ? `${nome} guardada, mas não foi possível gravar o ${erros.join('; ')}` : (novo ? `${nome} criada.` : `${nome} atualizada.`));
+    });
   },
   // ---------- Pessoas inativas (saídas) — regras em js/pessoas-logica.js ----------
   // Nunca se apaga uma pessoa que saiu: marca-se inativa (ver abrirModalSaidaPessoa). Inativa só tira
@@ -5479,7 +5576,6 @@ const App = {
   renderTabelaRecursosCentral() {
     const tbody = this.els.corpoTabelaRecursosCentral;
     tbody.innerHTML = '';
-    const opcoesEquipas = '<option value="">Sem equipa</option>' + this.state.equipas.map(eq => `<option value="${eq.id}">${escapeHtml(eq.nome)}</option>`).join('');
     const nomeEquipaDe = (r) => (this.state.equipas.find(eq => eq.id === r.equipaId) || {}).nome || '';
     const recursos = this.aplicarOrdenacaoTabela('tabelaRecursosCentral', this.state.recursos, (r, campo) => {
       switch (campo) {
@@ -5502,63 +5598,31 @@ const App = {
       const tr = document.createElement('tr');
       const estadoPessoa = PessoasLogica.estado(r, DateUtil.todayISO());
       if (estadoPessoa === 'inativo') tr.classList.add('linha-inativa');
+      const acessoCelula = perfil ? (perfil.papel === 'admin' ? 'Administrador' : 'Utilizador') : '<span class="hint">Sem conta</span>';
+      const tem = PessoasLogica.acessoCrm(r, this.state);
+      const crmCelula = tem
+        ? `<span class="badge-crm" title="${escapeAttr(PessoasLogica.rotuloAcessoCrm(r, this.state))}">✔${tem === 'admin' || tem === 'cargo' ? ' cargo' : ''}</span>`
+        : '<span class="hint">—</span>';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(r.nome)}" data-campo="nome" style="min-width:140px"></td>
-        <td><input type="text" value="${escapeAttr(r.email || '')}" data-campo="email" placeholder="email@exemplo.com" style="min-width:160px"></td>
-        <td><input type="text" value="${escapeAttr(r.papel)}" data-campo="papel" style="min-width:120px"></td>
-        <td><select data-campo="equipaId" style="min-width:110px">${opcoesEquipas}</select></td>
-        <td><input type="number" min="0" step="0.5" value="${r.precoCusto}" data-campo="precoCusto" style="width:80px"></td>
-        <td><input type="number" min="0" step="0.5" value="${r.precoVenda}" data-campo="precoVenda" style="width:80px"></td>
+        <td><b>${escapeHtml(r.nome)}</b></td>
+        <td>${escapeHtml(r.email || '')}</td>
+        <td>${escapeHtml(r.papel || '')}</td>
+        <td>${escapeHtml(nomeEquipaDe(r))}</td>
+        <td>${r.precoCusto}</td>
+        <td>${r.precoVenda}</td>
         <td>${margem.toFixed(1)}%</td>
-        <td>${perfil ? `<select data-acesso style="min-width:110px"><option value="user" ${perfil.papel === 'user' ? 'selected' : ''}>Utilizador</option><option value="admin" ${perfil.papel === 'admin' ? 'selected' : ''}>Administrador</option></select>` : '<span class="hint">Sem conta</span>'}</td>
-        <td style="text-align:center;"><input type="checkbox" data-campo="pilotoLembretes" ${r.pilotoLembretes ? 'checked' : ''} title="Recebe os lembretes automáticos por email enquanto o Modo piloto estiver ligado em Configurações → Definições"></td>
-        <td style="text-align:center;">${this.htmlAcessoCrm(r)}</td>
+        <td>${acessoCelula}</td>
+        <td style="text-align:center;">${r.pilotoLembretes ? '✔' : '<span class="hint">—</span>'}</td>
+        <td style="text-align:center;">${crmCelula}</td>
         <td><span class="badge-estado-pessoa ${estadoPessoa}">${escapeHtml(PessoasLogica.rotuloEstado(r, DateUtil.todayISO()))}</span></td>
         <td class="col-acoes">
+          <button class="btn btn-sm btn-primary" data-acao="editar" title="Editar os dados desta pessoa (ou duplo clique na linha)">✏ Editar</button>
           <button class="btn btn-sm" data-acao="alocacoes" title="Ver projetos, atividades e datas em que este consultor está alocado">📅 Alocações</button>
           <button class="btn btn-sm" data-acao="saida" title="Registar a saída desta pessoa da empresa (fica inativa; o histórico mantém-se)">${estadoPessoa === 'ativo' ? '🚪 Saída' : '🚪 Saída / reativar'}</button>
           <button class="btn-icon" data-acao="eliminar" title="Eliminar (só pessoas sem histórico — para quem saiu, usa Saída)">🗑</button>
         </td>`;
-      tr.querySelector('[data-campo="equipaId"]').value = r.equipaId || '';
-      this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="nome"]'));
-      this.bloquearPreenchimentoAutomatico(tr.querySelector('[data-campo="email"]'));
-      tr.querySelectorAll('[data-campo]').forEach(inp => {
-        // Uma checkbox (ex.: "pilotoLembretes") não tem nada de útil em ".value" (é sempre "on") —
-        // o que importa é ".checked".
-        inp.addEventListener('change', () => this.atualizarRecurso(r.id, inp.dataset.campo, inp.type === 'checkbox' ? inp.checked : inp.value));
-      });
-      const selAcesso = tr.querySelector('[data-acesso]');
-      if (selAcesso) {
-        selAcesso.addEventListener('change', async (ev) => {
-          const novoPapel = ev.target.value;
-          if (perfil.id === this.usuarioAtualId && novoPapel !== 'admin' && !confirm('Vais remover o teu próprio papel de Administrador. Continuar?')) {
-            ev.target.value = perfil.papel;
-            return;
-          }
-          try {
-            await Sync.atualizarUtilizador(perfil.id, { papel: novoPapel });
-            perfil.papel = novoPapel;
-            this.renderTudo();
-            this.toast('Acesso atualizado.');
-          } catch (err) {
-            this.toast('Erro ao atualizar acesso: ' + err.message);
-            ev.target.value = perfil.papel;
-          }
-        });
-      }
-      const chkCrm = tr.querySelector('[data-crm-acesso]');
-      if (chkCrm) chkCrm.addEventListener('change', async () => {
-        const novo = chkCrm.checked;
-        try {
-          await Sync.definirAcessoCrm(r.id, novo);
-          r.crmAcesso = novo;
-          this.toast(novo ? `${r.nome} passa a ter acesso ao CRM.` : `${r.nome} deixa de ter acesso atribuído ao CRM.`);
-        } catch (err) {
-          chkCrm.checked = !novo;
-          this.toast('Erro ao atualizar acesso ao CRM: ' + err.message);
-        }
-        this.renderTudo();
-      });
+      tr.querySelector('[data-acao="editar"]').addEventListener('click', () => this.abrirModalPessoa(r.id));
+      tr.addEventListener('dblclick', (ev) => { if (!ev.target.closest('button')) this.abrirModalPessoa(r.id); });
       tr.querySelector('[data-acao="alocacoes"]').addEventListener('click', () => this.comSinalDeProcessamento('A calcular alocações e conflitos…', () => this.abrirModalAlocacoesRecurso(r.id)));
       tr.querySelector('[data-acao="saida"]').addEventListener('click', () => this.abrirModalSaidaPessoa(r.id));
       tr.querySelector('[data-acao="eliminar"]').addEventListener('click', () => this.eliminarRecurso(r.id));
