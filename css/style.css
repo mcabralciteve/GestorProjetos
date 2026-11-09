@@ -1195,3 +1195,10 @@ input.crm-invalido{border-color:var(--vermelho);outline:1px solid var(--vermelho
 .lic-aviso-titulo{font-weight:700;color:var(--cinza-900);margin-bottom:6px;}
 .lic-aviso-linha{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;padding:4px 0;border-top:1px solid rgba(230,126,34,.25);font-size:13px;}
 .lic-aviso-acoes{display:flex;flex-wrap:wrap;gap:6px;}
+.lic-dec .ib,.lic-aviso-acoes .ib{width:auto;height:28px;padding:0 10px;white-space:nowrap;background:#fff;border-color:var(--cinza-300);}
+.lic-aviso-acoes .ib-pri{background:var(--grad-soft);border-color:transparent;margin-right:0;}
+.lic-dec .ib:first-child{color:var(--verde);}
+.lic-dec .ib:last-child{color:var(--vermelho);}
+.lic-aviso-linha>span:first-child{flex:1 1 260px;min-width:0;}
+.lic-dec{flex-wrap:nowrap;}
+td .reu-estado[class*="lic-estado"]{white-space:nowrap;}
