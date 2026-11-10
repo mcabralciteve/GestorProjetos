@@ -1,9 +1,9 @@
 -- ============================================================================
 -- Importação inicial do mapa "Licenciamento IA.xlsx" para Ativos → Licenças
---   • folha "Novas Aquisições"  → 24 licenças em estado "Em processo de aquisição" (a aguardar a aprovação do Diretor)
+--   • folha "Novas Aquisições"  → 24 licenças em estado "Por aprovar" (a aguardar a aprovação do Diretor)
 --   • folha "Licenças Atuais"   → 4 licenças ativas (ChatGPT, Perplexity, Gamma, Claude)
 --
--- ANTES: correr supabase/licencas.sql (cria a tabela e o estado "em_aquisicao").
+-- ANTES: correr supabase/licencas.sql (cria a tabela e os estados do ciclo de aprovação).
 -- SÓ INSERE linhas novas em public.licencas; não altera nem apaga nada. Seguro de repetir: o que já foi importado não se repete
 -- (mesmo software + responsável + valor + marca "Importado do mapa" nas notas).
 --
@@ -22,30 +22,30 @@ with cfg as (
   select ''::text as departamento_atuais   -- <<< EDITAR: nome do departamento das licenças atuais (ex.: 'Departamento X'); vazio = nenhum
 ),
 fonte(equipa, elemento, nome, fornecedor, periodicidade, valor, n_licencas, projeto, taxa, estado, notas) as (values
-    ('DCS', 'Milton Cabral', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DCS', 'Hugo Costa', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DCS', 'André Azevedo', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DSA', 'Daniela Quintas', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DSA', 'Carlos Gomes', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DSA', 'Eduardo Dias', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DSA', 'João Lourenço', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DSA', 'Miguel Martins', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 50, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DCS', 'Mavilde Anjos', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Maria João Neves', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Gualter Barros', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Mariana Roque', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Iulia Ionita', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DTD', 'João Oliveira', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DEV', 'Guilherme Maia', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DEV', 'João Freire', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('RPA', 'Nelson Rodrigues', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('RPA', 'Cláudio Ribeiro', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('RPA', 'Daniel Borges', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('RPA', 'João Cruz', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('RPA', 'Ricardo Maia', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Maria João Neves', 'OpenArt', 'OpenArt', 'mensal', 39.55, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
-    ('DPC', 'Maria João Neves', 'Adobe Creative Cloud Education', 'Adobe', 'anual', 155.21, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação. ATENÇÃO: esta linha aparece repetida (2×) no mapa — confirmar se são mesmo 2 licenças.'),
-    ('DPC', 'Maria João Neves', 'Adobe Creative Cloud Education', 'Adobe', 'anual', 155.21, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'em_aquisicao', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação. ATENÇÃO: esta linha aparece repetida (2×) no mapa — confirmar se são mesmo 2 licenças.'),
+    ('DCS', 'Milton Cabral', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DCS', 'Hugo Costa', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DCS', 'André Azevedo', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DSA', 'Daniela Quintas', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DSA', 'Carlos Gomes', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DSA', 'Eduardo Dias', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DSA', 'João Lourenço', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'DIH 2.0', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DSA', 'Miguel Martins', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 50, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DCS', 'Mavilde Anjos', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Maria João Neves', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Gualter Barros', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Mariana Roque', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Iulia Ionita', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DTD', 'João Oliveira', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DEV', 'Guilherme Maia', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DEV', 'João Freire', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('RPA', 'Nelson Rodrigues', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('RPA', 'Cláudio Ribeiro', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('RPA', 'Daniel Borges', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('RPA', 'João Cruz', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('RPA', 'Ricardo Maia', 'Claude Team', 'Anthropic', 'mensal', 18, 1, 'CLOTIFY', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Maria João Neves', 'OpenArt', 'OpenArt', 'mensal', 39.55, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação.'),
+    ('DPC', 'Maria João Neves', 'Adobe Creative Cloud Education', 'Adobe', 'anual', 155.21, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação. ATENÇÃO: esta linha aparece repetida (2×) no mapa — confirmar se são mesmo 2 licenças.'),
+    ('DPC', 'Maria João Neves', 'Adobe Creative Cloud Education', 'Adobe', 'anual', 155.21, 1, 'SIAC + DIGITALIZAÇÃO', 85, 'por_aprovar', 'Importado do mapa «Licenciamento IA.xlsx» (folha Novas Aquisições): pedido enviado para aprovação. ATENÇÃO: esta linha aparece repetida (2×) no mapa — confirmar se são mesmo 2 licenças.'),
     (NULL, NULL, 'ChatGPT Business', 'OpenAI', 'mensal', 132, 6, NULL, 0, 'ativa', 'Importado do mapa «Licenciamento IA.xlsx» (folha Licenças Atuais). O mapa não indica responsável, departamento nem data de renovação: completar. Valor do mapa: 22 € × 6 lugares por mês (1584 €/ano).'),
     (NULL, NULL, 'Perplexity Pro', 'Perplexity', 'anual', 408, 1, NULL, 0, 'ativa', 'Importado do mapa «Licenciamento IA.xlsx» (folha Licenças Atuais). O mapa não indica responsável, departamento nem data de renovação: completar.'),
     (NULL, NULL, 'Gamma Pro', 'Gamma', 'mensal', 18, 1, NULL, 0, 'ativa', 'Importado do mapa «Licenciamento IA.xlsx» (folha Licenças Atuais). O mapa não indica responsável, departamento nem data de renovação: completar. Valor do mapa: 18 €/mês (216 €/ano).'),

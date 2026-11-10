@@ -21,8 +21,10 @@ const Licencas = {
   departamentosEditaveis() {
     return App.state.departamentos.filter(d => App.souAdmin() || App.souDiretorDe(d.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   },
-  // Aprovar/recusar uma licença em processo de aquisição: o Diretor do departamento dela (ou o Administrador).
-  podeDecidir(l) { return !!l && l.estado === 'em_aquisicao' && (App.souAdmin() || App.souDiretorDe(l.departamento_id)); },
+  // Aprovar/recusar uma licença por aprovar: o Diretor do departamento dela (ou o Administrador).
+  podeDecidir(l) { return !!l && l.estado === 'por_aprovar' && (App.souAdmin() || App.souDiretorDe(l.departamento_id)); },
+  // Marcar como adquirida (passa de "em processo de aquisição" a ativa): por agora, o Administrador ou o Diretor do departamento.
+  podeAdquirir(l) { return !!l && l.estado === 'em_aquisicao' && (App.souAdmin() || App.souDiretorDe(l.departamento_id)); },
   diretorDe(departamentoId) {
     const d = departamentoId ? App.state.departamentos.find(x => x.id === departamentoId) : null;
     return d && d.diretorId ? App.state.recursos.find(r => r.id === d.diretorId) || null : null;
@@ -40,7 +42,7 @@ const Licencas = {
   },
   // Clique no sino: abre as licenças só com as que aguardam aprovação.
   verParaAprovar() {
-    this.filtros = { texto: '', departamento: '', responsavel: '', projeto: '', estado: 'em_aquisicao', renovacao: '', tipo: '' };
+    this.filtros = { texto: '', departamento: '', responsavel: '', projeto: '', estado: 'por_aprovar', renovacao: '', tipo: '' };
     App.irParaAba('licencas');
   },
   hoje() { return DateUtil.todayISO(); },
@@ -119,11 +121,12 @@ const Licencas = {
     const grupo = (titulo, chave, nomeDe) => {
       const g = this.L.agrupar(base, chave, nomeDe), haPend = g.some(x => x.nPend);
       return `<details class="lic-resumo"><summary>${escapeHtml(titulo)} <span class="hint">(${g.length})</span></summary>
-        ${g.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>${chave === 'projeto' ? 'Projeto' : 'Departamento'}</th><th class="num">Licenças</th><th class="num">Custo (anual / aquisição)</th><th class="num">Financiado</th><th class="num">A cargo do departamento</th>${haPend ? '<th class="num">Em aquisição (previsto)</th>' : ''}</tr></thead>
+        ${g.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>${chave === 'projeto' ? 'Projeto' : 'Departamento'}</th><th class="num">Licenças</th><th class="num">Custo (anual / aquisição)</th><th class="num">Financiado</th><th class="num">A cargo do departamento</th>${haPend ? '<th class="num">Por adquirir (previsto)</th>' : ''}</tr></thead>
           <tbody>${g.map(x => `<tr><td>${escapeHtml(x.nome)}</td><td class="num">${x.n}</td><td class="num">${eur(x.base)}</td><td class="num">${eur(x.financiado)}</td><td class="num">${eur(x.liquido)}</td>${haPend ? `<td class="num">${x.nPend ? `${x.nPend} · ${eur(x.basePend)}` : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="hint">Sem licenças ativas.</p>'}</details>`;
     };
     c.innerHTML = `${this.htmlAprovacoes(todas)}<div class="an-kpis">
-        ${r.previsto.n ? kpi('Em processo de aquisição', String(r.previsto.n), `${eur(r.previsto.base)} por ano · a aprovar`, 'lic-kpi-pend') : ''}
+        ${r.porAprovar.n ? kpi('Por aprovar', String(r.porAprovar.n), `${eur(r.porAprovar.base)} por ano · aguarda o Diretor`, 'lic-kpi-pend') : ''}
+        ${r.emAquisicao.n ? kpi('Em processo de aquisição', String(r.emAquisicao.n), `${eur(r.emAquisicao.base)} por ano · aprovadas, por comprar`, 'lic-kpi-pend') : ''}
         ${kpi('Custo anual (subscrições)', eur(r.anual), r.aquisicoes ? `+ ${eur(r.aquisicoes)} em aquisições` : `${r.n} licença${r.n === 1 ? '' : 's'} ativa${r.n === 1 ? '' : 's'}`)}
         ${kpi('Financiado', eur(r.financiado), r.anual + r.aquisicoes ? `${Math.round(r.financiado / (r.anual + r.aquisicoes) * 100)}% do total` : '')}
         ${kpi('A cargo do departamento', eur(r.liquido))}
@@ -136,7 +139,7 @@ const Licencas = {
         <label class="zoom-label">Departamento <select data-lic-filtro="departamento">${opt('', 'Todos', f.departamento)}${deps.map(d => opt(d.id, d.nome, f.departamento)).join('')}</select></label>
         <label class="zoom-label">Responsável <select data-lic-filtro="responsavel">${opt('', 'Todos', f.responsavel)}${resp.map(x => opt(x.id, x.nome, f.responsavel)).join('')}</select></label>
         <label class="zoom-label">Projeto <select data-lic-filtro="projeto">${opt('', 'Todos', f.projeto)}${opt('_sem', 'Sem projeto', f.projeto)}${projs.map(([id, t]) => opt(id, t, f.projeto)).join('')}</select></label>
-        <label class="zoom-label">Estado <select data-lic-filtro="estado">${opt('abertas', 'Ativas e em aquisição', f.estado)}${opt('', 'Todos', f.estado)}${Object.entries(this.L.ESTADOS).map(([k, v]) => opt(k, v, f.estado)).join('')}</select></label>
+        <label class="zoom-label">Estado <select data-lic-filtro="estado">${opt('abertas', 'Ativas e por adquirir', f.estado)}${opt('', 'Todos', f.estado)}${Object.entries(this.L.ESTADOS).map(([k, v]) => opt(k, v, f.estado)).join('')}</select></label>
         <label class="zoom-label">Renovação <select data-lic-filtro="renovacao">${opt('', 'Qualquer', f.renovacao)}${opt('atrasadas', 'Atrasadas', f.renovacao)}${opt('30', 'Em 30 dias', f.renovacao)}${opt('60', 'Em 60 dias', f.renovacao)}${opt('90', 'Em 90 dias', f.renovacao)}</select></label>
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${todas.length} licenças</span>
           <button type="button" class="ib" data-lic-acao="excel" data-tip="Exportar a lista (com os filtros) para Excel" aria-label="Exportar para Excel"><span>Excel</span></button>
@@ -145,7 +148,7 @@ const Licencas = {
       ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Software</th><th>Responsável</th><th>Departamento</th><th>Projeto</th><th class="num">Valor</th><th class="num">Custo anual / aquisição</th><th class="num">Financ.</th><th class="num">A cargo do dep.</th><th>Renovação</th><th>Estado</th></tr></thead><tbody>${linhas}</tbody></table></div>`
         : `<p class="hint" style="margin-top:14px">${todas.length ? 'Nenhuma licença com estes filtros.' : 'Ainda não há licenças registadas. Regista a primeira em "+ Nova licença".'}</p>`}
       <div class="lic-resumos">${grupo('Totais por departamento', 'departamento', id => this.nomeDepartamento(id))}${grupo('Totais por projeto', 'projeto', (id, l) => this.rotuloProjeto(l))}</div>
-      <p class="hint" style="margin-top:10px">Valores em € sem IVA. Nos totais só entram licenças ativas (as em processo de aquisição são uma previsão, à parte, até serem aprovadas). Subscrição: o custo anual é o valor × 12 (mensal) ou × 1 (anual); perpétua: o valor de aquisição. Financiado = custo × taxa de financiamento do projeto.</p>`;
+      <p class="hint" style="margin-top:10px">Valores em € sem IVA. Nos totais só entram licenças ativas (as por aprovar e as em processo de aquisição são uma previsão, à parte, até serem adquiridas). Subscrição: o custo anual é o valor × 12 (mensal) ou × 1 (anual); perpétua: o valor de aquisição. Financiado = custo × taxa de financiamento do projeto.</p>`;
     this.ligar(c);
   },
   htmlLinha(l, hoje) {
@@ -156,9 +159,10 @@ const Licencas = {
       : '—';
     const nPer = sub ? (l.periodicidade === 'mensal' ? '/mês' : '/ano') : ' (único)';
     const proj = this.rotuloProjeto(l);
-    const pend = l.estado === 'em_aquisicao';
-    const botoes = this.podeDecidir(l) ? `<div class="lic-dec"><button type="button" class="ib" data-lic-acao="aprovar" data-id="${escapeAttr(l.id)}" data-tip="Aprovar a aquisição: passa a Ativa"><span>✔ Aprovar</span></button><button type="button" class="ib" data-lic-acao="recusar" data-id="${escapeAttr(l.id)}" data-tip="Recusar a aquisição"><span>✖ Recusar</span></button></div>` : '';
-    const decisao = l.decisao_em && (l.estado === 'ativa' || l.estado === 'recusada') ? `<div class="hint" style="margin:2px 0 0" title="${escapeAttr(l.motivo_decisao || '')}">${l.estado === 'recusada' ? 'Recusada' : 'Aprovada'} por ${escapeHtml(l.decisao_por_nome || '—')} em ${this.L.formatarData(String(l.decisao_em).slice(0, 10))}${l.estado === 'recusada' && l.motivo_decisao ? ` — ${escapeHtml(l.motivo_decisao)}` : ''}</div>` : '';
+    const pend = this.L.ehPrevista(l);
+    const botoes = this.podeDecidir(l) ? `<div class="lic-dec"><button type="button" class="ib" data-lic-acao="aprovar" data-id="${escapeAttr(l.id)}" data-tip="Aprovar a aquisição: passa a Em processo de aquisição"><span>✔ Aprovar</span></button><button type="button" class="ib" data-lic-acao="recusar" data-id="${escapeAttr(l.id)}" data-tip="Recusar a aquisição"><span>✖ Recusar</span></button></div>`
+      : this.podeAdquirir(l) ? `<div class="lic-dec"><button type="button" class="ib" data-lic-acao="adquirir" data-id="${escapeAttr(l.id)}" data-tip="A licença foi comprada: passa a Ativa"><span>✔ Adquirida</span></button></div>` : '';
+    const decisao = l.decisao_em && ['em_aquisicao', 'ativa', 'recusada'].includes(l.estado) ? `<div class="hint" style="margin:2px 0 0" title="${escapeAttr(l.motivo_decisao || '')}">${l.estado === 'recusada' ? 'Recusada' : 'Aprovada'} por ${escapeHtml(l.decisao_por_nome || '—')} em ${this.L.formatarData(String(l.decisao_em).slice(0, 10))}${l.estado === 'recusada' && l.motivo_decisao ? ` — ${escapeHtml(l.motivo_decisao)}` : ''}</div>` : '';
     return `<tr class="crm-linha${pend ? ' lic-pendente' : (l.estado !== 'ativa' ? ' fechado' : '')}" data-lic-acao="abrir" data-id="${escapeAttr(l.id)}">
       <td><b>${escapeHtml(l.nome)}</b>${l.fornecedor ? `<div class="hint" style="margin:0">${escapeHtml(l.fornecedor)}${l.n_licencas ? ' · ' + l.n_licencas + ' lic.' : ''}</div>` : (l.n_licencas ? `<div class="hint" style="margin:0">${l.n_licencas} lic.</div>` : '')}</td>
       <td>${escapeHtml(this.nomePessoa(l.responsavel_id) || '—')}</td>
@@ -191,7 +195,7 @@ const Licencas = {
           ${podeDec ? `<button type="button" class="ib ib-pri" data-lic-acao="aprovar-dep" data-dep="${escapeAttr(depId)}" data-tip="Aprova de uma vez as ${ls.length} licenças deste departamento"><span>✔ Aprovar todas (${ls.length})</span></button>` : ''}
         </span></div>`;
     }).join('');
-    return `<div class="lic-aviso"><div class="lic-aviso-titulo">⏳ ${pend.length} licença${pend.length === 1 ? '' : 's'} em processo de aquisição — a aguardar aprovação do Diretor</div>${linhas}</div>`;
+    return `<div class="lic-aviso"><div class="lic-aviso-titulo">⏳ ${pend.length} licença${pend.length === 1 ? '' : 's'} por aprovar — a aguardar a aprovação do Diretor</div>${linhas}</div>`;
   },
 
   // ---------- Eventos da página (delegados no contentor: um só conjunto) ----------
@@ -209,8 +213,9 @@ const Licencas = {
       else if (acao === 'recarregar') { this.carregar(true).then(() => this.renderTudo()); }
       else if (acao === 'aprovar') this.decidir([el.dataset.id], 'aprovar');
       else if (acao === 'recusar') this.decidir([el.dataset.id], 'recusar');
+      else if (acao === 'adquirir') this.decidir([el.dataset.id], 'adquirir');
       else if (acao === 'aprovar-dep') this.aprovarDepartamento(el.dataset.dep);
-      else if (acao === 'ver-dep') { this.filtros.estado = 'em_aquisicao'; this.filtros.departamento = el.dataset.dep || ''; this.renderPagina(); }
+      else if (acao === 'ver-dep') { this.filtros.estado = 'por_aprovar'; this.filtros.departamento = el.dataset.dep || ''; this.renderPagina(); }
       else if (acao === 'avisar') this.avisarDiretor(el.dataset.dep);
     });
     const aoFiltrar = ev => {
@@ -228,12 +233,15 @@ const Licencas = {
   },
 
   // ============================ Aprovação da aquisição ============================
-  // Aprovar (passa a Ativa) ou recusar (com motivo opcional) licenças em processo de aquisição. Cada uma é gravada à parte e a lista
-  // em memória só muda quando a base de dados confirma; devolve quantas ficaram decididas.
+  // Passos do ciclo: 'aprovar' (por aprovar → em processo de aquisição) e 'recusar' (por aprovar → recusada), pelo Diretor; 'adquirir'
+  // (em processo de aquisição → ativa), quando a licença foi comprada. Cada licença é gravada à parte e a lista em memória só muda
+  // quando a base de dados confirma; devolve quantas ficaram alteradas.
   async decidir(ids, acao) {
     if (this._aGuardar) return 0;
-    const alvo = ids.map(id => this.lista.find(x => x.id === id)).filter(l => l && this.podeDecidir(l));
-    if (!alvo.length) { App.toast('Não tens permissão para decidir sobre esta licença (ou já foi decidida).'); return 0; }
+    const origem = acao === 'adquirir' ? 'em_aquisicao' : 'por_aprovar';
+    const pode = acao === 'adquirir' ? l => this.podeAdquirir(l) : l => this.podeDecidir(l);
+    const alvo = ids.map(id => this.lista.find(x => x.id === id)).filter(l => l && pode(l));
+    if (!alvo.length) { App.toast(acao === 'adquirir' ? 'Não tens permissão para marcar esta licença como adquirida (ou já foi tratada).' : 'Não tens permissão para decidir sobre esta licença (ou já foi decidida).'); return 0; }
     let motivo = '';
     if (acao === 'recusar') {
       motivo = window.prompt(`Recusar ${alvo.length === 1 ? `"${alvo[0].nome}"` : alvo.length + ' licenças'}.\nMotivo (opcional):`, '');
@@ -244,8 +252,8 @@ const Licencas = {
     let feitas = 0, erro = null;
     try {
       for (const l of alvo) {
-        const patch = acao === 'aprovar' ? this.L.patchAprovar(l, hoje, nome, agora) : this.L.patchRecusar(motivo, nome, agora);
-        const res = await supabaseClient.from('licencas').update(Object.assign(patch, { atualizado_em: agora, atualizado_por_nome: nome })).eq('id', l.id).eq('estado', 'em_aquisicao').select();
+        const patch = acao === 'aprovar' ? this.L.patchAprovar(nome, agora) : acao === 'adquirir' ? this.L.patchAdquirir(l, hoje) : this.L.patchRecusar(motivo, nome, agora);
+        const res = await supabaseClient.from('licencas').update(Object.assign(patch, { atualizado_em: agora, atualizado_por_nome: nome })).eq('id', l.id).eq('estado', origem).select();
         if (res.error) { erro = res.error; break; }
         if (res.data && res.data.length === 1) {
           const i = this.lista.findIndex(x => x.id === l.id);
@@ -256,16 +264,19 @@ const Licencas = {
     } catch (err) { erro = err; } finally { this._aGuardar = false; }
     this.renderPagina();
     App.renderNotificacoes();
-    if (erro) App.toast('Não foi possível gravar a decisão: ' + (erro.message || erro));
-    else if (!feitas) App.toast('Nada alterado: a licença já tinha sido decidida por outra pessoa.');
-    else App.toast(acao === 'aprovar' ? `${feitas} licença${feitas === 1 ? '' : 's'} aprovada${feitas === 1 ? '' : 's'}: passa${feitas === 1 ? '' : 'm'} a Ativa. A data de renovação foi assumida a partir de hoje — ajusta-a se for outra.` : `${feitas} licença${feitas === 1 ? '' : 's'} recusada${feitas === 1 ? '' : 's'}.`);
+    const s = feitas === 1 ? '' : 's', m = feitas === 1 ? '' : 'm';
+    if (erro) App.toast('Não foi possível gravar: ' + (erro.message || erro));
+    else if (!feitas) App.toast('Nada alterado: a licença já tinha sido tratada por outra pessoa.');
+    else App.toast(acao === 'aprovar' ? `${feitas} licença${s} aprovada${s}: passa${m} a "Em processo de aquisição". Quando for comprada, marca-a como adquirida.`
+      : acao === 'adquirir' ? `${feitas} licença${s} adquirida${s}: passa${m} a Ativa. A data de renovação foi assumida a partir de hoje — ajusta-a se for outra.`
+        : `${feitas} licença${s} recusada${s}.`);
     return feitas;
   },
   aprovarDepartamento(depId) {
     const ls = this.L.paraAprovar(this.lista).filter(l => (l.departamento_id || '') === (depId || '') && this.podeDecidir(l));
     if (!ls.length) return;
     const custo = this.L.resumoPendentes(ls).base;
-    if (!confirm(`Aprovar as ${ls.length} licenças em processo de aquisição de ${this.nomeDepartamento(depId) || 'este departamento'}?\nCusto anual: ${this.L.eur(custo)}.\n\nPassam a Ativa.`)) return;
+    if (!confirm(`Aprovar as ${ls.length} licenças por aprovar de ${this.nomeDepartamento(depId) || 'este departamento'}?\nCusto anual: ${this.L.eur(custo)}.\n\nPassam a "Em processo de aquisição" (só ficam Ativas quando forem adquiridas).`)) return;
     this.decidir(ls.map(l => l.id), 'aprovar');
   },
   // Email já escrito (abre o programa de email de quem está a usar a app) ao Diretor, com as licenças que aguardam a sua aprovação.
@@ -277,7 +288,7 @@ const Licencas = {
     const montar = ls => {
       const linhas = ls.map(l => this.L.linhaPedido(l, this.nomePessoa(l.responsavel_id), this.rotuloProjeto(l)));
       const corpo = [`Olá ${dir.nome.split(' ')[0]},`, '',
-        `${licencas.length === 1 ? 'Há 1 licença' : `Há ${licencas.length} licenças`} de software em processo de aquisição no departamento ${this.nomeDepartamento(depId)} que aguarda${licencas.length === 1 ? '' : 'm'} a tua aprovação (custo anual: ${this.L.eur(custo)}, sem IVA):`, '',
+        `${licencas.length === 1 ? 'Há 1 licença' : `Há ${licencas.length} licenças`} de software por aprovar no departamento ${this.nomeDepartamento(depId)} que aguarda${licencas.length === 1 ? '' : 'm'} a tua aprovação (custo anual: ${this.L.eur(custo)}, sem IVA):`, '',
         ...linhas, ...(ls.length < licencas.length ? [`… e mais ${licencas.length - ls.length} (vê a lista completa na app)`] : []), '',
         `Para aprovar ou recusar: ${location.origin}${location.pathname} → Ativos → Licenças (as pendentes aparecem no topo; também tens um aviso no sino).`, '',
         `Pedido registado por ${this.meuNome() || '—'} em ${this.L.formatarData(hoje)}.`].join('\n');
@@ -382,17 +393,19 @@ const Licencas = {
         <label>Estado <select data-lic-f="estado">${Object.entries(S.ESTADOS).map(([k, t]) => `<option value="${k}"${l.estado === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
         <label>Ligação à fatura / contrato (https://…) <input type="text" data-lic-f="ligacao" value="${v(l.ligacao)}" placeholder="Ligação do SharePoint/OneDrive"></label>
       </div>
-      ${l.estado === 'em_aquisicao' ? '<p class="hint" style="margin:2px 0 6px">Em processo de aquisição: ao guardar, o Diretor do departamento fica com um aviso no sino para aprovar (e, numa licença nova, abre-se um email já escrito para ele). Só passa a contar para os custos depois de aprovada.</p>' : ''}
+      ${l.estado === 'por_aprovar' ? '<p class="hint" style="margin:2px 0 6px">Por aprovar: ao guardar, o Diretor do departamento fica com um aviso no sino para aprovar (e, numa licença nova, abre-se um email já escrito para ele). Depois de aprovada passa a «Em processo de aquisição» e só conta para os custos quando for adquirida (Ativa).</p>' : ''}
+      ${l.estado === 'em_aquisicao' ? '<p class="hint" style="margin:2px 0 6px">Em processo de aquisição: já foi aprovada e está a ser comprada. Quando for adquirida, marca-a como «Adquirida» (passa a Ativa e começa a contar para os custos).</p>' : ''}
       ${l.estado === 'recusada' ? `<label>Motivo da recusa <input type="text" data-lic-f="motivo_decisao" value="${v(l.motivo_decisao)}"></label>` : ''}
       <label>Notas <textarea rows="3" data-lic-f="notas">${escapeHtml(l.notas)}</textarea></label>
       <div class="lic-form-acoes">
         <button type="button" class="btn btn-primary" data-lic-m="guardar">Guardar</button>
         <button type="button" class="btn" data-lic-m="cancelar">Cancelar</button>
         ${this.podeDecidir(l) && l.id ? '<button type="button" class="btn" data-lic-m="aprovar">✔ Aprovar</button><button type="button" class="btn" data-lic-m="recusar">✖ Recusar</button>' : ''}
+        ${this.podeAdquirir(l) && l.id ? '<button type="button" class="btn" data-lic-m="adquirir">✔ Adquirida</button>' : ''}
         ${nova ? '' : `<span class="crm-barra-fim"><button type="button" class="btn btn-danger" data-lic-m="eliminar">Eliminar</button></span>`}
       </div>
       <p class="hint" id="licMsg" style="margin:6px 0 0"></p>
-      ${nova ? '' : `<p class="hint" style="margin:6px 0 0">Registada por ${escapeHtml(l.criado_por_nome || '—')}${l.atualizado_por_nome ? ` · última alteração: ${escapeHtml(l.atualizado_por_nome)}` : ''}${l.decisao_em && (l.estado === 'ativa' || l.estado === 'recusada') ? ` · ${l.estado === 'recusada' ? 'recusada' : 'aprovada'} por ${escapeHtml(l.decisao_por_nome || '—')} em ${S.formatarData(String(l.decisao_em).slice(0, 10))}` : ''}.</p>`}
+      ${nova ? '' : `<p class="hint" style="margin:6px 0 0">Registada por ${escapeHtml(l.criado_por_nome || '—')}${l.atualizado_por_nome ? ` · última alteração: ${escapeHtml(l.atualizado_por_nome)}` : ''}${l.decisao_em && ['em_aquisicao', 'ativa', 'recusada'].includes(l.estado) ? ` · ${l.estado === 'recusada' ? 'recusada' : 'aprovada'} por ${escapeHtml(l.decisao_por_nome || '—')} em ${S.formatarData(String(l.decisao_em).slice(0, 10))}` : ''}.</p>`}
     </div>`;
     const raiz = m.querySelector('[data-lic-form]');
     raiz.addEventListener('input', ev => this.aoEditar(ev, false));
@@ -404,7 +417,7 @@ const Licencas = {
       if (b.dataset.licM === 'guardar') this.guardarComAviso();
       else if (b.dataset.licM === 'cancelar') this.cancelarForm();
       else if (b.dataset.licM === 'eliminar') this.eliminar();
-      else if (b.dataset.licM === 'aprovar' || b.dataset.licM === 'recusar') this.decidirDoForm(b.dataset.licM);
+      else if (['aprovar', 'recusar', 'adquirir'].includes(b.dataset.licM)) this.decidirDoForm(b.dataset.licM);
     });
   },
   // Resumo em tempo real do que o formulário já permite calcular.
@@ -459,7 +472,7 @@ const Licencas = {
       estado: l.estado, ligacao: t(l.ligacao), notas: t(l.notas)
     };
   },
-  // Aprovar/recusar a partir da janela da licença: as alterações por guardar teriam de ser gravadas antes.
+  // Aprovar/recusar/marcar como adquirida a partir da janela da licença: as alterações por guardar teriam de ser gravadas antes.
   async decidirDoForm(acao) {
     const l = this.atual;
     if (!l || !l.id) return;
@@ -479,11 +492,16 @@ const Licencas = {
       data = res.data;
     } else {
       const linha = Object.assign(this._payload(l), { atualizado_em: agora, atualizado_por_nome: nome });
-      // Mudar o estado de "em aquisição" para outro (aprovar/recusar pelo formulário) deixa o registo da decisão.
+      // Mudar o estado de "por aprovar" para outro (aprovar/recusar pelo formulário) deixa o registo da decisão.
       const antes = this.original ? JSON.parse(this.original) : {};
-      if (antes.estado === 'em_aquisicao' && l.estado !== 'em_aquisicao') {
+      if (antes.estado === 'por_aprovar' && l.estado !== 'por_aprovar') {
         Object.assign(linha, { decisao_por_nome: nome, decisao_em: agora, motivo_decisao: l.estado === 'recusada' ? String(l.motivo_decisao || '').trim() : '' });
       } else if (l.estado === 'recusada' && antes.estado === 'recusada') linha.motivo_decisao = String(l.motivo_decisao || '').trim();
+      // Passar a ativa (adquirida): se faltarem, assume o início hoje e a primeira renovação um período depois (editável).
+      if (l.estado === 'ativa' && this.L.ehPrevista(antes)) {
+        const p = this.L.patchAdquirir(l, this.hoje());
+        linha.data_inicio = linha.data_inicio || p.data_inicio; linha.data_renovacao = linha.data_renovacao || p.data_renovacao;
+      }
       const res = await supabaseClient.from('licencas').update(linha).eq('id', l.id).select();
       if (res.error) throw res.error;
       if (!res.data || res.data.length !== 1) throw new Error('Não foi possível gravar: a licença já não existe ou deixaste de ter permissão sobre ela.');
@@ -516,8 +534,8 @@ const Licencas = {
     this.atual = null; this.original = '';
     App.fecharModal();
     App.renderNotificacoes();
-    // Passou a "em processo de aquisição" (nova, ou mudada para esse estado): avisa o Diretor — email já escrito, a quem o regista só falta enviar.
-    const pedido = gravada && gravada.estado === 'em_aquisicao' && (eraNova || estadoAntes !== 'em_aquisicao');
+    // Ficou "por aprovar" (nova, ou mudada para esse estado): avisa o Diretor — email já escrito, a quem o regista só falta enviar.
+    const pedido = gravada && gravada.estado === 'por_aprovar' && (eraNova || estadoAntes !== 'por_aprovar');
     if (pedido && !App.souDiretorDe(gravada.departamento_id)) {
       const url = this.emailPedido(gravada.departamento_id, [gravada]);
       if (url) { App.toast('Licença guardada. A abrir um email para o Diretor aprovar…'); this.renderPagina(); window.location.href = url; return; }
@@ -585,14 +603,14 @@ const Licencas = {
         { v: S.r2(tot.c), f: soma(6), e: te }, { v: '', e: { fundo: 'DCE8F3', borda: 'topo' } },
         { v: S.r2(tot.f), f: soma(8), e: te }, { v: S.r2(tot.l), f: soma(9), e: te }
       ] });
-      // Previsão: as que aguardam aprovação, à parte (não entram no total acima).
-      const pendentes = lista.filter(l => l.estado === 'em_aquisicao');
+      // Previsão: as por aprovar e as em processo de aquisição, à parte (não entram no total acima).
+      const pendentes = lista.filter(l => S.ehPrevista(l));
       if (pendentes.length) {
-        const rotPend = S.ESTADOS.em_aquisicao, somaP = (col) => `SUMIF(${X.ref(primeira, 16)}:${X.ref(ultima, 16)},"${rotPend}",${X.ref(primeira, col)}:${X.ref(ultima, col)})`;
+        const somaP = (col) => S.ESTADOS_PREVISTOS.map(e => `SUMIF(${X.ref(primeira, 16)}:${X.ref(ultima, 16)},"${S.ESTADOS[e]}",${X.ref(primeira, col)}:${X.ref(ultima, col)})`).join('+');
         const tp = pendentes.reduce((a, l) => { const c = S.valorBase(l), f = S.r2(c * S.taxa(l) / 100); a.c += c; a.f += f; a.l += c - f; return a; }, { c: 0, f: 0, l: 0 });
         const tpe = { negrito: true, fundo: 'FFF4D6', formato: EUR, alinha: 'right' };
         linhas.push({ altura: 20, celulas: [
-          { v: `Em processo de aquisição (${pendentes.length}) — previsão, a aprovar`, e: { negrito: true, fundo: 'FFF4D6' }, colspan: 6 },
+          { v: `Por aprovar / em aquisição (${pendentes.length}) — previsão, ainda não adquiridas`, e: { negrito: true, fundo: 'FFF4D6' }, colspan: 6 },
           { v: S.r2(tp.c), f: somaP(6), e: tpe }, { v: '', e: { fundo: 'FFF4D6' } },
           { v: S.r2(tp.f), f: somaP(8), e: tpe }, { v: S.r2(tp.l), f: somaP(9), e: tpe }
         ] });

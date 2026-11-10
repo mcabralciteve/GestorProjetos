@@ -4736,7 +4736,7 @@ const App = {
     n += this.meusPassosAtrasadosCount();
     n += Reunioes.acoesAtrasadas();
     if (Crm.podeVer()) n += Crm.followupsAtrasados;
-    if (Licencas.podeVer()) n += Licencas.contarParaAprovar(); // licenças em processo de aquisição para o Diretor aprovar
+    if (Licencas.podeVer()) n += Licencas.contarParaAprovar(); // licenças por aprovar pelo Diretor
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       n += this.faturasAVencerCount();
       n += this.consultoresRiscoCount();
@@ -4779,7 +4779,7 @@ const App = {
     if (Crm.podeVer() && Crm.followupsAtrasados) itens.push({ key: 'crmFollowups', texto: `${Crm.followupsAtrasados} follow-up(s) comercial(is) em atraso`, sub: 'Comercial → Follow-ups' });
     if (Licencas.podeVer()) {
       const lic = Licencas.contarParaAprovar();
-      if (lic) itens.push({ key: 'licencasAprovar', texto: `${lic} licença(s) para aprovar`, sub: 'Ativos → Licenças: em processo de aquisição' });
+      if (lic) itens.push({ key: 'licencasAprovar', texto: `${lic} licença(s) para aprovar`, sub: 'Ativos → Licenças: por aprovar' });
     }
     if (this.souAdmin() || this.souGestorDeAlgumProjeto()) {
       const faturas = this.faturasAVencerCount();

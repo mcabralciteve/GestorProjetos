@@ -1202,3 +1202,5 @@ input.crm-invalido{border-color:var(--vermelho);outline:1px solid var(--vermelho
 .lic-aviso-linha>span:first-child{flex:1 1 260px;min-width:0;}
 .lic-dec{flex-wrap:nowrap;}
 td .reu-estado[class*="lic-estado"]{white-space:nowrap;}
+/* Balão (data-tip) dos botões: o filtro do hover do .ib-pri cria um contexto de empilhamento que prendia o balão por baixo do cabeçalho fixo das tabelas; ao passar o rato, o botão sobe. */
+.ib[data-tip]:hover{z-index:60;}
