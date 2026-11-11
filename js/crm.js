@@ -1195,7 +1195,8 @@ const Crm = {
       if (error) {
         let texto = error.message || 'Erro ao preparar o rascunho.';
         try { const j = await error.context.json(); if (j && j.erro) texto = j.erro; } catch (e) { /* mantém a mensagem */ }
-        if (/Failed to send a request|non-2xx/i.test(texto) && !error.context) texto = 'Não consegui contactar a função do assistente. Já foi instalada no Supabase (followup-rascunho)?';
+        // "Failed to send a request" (FunctionsFetchError) = o pedido nem chegou à função: o caso típico é a função ainda não estar instalada no Supabase.
+        if (error.name === 'FunctionsFetchError' || /Failed to send a request/i.test(texto)) texto = 'O assistente de rascunhos ainda não está ativo: a função "followup-rascunho" não está instalada no Supabase (falta a chave da API do Claude). Quando for ativada, este botão passa a funcionar.';
         return falha(texto);
       }
       if (!this.corpo().querySelector('[data-rascunho-espera]')) return;
