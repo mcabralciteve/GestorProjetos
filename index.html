@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261110a">
+<link rel="stylesheet" href="css/style.css?v=20261112c">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -52,6 +52,7 @@
 <header class="topbar">
   <div class="topbar-left">
     <span class="logo" title="FIO — Fluxo Integrado de Operações · Plataforma de Gestão do DTD">🧵 FIO <span class="app-versao"></span></span>
+    <span id="navVoltarWrap" class="nav-voltar" style="display:none;"><button id="btnNavVoltar" type="button" class="btn btn-sm"></button><button id="btnNavVoltarFechar" type="button" class="btn-icon" title="Dispensar este atalho" aria-label="Dispensar este atalho">✕</button></span>
   </div>
   <div class="topbar-right">
     <button id="btnAtualizarDados" class="btn btn-sm" title="Recarrega os dados mais recentes da nuvem — usa isto se souberes que alguém (ou tu, diretamente na base de dados) alterou algo entretanto." style="display:none;">🔄 Atualizar</button>
@@ -1402,7 +1403,7 @@
 <div class="modal-backdrop" id="modalBackdrop">
   <div class="modal" id="modal">
     <div class="modal-header">
-      <span id="modalTitulo">Título</span>
+      <span class="modal-titulo-wrap"><button id="modalVoltar" type="button" class="btn btn-sm modal-voltar" style="display:none;"></button><span id="modalTitulo">Título</span></span>
       <button id="modalFechar" class="btn-icon">✕</button>
     </div>
     <div class="modal-body" id="modalCorpo"></div>
@@ -1435,12 +1436,12 @@
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261106a"></script>
-<script src="js/crm.js?v=20261112b"></script>
+<script src="js/crm.js?v=20261112c"></script>
 <script src="js/orcamento-logica.js?v=20261010a"></script>
 <script src="js/orcamento-export.js?v=20261012a"></script>
 <script src="js/orcamento-word.js?v=20261011b"></script>
 <script src="js/orcamento-envio.js?v=20261012a"></script>
-<script src="js/orcamentos.js?v=20261015a"></script>
+<script src="js/orcamentos.js?v=20261112c"></script>
 <script src="js/pessoas-logica.js?v=20261101a"></script>
 <script src="js/icones.js?v=20261101d"></script>
 <script src="js/agendamento-logica.js?v=20261101a"></script>
@@ -1450,6 +1451,7 @@
 <script src="js/previsao.js?v=20261030b"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
+<script src="js/navegacao.js?v=20261112a"></script>
 <script src="js/orcprev-logica.js?v=20261112a"></script>
 <script src="js/orcprev-estado.js?v=20261112a"></script>
 <script src="js/horas-reais-logica.js?v=20261104a"></script>
@@ -1458,6 +1460,6 @@
 <script src="js/reunioes.js?v=20261103b"></script>
 <script src="js/licencas-logica.js?v=20261110a"></script>
 <script src="js/licencas.js?v=20261110a"></script>
-<script src="js/app.js?v=20261112a"></script>
+<script src="js/app.js?v=20261112c"></script>
 </body>
 </html>

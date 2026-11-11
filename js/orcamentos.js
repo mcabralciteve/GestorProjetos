@@ -391,8 +391,8 @@ const Orc = {
     if (this.sujo && !semPerguntar && !confirm('Há alterações por guardar. Sair mesmo assim?')) return;
     const p = this.proposta;
     this.atual = null; this.sujo = false;
-    App.fecharModal();
-    if (p) Crm.abrirProposta(p.id);
+    // Sem fechar a janela primeiro: fechar esvazia a pilha de "Voltar" (conta → oportunidade → proposta…) do CRM.
+    if (p) Crm.abrirProposta(p.id); else App.fecharModal();
   },
   async exportarExcel() {
     const o = this.atual;

@@ -181,7 +181,46 @@ const Crm = {
   euro(v) { return CrmLogica.euro(v); },
   data(iso) { return CrmLogica.data(iso); },
   hoje() { return DateUtil.todayISO(); },
-  abrir(titulo, html, largo) { App.abrirModal(titulo, html, { largo: !!largo }); },
+  // "vista" (opcional) = {chave, rotulo, reabrir}: torna a janela navegável (ver js/navegacao.js). Ao abrir outra janela por
+  // cima, a atual fica na pilha e aparece o botão "← Voltar a…" no cabeçalho; sem "vista" (janelas novas, editores,
+  // diálogos) a janela não se guarda, mas guarda a que estava por baixo.
+  pilha: [], vistaAtual: null, _voltando: false,
+  abrir(titulo, html, largo, vista) {
+    if (!this._voltando) this.pilha = Navegacao.aoAbrir(this.pilha, this.vistaAberta(), vista || null);
+    App.abrirModal(titulo, html, { largo: !!largo });
+    this.vistaAtual = vista ? Object.assign({}, vista, { titulo }) : null;
+    this.mostrarVoltar();
+  },
+  // A janela navegável que está aberta agora (o título confirma que ninguém a trocou por outra de fora do CRM).
+  vistaAberta() {
+    const v = this.vistaAtual;
+    return v && App.els.modalBackdrop.classList.contains('aberto') && App.els.modalTitulo.textContent === v.titulo ? v : null;
+  },
+  mostrarVoltar() {
+    const b = document.getElementById('modalVoltar');
+    if (!b) return;
+    const t = this.pilha[this.pilha.length - 1];
+    if (!t) { b.style.display = 'none'; return; }
+    b.textContent = '← ' + Navegacao.curto(t.rotulo, 32);
+    b.title = 'Voltar a ' + t.rotulo;
+    b.style.display = '';
+  },
+  voltar() {
+    const e = this.pilha[this.pilha.length - 1];
+    if (!e) return;
+    this.pilha = this.pilha.slice(0, -1);
+    this._voltando = true;
+    try { e.reabrir(); } finally { this._voltando = false; }
+  },
+  // Repõe uma janela guardada por App.voltarRetorno (a que estava aberta antes de saltar para o Gantt) e a pilha que tinha por baixo.
+  restaurar(r) {
+    this.pilha = (r.pilha || []).slice();
+    this._voltando = true;
+    try { r.reabrir(); } finally { this._voltando = false; }
+  },
+  // Guardar/Cancelar: se se chegou aqui vindo de outra janela, regressa a ela; senão fecha.
+  fecharOuVoltar() { if (this.pilha.length) this.voltar(); else App.fecharModal(); },
+  aoFecharModal() { this.pilha = []; this.vistaAtual = null; },
   corpo() { return App.els.modalCorpo; },
   vazioHtml(msg) { return `<p class="hint" style="padding:12px 0;">${escapeHtml(msg)}</p>`; },
   // Texto de pesquisa: tira acentos/maiúsculas para "textil" encontrar "Têxtil".
@@ -347,7 +386,7 @@ const Crm = {
       'rascunho-tarefa': () => this.abrirRascunho(id),
       'copiar': () => this.copiar(el.dataset.texto),
       'vista': () => { this.filtros.op.vista = el.dataset.valor; this.renderAtual(); },
-      'ir-conta': () => { App.fecharModal(); this.abrirConta(id); },
+      'ir-conta': () => this.abrirConta(id),
       'importar-contas': () => this.abrirImportacao('contas'),
       'importar-contactos': () => this.abrirImportacao('contactos'),
       'importar-oportunidades': () => this.abrirImportacao('oportunidades'),
@@ -808,7 +847,7 @@ const Crm = {
         ${op ? '<button class="btn btn-danger" id="opEliminar">Eliminar</button>' : ''}
       </div>
       ${op ? '<div id="opSecoes"></div>' : '<p class="hint">Depois de criada, podes juntar propostas, interações e follow-ups.</p>'}`;
-    this.abrir(op ? `Oportunidade — ${o.titulo}` : 'Nova oportunidade', html, true);
+    this.abrir(op ? `Oportunidade — ${o.titulo}` : 'Nova oportunidade', html, true, op ? { chave: 'op:' + id, rotulo: `Oportunidade — ${o.titulo}`, reabrir: () => this.abrirOportunidade(id) } : null);
     const m = this.corpo();
     const selConta = m.querySelector('#opConta'), selContacto = m.querySelector('#opContacto');
     const selTipo = m.querySelector('#opTipo'), selEtapa = m.querySelector('#opEtapa'), selMotivo = m.querySelector('#opMotivo');
@@ -901,7 +940,7 @@ const Crm = {
       }
       this.renderAtual();
       if (op) { App.toast('Oportunidade guardada.'); this.abrirOportunidade(gravada.id); }
-      else { App.fecharModal(); this.abrirOportunidade(gravada.id); App.toast('Oportunidade criada.'); }
+      else { this.abrirOportunidade(gravada.id); App.toast('Oportunidade criada.'); }
     } catch (err) { this.avisoErro(err); }
   },
 
@@ -942,7 +981,7 @@ const Crm = {
         if (aoFim) aoFim(gravada);
       } catch (err) { this.avisoErro(err); }
     });
-    botao('cancelar').addEventListener('click', () => (aoCancelar ? aoCancelar() : App.fecharModal()));
+    botao('cancelar').addEventListener('click', () => (aoCancelar ? aoCancelar() : this.fecharOuVoltar()));
     const bEl = botao('eliminar');
     if (bEl) bEl.addEventListener('click', async () => {
       if (!confirm(confirmarEliminar || 'Eliminar? Não se pode desfazer.')) return;
@@ -1037,8 +1076,9 @@ const Crm = {
     const p = id ? this.idx.proposta.get(id) : this.novaProposta(opId);
     if (id && !p) return;
     if (!id && !this.d.oportunidades.length) { App.toast('Cria primeiro uma oportunidade.'); return; }
-    this.abrir(id ? 'Proposta' : 'Nova proposta', this.htmlFormProposta(p, !!opId) + this.botoesForm(!!id) + (id ? '<h4 class="crm-h">Orçamentos</h4><div id="propOrc"></div>' : ''), false);
-    this.ligarFormProposta(this.corpo(), p, () => App.fecharModal());
+    this.abrir(id ? 'Proposta' : 'Nova proposta', this.htmlFormProposta(p, !!opId) + this.botoesForm(!!id) + (id ? '<h4 class="crm-h">Orçamentos</h4><div id="propOrc"></div>' : ''), false,
+      id ? { chave: 'prop:' + id, rotulo: `Proposta ${p.referencia_giaf || 'v' + p.versao}`, reabrir: () => this.abrirProposta(id) } : null);
+    this.ligarFormProposta(this.corpo(), p, () => this.fecharOuVoltar());
     if (id && typeof Orc !== 'undefined') Orc.secOrcamentos(this.corpo().querySelector('#propOrc'), p);
   },
   htmlTabelaPropostas(lista, comOp) {
@@ -1166,8 +1206,8 @@ const Crm = {
   abrirTarefa(id, ctx) {
     const t = id ? this.d.tarefas.find(x => x.id === id) : this.novaTarefa(ctx || {});
     if (id && !t) return;
-    this.abrir(id ? 'Follow-up' : 'Novo follow-up', this.htmlFormTarefa(t) + this.botoesForm(!!id), false);
-    this.ligarFormTarefa(this.corpo(), t, () => { App.fecharModal(); this.renderAtual(); });
+    this.abrir(id ? 'Follow-up' : 'Novo follow-up', this.htmlFormTarefa(t) + this.botoesForm(!!id), false, id ? { chave: 'tarefa:' + id, rotulo: 'Follow-up', reabrir: () => this.abrirTarefa(id) } : null);
+    this.ligarFormTarefa(this.corpo(), t, () => { this.fecharOuVoltar(); this.renderAtual(); });
   },
   async alternarTarefa(id) {
     const t = this.d.tarefas.find(x => x.id === id);
@@ -1403,7 +1443,7 @@ const Crm = {
         ${id ? '<button class="btn btn-danger" id="ctEliminar">Eliminar</button>' : ''}
       </div>
       ${id ? '<div id="ctSecoes"></div>' : '<p class="hint">Depois de criada, podes juntar contactos, oportunidades, interações e follow-ups.</p>'}`;
-    this.abrir(id ? `Conta — ${c.nome}` : 'Nova conta', html, true);
+    this.abrir(id ? `Conta — ${c.nome}` : 'Nova conta', html, true, id ? { chave: 'conta:' + id, rotulo: `Conta — ${c.nome}`, reabrir: () => this.abrirConta(id) } : null);
     const m = this.corpo();
     m.querySelector('#ctGuardar').addEventListener('click', async () => {
       const msg = m.querySelector('#ctMsg');
@@ -1525,9 +1565,10 @@ const Crm = {
     if (id && !c) return;
     if (!id && !this.d.contas.length) { App.toast('Cria primeiro uma conta.'); return; }
     this.abrir(id ? `Contacto — ${c.nome}` : 'Novo contacto', this.htmlFormContacto(c, !!contaPre) +
-      this.botoesForm(!!id, id ? '<button type="button" class="btn" data-acao-form="exportar" title="Descarrega os dados deste contacto (RGPD)">Exportar dados</button>' : ''), false);
+      this.botoesForm(!!id, id ? '<button type="button" class="btn" data-acao-form="exportar" title="Descarrega os dados deste contacto (RGPD)">Exportar dados</button>' : ''), false,
+      id ? { chave: 'contacto:' + id, rotulo: `Contacto — ${c.nome}`, reabrir: () => this.abrirContacto(id) } : null);
     const m = this.corpo();
-    this.ligarFormContacto(m, c, () => { App.fecharModal(); this.renderAtual(); });
+    this.ligarFormContacto(m, c, () => { this.fecharOuVoltar(); this.renderAtual(); });
     const bExp = m.querySelector('[data-acao-form="exportar"]');
     if (bExp) bExp.addEventListener('click', () => this.exportarContacto(c));
   },
@@ -1935,7 +1976,14 @@ const Crm = {
       ${kpi(Math.round(r.prazo.progresso || 0) + '%', 'concluído', cor[r.prazo.nivel])}
     </div>${r.motivoHoras && r.nivelHoras !== 'verde' && r.nivelHoras !== 'neutro' ? `<p class="hint">Horas: ${escapeHtml(r.motivoHoras)}</p>` : ''}${r.prazo.motivo && r.prazo.nivel !== 'verde' && r.prazo.nivel !== 'neutro' ? `<p class="hint">Prazo: ${escapeHtml(r.prazo.motivo)}</p>` : ''}`;
   },
-  abrirProjetoNoGantt(id) { App.fecharModal(); App.abrirProjetoNoGantt(id); },
+  // Salta para o Gantt do projeto. Se havia uma janela do CRM aberta (conta, oportunidade…), guarda-a — com a pilha que tinha —
+  // para o botão "↩ Voltar a…" da barra de cima a repor, sem ter de pesquisar outra vez.
+  abrirProjetoNoGantt(id) {
+    const atual = this.vistaAberta();
+    if (atual) App.empurrarRetorno({ rotulo: atual.rotulo, aba: App.abaAtiva, reabrir: atual.reabrir, pilha: this.pilha.slice() });
+    App.fecharModal();
+    App.abrirProjetoNoGantt(id, { semRetorno: !!atual });
+  },
 
   // Ficha da oportunidade: o projeto ligado (ou a forma de o ligar, se já foi ganha).
   secProjetoDaOp(raiz, opId) {

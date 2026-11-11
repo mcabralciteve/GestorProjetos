@@ -537,6 +537,7 @@ const App = {
       Reunioes.limpar();
       Licencas.limpar();
       OrcprevEstado.limpar();
+      this.limparRetornos();
       this.state = this.estadoVazio();
       this.renderProjetoSelect();
       this.renderTudo();
@@ -1705,7 +1706,13 @@ const App = {
   // filtrada e trocava-o silenciosamente pelo primeiro dessa lista, abrindo o Gantt errado. Mexe
   // diretamente no <select> (não só em "filtroGestorGantt") porque, uma vez semeado, é o valor do
   // próprio elemento que renderProjetoSelect passa a considerar a fonte de verdade.
-  abrirProjetoNoGantt(id) {
+  abrirProjetoNoGantt(id, opcoes) {
+    // Guarda de onde se veio (a ficha do CRM guarda o seu próprio retorno, mais completo: opcoes.semRetorno).
+    const de = this.abaAtiva;
+    if (!(opcoes && opcoes.semRetorno) && de && de !== 'gantt') {
+      const nome = this.nomeDaAba(de);
+      if (nome) this.empurrarRetorno({ rotulo: nome, aba: de });
+    }
     if (this.els.selGestorFiltroGantt) this.els.selGestorFiltroGantt.value = '';
     this.filtroGestorGantt = '';
     this.selecionarProjeto(id);
@@ -10662,6 +10669,8 @@ const App = {
     this._modalAlteracoes = (opts && opts.alteracoes) || null;
     this.els.modalTitulo.textContent = titulo;
     this.els.modalCorpo.innerHTML = corpoHtml;
+    const bVoltar = document.getElementById('modalVoltar');
+    if (bVoltar) bVoltar.style.display = 'none'; // só as janelas do CRM o mostram (Crm.abrir), quando há para onde voltar
     this.els.modal.classList.toggle('modal-largo', !!(opts && opts.largo));
     this.els.modal.classList.remove('modal-orc');
     this.els.modal.style.transform = ''; // recomeça centrado, mesmo que o anterior tenha sido arrastado
@@ -10671,6 +10680,34 @@ const App = {
     this._modalSujo = false;
     this._modalAlteracoes = null;
     this.els.modalBackdrop.classList.remove('aberto');
+    if (typeof Crm !== 'undefined' && Crm.aoFecharModal) Crm.aoFecharModal(); // fechar a janela = deixar de navegar (a pilha de "Voltar" esvazia-se)
+  },
+  // ---------- Navegação "Voltar" ----------
+  // Atalho na barra de cima: quando se salta de um sítio para o Gantt de um projeto (da ficha de uma conta, de uma
+  // oportunidade, do Dashboard…), guarda-se de onde se veio e o botão "Voltar a…" repõe-no (separador e, se era uma janela
+  // do CRM, a própria janela) sem refazer a pesquisa. Regras em js/navegacao.js. Quem clica num separador/grupo do menu
+  // está a navegar por conta própria: o atalho desaparece.
+  retornos: [],
+  nomeDaAba(aba) {
+    const b = document.querySelector(`.tab-btn[data-tab="${aba}"]`);
+    return b ? b.textContent.trim() : '';
+  },
+  empurrarRetorno(r) { this.retornos = Navegacao.empurrarRetorno(this.retornos, r); this.atualizarBotaoVoltar(); },
+  limparRetornos() { if (this.retornos.length) { this.retornos = []; this.atualizarBotaoVoltar(); } },
+  atualizarBotaoVoltar() {
+    const wrap = document.getElementById('navVoltarWrap'), btn = document.getElementById('btnNavVoltar');
+    if (!wrap || !btn) return;
+    const r = this.retornos[this.retornos.length - 1];
+    wrap.style.display = r ? '' : 'none';
+    if (r) { btn.textContent = '↩ Voltar a ' + Navegacao.curto(r.rotulo, 36); btn.title = 'Voltar a ' + r.rotulo; }
+  },
+  voltarRetorno() {
+    const r = this.retornos.pop();
+    this.atualizarBotaoVoltar();
+    if (!r) return;
+    if (this.modalTemAlteracoes() && !confirm('Tens alterações por guardar na janela aberta. Sair mesmo assim?')) { this.retornos.push(r); this.atualizarBotaoVoltar(); return; }
+    this.irParaAba(r.aba);
+    if (r.reabrir && typeof Crm !== 'undefined') Crm.restaurar(r);
   },
   modalTemAlteracoes() {
     return this._modalAlteracoes ? !!this._modalAlteracoes() : !!this._modalSujo;
@@ -11408,11 +11445,17 @@ const App = {
     this.ligarTooltipTextoCortado();
     document.getElementById('tabsNav').addEventListener('click', (ev) => {
       const btn = ev.target.closest('.tab-btn');
-      if (btn) this.irParaAba(btn.dataset.tab);
+      if (btn) { this.limparRetornos(); this.irParaAba(btn.dataset.tab); }
     });
     document.getElementById('gruposNav').addEventListener('click', (ev) => {
       const btn = ev.target.closest('.grupo-btn');
-      if (btn) this.irParaGrupo(btn.dataset.grupo);
+      if (btn) { this.limparRetornos(); this.irParaGrupo(btn.dataset.grupo); }
+    });
+    document.getElementById('btnNavVoltar').addEventListener('click', () => this.voltarRetorno());
+    document.getElementById('btnNavVoltarFechar').addEventListener('click', () => this.limparRetornos());
+    document.getElementById('modalVoltar').addEventListener('click', () => {
+      if (this.modalTemAlteracoes() && !confirm('Tens alterações por guardar nesta janela. Voltar mesmo e perder o que escreveste?')) return;
+      Crm.voltar();
     });
 
     e.btnDesfazer.addEventListener('click', () => this.desfazer());
