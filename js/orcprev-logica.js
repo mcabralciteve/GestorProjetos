@@ -216,15 +216,76 @@ const OrcprevLogica = {
   _fmt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); },
 
   // O texto que se copia (JSON) — o importador lê exatamente isto.
-  pacote({ email, pessoa, semana, geradoEm }) {
-    return {
+  // "registo" (opcional): { url, chave, token } — com ele o importador avisa o Gestor, depois de gravar no orcprev, do que
+  // foi carregado (ver supabase/orcprev_registo.sql). Sem ele o pacote funciona como antes.
+  pacote({ email, pessoa, semana, geradoEm, registo }) {
+    const p = {
       formato: this.FORMATO, versao: this.VERSAO, geradoEm: geradoEm || new Date().toISOString(),
       email: String(email || '').trim().toLowerCase(), pessoa: pessoa || '',
       semana: { inicio: semana.inicio, fim: semana.fim },
       linhas: semana.linhas, avisos: semana.avisos, totalGestor: semana.totalGestor, totalEnvio: semana.totalEnvio
     };
+    if (registo && registo.url && registo.chave && registo.token) p.registo = { url: registo.url, chave: registo.chave, token: registo.token };
+    return p;
   },
-  textoDoPacote(pacote) { return JSON.stringify(pacote); }
+  textoDoPacote(pacote) { return JSON.stringify(pacote); },
+
+  // ---------- o que já foi carregado no orcprev ----------
+  // Um dia conta como carregado quando as horas gravadas no orcprev (último envio confirmado dessa semana) cobrem as horas
+  // "enviáveis" que o Gestor tem nesse dia, com a folga do arredondamento a quartos de hora. ESPELHADO em
+  // supabase/functions/lembrete-orcprev/logica.ts (o lembrete de sexta-feira) — se uma regra mudar, muda nas duas.
+  TOLERANCIA_DIA: 0.25,
+  // Horas do Gestor que seguem para o orcprev, por dia: registos de projeto, mais os tipos de trabalho que têm atividade
+  // do orcprev definida (os outros nunca são enviados — ver linhasDaSemana). registos = da pessoa; tipoPorId(id) → tipo.
+  horasEnviaveisPorDia(registos, tipoPorId, de, ate) {
+    const m = {};
+    (registos || []).forEach(r => {
+      if (!r || !r.data || (de && r.data < de) || (ate && r.data > ate)) return;
+      const h = Number(r.horas) || 0;
+      if (h <= 0) return;
+      const tipo = r.tipoTrabalhoId ? tipoPorId(r.tipoTrabalhoId) : null;
+      if (tipo && !tipo.orcprevAtividade) return;
+      m[r.data] = (m[r.data] || 0) + h;
+    });
+    return m;
+  },
+  // Estado de UMA semana. envios = os envios dessa pessoa e semana ({ confirmadoEm, criadoEm, dias, origem }).
+  // estado: 'vazia' (sem horas para enviar) | 'carregada' | 'alterada' (já carregada, mas o Gestor tem mais horas desde então)
+  //       | 'pendente' (nada carregado); 'copiada' = true se há uma cópia ainda por confirmar no orcprev.
+  // desdeISO (opcional): dias antes desta data não contam (é a data "contar a partir de" das Definições do controlo).
+  estadoSemana({ inicio, horasDia, envios, desdeISO }) {
+    const ini = this.segundaDaSemana(inicio);
+    const fim = this.somarDias(ini, 6);
+    const lista = (envios || []).filter(e => e.semanaInicio ? e.semanaInicio === ini : true);
+    const confirmados = lista.filter(e => e.confirmadoEm).sort((a, b) => String(b.confirmadoEm).localeCompare(String(a.confirmadoEm)));
+    const ultimo = confirmados[0] || null;
+    const copiada = lista.some(e => !e.confirmadoEm && (!ultimo || String(e.criadoEm) > String(ultimo.confirmadoEm)));
+    const dias = [];
+    for (let i = 0; i < 7; i++) {
+      const data = this.somarDias(ini, i);
+      const gestor = (horasDia && horasDia[data]) || 0;
+      if (gestor <= 0 || (desdeISO && data < desdeISO)) continue;
+      const carregado = ultimo && ultimo.dias ? Number(ultimo.dias[data]) || 0 : 0;
+      dias.push({ data, gestor, carregado, ok: carregado + this.TOLERANCIA_DIA + 1e-9 >= gestor });
+    }
+    const totalGestor = dias.reduce((s, d) => s + d.gestor, 0);
+    const totalCarregado = dias.reduce((s, d) => s + Math.min(d.carregado, d.gestor), 0);
+    const emFalta = dias.filter(d => !d.ok);
+    const estado = !dias.length ? 'vazia' : !emFalta.length ? 'carregada' : ultimo ? 'alterada' : 'pendente';
+    return { inicio: ini, fim, estado, dias, diasEmFalta: emFalta.map(d => d.data), totalGestor, totalCarregado, copiada, manual: !!(ultimo && ultimo.origem === 'manual'), carregadoEm: ultimo ? ultimo.confirmadoEm : null };
+  },
+  // As semanas, da mais recente para a mais antiga, desde "desdeISO" (ou as últimas "max" semanas), até à semana de hoje.
+  semanasDoControlo({ hojeISO, desdeISO, max }) {
+    const atual = this.segundaDaSemana(hojeISO);
+    const limite = desdeISO ? this.segundaDaSemana(desdeISO) : null;
+    const semanas = [];
+    for (let i = 0; i < (max || 8); i++) {
+      const ini = this.somarDias(atual, -7 * i);
+      if (limite && ini < limite) break;
+      semanas.push(ini);
+    }
+    return semanas;
+  }
 };
 
 if (typeof module !== 'undefined') module.exports = OrcprevLogica;

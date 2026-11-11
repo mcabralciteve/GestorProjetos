@@ -108,6 +108,7 @@
     <button class="tab-btn" data-tab="dia">Dia</button>
     <button class="tab-btn" data-tab="registo">Registo</button>
     <button class="tab-btn" data-tab="analise" id="tabBtnAnalise">Análise</button>
+    <button class="tab-btn" data-tab="orcprevEstado" title="O que já foi carregado no orcprev">Orcprev</button>
   </div>
   <div class="tabs-grupo" data-grupo="faturacao">
     <button class="tab-btn" data-tab="faturacao">Faturação</button>
@@ -1290,6 +1291,13 @@
   </div>
 </section>
 <!-- ===================== TAB: ATIVOS → LICENÇAS ===================== -->
+<section class="tab-panel" id="tab-orcprevEstado">
+  <div class="pagina">
+    <div class="pagina-head"><h2>⇄ Horas no orcprev</h2><button type="button" class="btn btn-sm" id="btnOrcprevEstadoAbrir">Copiar semana para o orcprev</button></div>
+    <p class="pagina-sub">O que já foi carregado no orcprev, por semana. Cada pessoa vê as suas horas; quem lidera uma equipa vê também as da sua equipa.</p>
+    <div id="orcprevEstadoCorpo"></div>
+  </div>
+</section>
 <section class="tab-panel" id="tab-licencas">
   <div class="pagina">
     <div class="pagina-head"><h2>🗂 Licenças de software</h2></div>
@@ -1442,13 +1450,14 @@
 <script src="js/previsao.js?v=20261030b"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
-<script src="js/orcprev-logica.js?v=20261031e"></script>
+<script src="js/orcprev-logica.js?v=20261112a"></script>
+<script src="js/orcprev-estado.js?v=20261112a"></script>
 <script src="js/horas-reais-logica.js?v=20261104a"></script>
 <script src="js/capacidade-comercial.js?v=20261105b"></script>
 <script src="js/capacidade-excel.js?v=20261106a"></script>
 <script src="js/reunioes.js?v=20261103b"></script>
 <script src="js/licencas-logica.js?v=20261110a"></script>
 <script src="js/licencas.js?v=20261110a"></script>
-<script src="js/app.js?v=20261110a"></script>
+<script src="js/app.js?v=20261112a"></script>
 </body>
 </html>

@@ -241,3 +241,15 @@ test('a nota que vem do Gestor (com as suas notas) segue tal e qual para o orcpr
   const p = I.planear({ pacote: pacote([l]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'OTHER' } } });
   assert.equal(p.linhas[0].nota, '[Gestor] Reunião: falámos do orçamento — Roadmapping Digital (Alfa, Lda.)');
 });
+
+test('diasGravados e pedidoConfirmacao: soma por dia só das linhas ok; sem registo no pacote não há pedido', () => {
+  const plano = { linhas: [
+    { data: '2026-10-19', horas: 3, estado: 'ok' }, { data: '2026-10-19', horas: 5, estado: 'ok' },
+    { data: '2026-10-20', horas: 2, estado: 'ok' }, { data: '2026-10-21', horas: 8, estado: 'pendente' }] };
+  assert.deepEqual(I.diasGravados(plano), { '2026-10-19': 8, '2026-10-20': 2 });
+  assert.equal(I.pedidoConfirmacao({ email: 'a@b.pt' }, plano, {}), null);
+  const p = I.pedidoConfirmacao({ email: 'a@b.pt', registo: { url: 'https://x.supabase.co/', chave: 'K', token: 'T' } }, plano, { employee: { email: 'x@y.pt' } });
+  assert.equal(p.url, 'https://x.supabase.co/rest/v1/rpc/orcprev_confirmar');
+  assert.equal(p.opcoes.headers.apikey, 'K');
+  assert.deepEqual(JSON.parse(p.opcoes.body), { p_token: 'T', p_dias: { '2026-10-19': 8, '2026-10-20': 2 }, p_horas: 10, p_email: 'x@y.pt' });
+});

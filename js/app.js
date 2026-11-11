@@ -530,11 +530,13 @@ const App = {
       Crm.atualizarContagemFollowups();
       Reunioes.carregarEmFundo();
       Licencas.carregarEmFundo();
+      OrcprevEstado.aoEntrar();
     } else if (!autenticadoAgora && this.sessaoAtiva) {
       this.sessaoAtiva = false;
       Crm.limpar();
       Reunioes.limpar();
       Licencas.limpar();
+      OrcprevEstado.limpar();
       this.state = this.estadoVazio();
       this.renderProjetoSelect();
       this.renderTudo();
@@ -10137,12 +10139,30 @@ const App = {
     const s = String(v === undefined || v === null ? '' : v);
     return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
   },
+  // Horas do Gestor que seguem para o orcprev nessa semana, por dia (arredondadas a 2 casas) — o que fica registado como "a carregar".
+  horasEnviaveisSemana(recurso, sem) {
+    const registos = this.state.registos.filter(r => r.pessoa === recurso.nome).filter(r => this.possoVerRegisto(r));
+    const m = OrcprevLogica.horasEnviaveisPorDia(registos, id => this.state.tiposTrabalho.find(tt => tt.id === id), sem.inicio, sem.fim);
+    Object.keys(m).forEach(d => { m[d] = Math.round(m[d] * 100) / 100; });
+    return m;
+  },
+  // Linha de estado da semana no topo da modal "Horas → orcprev" ("já carregada", "por carregar: dias…").
+  estadoOrcprevHtml(recurso, inicio) {
+    if (typeof OrcprevEstado === 'undefined' || !OrcprevEstado.disponivel()) return '';
+    const e = OrcprevEstado.estadoDe(recurso, inicio);
+    if (e.estado === 'vazia') return '';
+    const dias = e.diasEmFalta.map(d => `${d.slice(8)}/${d.slice(5, 7)}`).join(', ');
+    const txt = e.estado === 'carregada' ? `✔ Esta semana já foi carregada no orcprev${e.manual ? ' (marcada como lançada à mão)' : ''}.`
+      : e.estado === 'alterada' ? `⚠ Já carregada, mas mudou desde então — por carregar: ${dias}.` : `⏳ Ainda por carregar no orcprev: ${dias}.`;
+    const cor = e.estado === 'carregada' ? ['#dcfce7', '#166534'] : e.estado === 'alterada' ? ['#ffedd5', '#9a3412'] : ['#fee2e2', '#991b1b'];
+    return `<p style="margin:6px 0;padding:7px 10px;border-radius:8px;background:${cor[0]};color:${cor[1]};font-size:13px;">${txt}${e.copiada ? ' (há uma cópia por confirmar no orcprev)' : ''}</p>`;
+  },
   // ---------- Horas → orcprev (Via A) ----------
   // O orcprev (ferramenta do CITEVE) também pede as horas da semana. Em vez de as preencher duas vezes, copia-se
   // daqui a semana e importa-se lá com um marcador do browser (js/orcprev-importar.js), que usa a sessão da própria
   // pessoa — o Gestor não consegue falar diretamente com o orcprev (ele não aceita pedidos de outros sites).
   // As regras de soma/arredondamento/nota estão em OrcprevLogica (testadas); aqui só há o ecrã.
-  abrirModalOrcprev() {
+  abrirModalOrcprev(semanaInicial) {
     const pessoa = this.diaRegistoPessoa;
     const recurso = pessoa ? this.state.recursos.find(r => r.nome === pessoa) : null;
     if (!recurso) { this.toast('Escolhe primeiro uma pessoa no Registo do Dia.'); return; }
@@ -10150,7 +10170,8 @@ const App = {
     const hoje = DateUtil.todayISO();
     const { ano, mes } = this.mesRegistoDiaAtual || { ano: new Date().getFullYear(), mes: new Date().getMonth() };
     const mesMostrado = `${ano}-${String(mes + 1).padStart(2, '0')}`;
-    let inicio = OrcprevLogica.segundaDaSemana(hoje.startsWith(mesMostrado) ? hoje : `${mesMostrado}-01`);
+    let inicio = OrcprevLogica.segundaDaSemana(semanaInicial || (hoje.startsWith(mesMostrado) ? hoje : `${mesMostrado}-01`));
+    const ehEu = !!(this.perfilAtual() && this.perfilAtual().recursoId === recurso.id);
 
     const baseSite = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
     const codigoMarcador = "javascript:(function(){if(location.hostname!=='orcprev.citeve.pt'){alert('Abre primeiro o orcprev (orcprev.citeve.pt) e só depois clica neste marcador.');return}var s=document.createElement('script');s.src='" + baseSite + "js/orcprev-importar.js?t='+Date.now();document.head.appendChild(s)})();";
@@ -10166,6 +10187,7 @@ const App = {
       <div id="orcSemCorpo"></div>
       <div style="display:flex;gap:10px;align-items:center;margin:10px 0 4px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="btnOrcCopiar">Copiar semana</button>
+        ${ehEu ? '<button class="btn btn-sm" id="btnOrcManual" title="Se já lançaste esta semana à mão no orcprev, marca-a como carregada (deixa de aparecer como em falta e de entrar no lembrete de sexta-feira)">Já lancei à mão</button>' : ''}
         <span class="hint" id="orcCopiarMsg"></span>
       </div>
       <details style="margin-top:10px;">
@@ -10195,6 +10217,7 @@ const App = {
       const sem = semanaAtual();
       m.querySelector('#orcSemLabel').textContent = `${fmtDia(sem.inicio)} a ${fmtDia(sem.fim)}/${sem.fim.slice(0, 4)}`;
       m.querySelector('#orcSemPessoa').textContent = pessoa;
+      const est = this.estadoOrcprevHtml(recurso, sem.inicio);
       const semEmail = !String(recurso.email || '').trim();
       const linhasHtml = sem.linhas.map(l => {
         const destino = l.tipo === 'PROJECT' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
@@ -10204,7 +10227,8 @@ const App = {
         return `<tr><td>${NOMES_DIA[new Date(l.data + 'T00:00:00Z').getUTCDay()]} ${fmtDia(l.data)}</td><td>${destino}</td><td style="text-align:right;">${fmtH(l.horas)} h</td></tr>`;
       }).join('');
       m.querySelector('#orcSemCorpo').innerHTML =
-        (semEmail ? `<p class="hint" style="color:var(--vermelho);">${escapeHtml(pessoa)} não tem email no Gestor — o importador usa o email para garantir que as horas vão para a conta certa. Define-o em Pessoas.</p>` : '')
+        est
+        + (semEmail ? `<p class="hint" style="color:var(--vermelho);">${escapeHtml(pessoa)} não tem email no Gestor — o importador usa o email para garantir que as horas vão para a conta certa. Define-o em Pessoas.</p>` : '')
         + (sem.linhas.length ? `<table class="tabela-crud" style="width:100%;"><thead><tr><th>Dia</th><th>Vai para (no orcprev)</th><th style="text-align:right;">Horas</th></tr></thead><tbody>${linhasHtml}</tbody></table>`
           : '<p class="hint">Sem horas para enviar nesta semana.</p>')
         + `<p style="margin:8px 0 0;"><b>${fmtH(sem.totalEnvio)} h</b> a enviar${Math.abs(sem.totalGestor - sem.totalEnvio) > 0.001 ? ` <span class="hint">(registaste ${fmtH(sem.totalGestor)} h; o orcprev trabalha em quartos de hora)</span>` : ''}</p>`
@@ -10216,14 +10240,29 @@ const App = {
     m.querySelector('#orcSemSeg').addEventListener('click', () => { inicio = OrcprevLogica.somarDias(inicio, 7); render(); });
     m.querySelector('#btnOrcCopiar').addEventListener('click', async () => {
       const sem = semanaAtual();
-      const texto = OrcprevLogica.textoDoPacote(OrcprevLogica.pacote({ email: recurso.email, pessoa, semana: sem }));
       const msg = m.querySelector('#orcCopiarMsg');
-      try { await navigator.clipboard.writeText(texto); msg.textContent = '✓ Copiado. Agora clica no marcador no orcprev.'; }
+      // Só a própria pessoa regista o envio (o código secreto fica ligado à sua conta); para um colega a cópia funciona como antes.
+      let registo = null;
+      if (ehEu) {
+        const horas = Object.values(this.horasEnviaveisSemana(recurso, sem)).reduce((a, b) => a + b, 0);
+        registo = OrcprevEstado.registoParaPacote(await OrcprevEstado.novoEnvio(sem, horas));
+      }
+      const texto = OrcprevLogica.textoDoPacote(OrcprevLogica.pacote({ email: recurso.email, pessoa, semana: sem, registo }));
+      try { await navigator.clipboard.writeText(texto); msg.textContent = '✓ Copiado. Agora clica no marcador no orcprev.' + (ehEu && !registo && OrcprevEstado.disponivel() ? ' (Não consegui preparar o registo: a semana não ficará marcada como carregada sozinha.)' : ''); }
       catch (e) {
         // Sem permissão para a área de transferência: mostra o texto selecionado para copiar à mão.
         msg.innerHTML = 'Não consegui copiar sozinho — copia isto (Ctrl+C): <textarea readonly rows="3" style="width:100%;font:11px monospace;"></textarea>';
         const ta = msg.querySelector('textarea'); ta.value = texto; ta.focus(); ta.select();
       }
+    });
+    const btnManual = m.querySelector('#btnOrcManual');
+    if (btnManual) btnManual.addEventListener('click', async () => {
+      const sem = semanaAtual();
+      const dias = this.horasEnviaveisSemana(recurso, sem);
+      if (!Object.keys(dias).length) { this.toast('Sem horas para marcar nesta semana.'); return; }
+      if (!confirm(`Marcar a semana ${fmtDia(sem.inicio)} a ${fmtDia(sem.fim)} como já lançada à mão no orcprev (${fmtH(Object.values(dias).reduce((a, b) => a + b, 0))} h)?`)) return;
+      try { await OrcprevEstado.marcarManual(sem.inicio, sem.fim, dias); this.toast('Semana marcada como carregada.'); render(); }
+      catch (e) { this.toast('Não foi possível marcar: ' + e.message); }
     });
     // O marcador é para arrastar para os favoritos — clicar nele aqui não deve fazer nada.
     m.querySelector('#orcMarcador').addEventListener('click', ev => { ev.preventDefault(); this.toast('Arrasta este botão para a barra de favoritos — não o cliques aqui.'); });
@@ -10547,7 +10586,7 @@ const App = {
   },
 
   // ---------- Abas ----------
-  gruposAbas: { dashboard: 'inicio', reunioes: 'planeamento', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', licencas: 'ativos', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
+  gruposAbas: { dashboard: 'inicio', reunioes: 'planeamento', crmDashboard: 'comercial', crmOportunidades: 'comercial', crmContas: 'comercial', crmContactos: 'comercial', crmPropostas: 'comercial', crmFollowups: 'comercial', crmFunil: 'configuracoes', gantt: 'planeamento', projetos: 'planeamento', portefolio: 'planeamento', acompanhamento: 'planeamento', alocacoes: 'equipa', capacidade: 'equipa', feriados: 'equipa', ausencias: 'equipa', dia: 'horas', registo: 'horas', analise: 'horas', orcprevEstado: 'horas', faturacao: 'faturacao', financeiro: 'faturacao', previsao: 'faturacao', viaturas: 'viaturas', licencas: 'ativos', recursos: 'configuracoes', tiposTrabalho: 'configuracoes', orcprev: 'configuracoes', definicoes: 'configuracoes' },
   primeiroTabDoGrupo: { inicio: 'dashboard', comercial: 'crmDashboard', planeamento: 'gantt', equipa: 'alocacoes', horas: 'dia', faturacao: 'faturacao', viaturas: 'viaturas', ativos: 'licencas', configuracoes: 'recursos' },
   // "Reuniões" aparece nos submenus de Comercial e de Planeamento (é o mesmo ecrã): fica no grupo de onde se veio, ou no último usado.
   ultimoGrupoReunioes: 'planeamento',
@@ -10578,6 +10617,7 @@ const App = {
     if (nome === 'previsao') Previsao.aoAbrir();
     if (nome === 'reunioes') Reunioes.aoAbrir();
     if (nome === 'licencas') Licencas.aoAbrir();
+    if (nome === 'orcprevEstado') OrcprevEstado.aoAbrir();
     if (nome.startsWith('crm')) Crm.aoAbrirAba(nome);
   },
   // Ao abrir um ecrã com calendário mensal, ou ao carregar em "Hoje"/mudar de mês, o dia de hoje

@@ -276,6 +276,28 @@
       };
     },
 
+    // Horas realmente gravadas por dia ({ 'AAAA-MM-DD': horas }) — o que o Gestor guarda como "já carregado no orcprev".
+    diasGravados(plano) {
+      const m = {};
+      plano.linhas.filter(l => l.estado === 'ok').forEach(l => { m[l.data] = Math.round(((m[l.data] || 0) + (Number(l.horas) || 0)) * 100) / 100; });
+      return m;
+    },
+    // Pedido que avisa o Gestor de que a semana foi gravada (função orcprev_confirmar, supabase/orcprev_registo.sql).
+    // Devolve null se o pacote não trouxe o registo (versão antiga do Gestor ou tabela ainda não instalada).
+    pedidoConfirmacao(pacote, plano, dados) {
+      const reg = pacote && pacote.registo;
+      if (!reg || !reg.url || !reg.chave || !reg.token) return null;
+      const dias = this.diasGravados(plano);
+      return {
+        url: String(reg.url).replace(/\/+$/, '') + '/rest/v1/rpc/orcprev_confirmar',
+        opcoes: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: reg.chave, Authorization: 'Bearer ' + reg.chave },
+          body: JSON.stringify({ p_token: reg.token, p_dias: dias, p_horas: Object.values(dias).reduce((s, h) => s + h, 0), p_email: String((dados && dados.employee && dados.employee.email) || pacote.email || '') })
+        }
+      };
+    },
+
     // O que se guarda no browser quando a pessoa marca "lembrar" numa linha reajustada.
     memorizar(memoria, plano, edicoes) {
       const mem = Object.assign({}, memoria);
@@ -569,8 +591,20 @@
         const r = await api('/timesheet-bulk-save', { method: 'POST', body: JSON.stringify(corpoPedido) });
         gravarMemoria(Imp.memorizar(lerMemoria(), planoFinal, est.edicoes));
         limparRascunho(pacote);
+        // Avisa o Gestor do que ficou carregado (para o estado "já no orcprev" e o lembrete de sexta-feira). Nunca falha o envio:
+        // as horas já estão gravadas no orcprev; se isto falhar, só se diz.
+        let registo = null;
+        const pedido = Imp.pedidoConfirmacao(pacote, planoFinal, dados);
+        if (pedido) {
+          try {
+            const rc = await fetch(pedido.url, pedido.opcoes);
+            const ok = rc.ok && (await rc.text()).trim() === 'true';
+            registo = ok ? aviso('✓ Registado no Gestor: esta semana já aparece como carregada no orcprev.', 'ok') : aviso('As horas ficaram no orcprev, mas não consegui avisar o Gestor (a semana pode continuar a aparecer como por carregar). Usa "Já lancei à mão" no Gestor.');
+          } catch (e) { registo = aviso('As horas ficaram no orcprev, mas não consegui avisar o Gestor (' + e.message + '). Usa "Já lancei à mão" no Gestor.'); }
+        }
         moldura('Importar horas do Gestor',
           [aviso(`Gravado no orcprev: ${r && r.inserted != null ? r.inserted : corpoPedido.entries.length} linha(s) novas${r && r.deleted ? `, ${r.deleted} substituídas` : ''}.`, 'ok'),
+            registo,
             planoFinal.totalPendente ? aviso(`${fmtH(planoFinal.totalPendente)} ficaram por enviar — preenche-as à mão no orcprev.`) : null],
           [botao('Fechar', fechar), botao('Recarregar o orcprev', () => location.reload(), true)]);
       } catch (e) {

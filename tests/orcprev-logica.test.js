@@ -146,3 +146,56 @@ test('as notas escritas no Gestor passam para a nota do orcprev (junto da tarefa
   const o = L.linhasDaSemana(ctx([reg({ projetoId: 'c2', projetoNome: 'Estudo Beta', projetoIdInterno: '2026/51', horas: 1, tarefaNome: 'Relatório', notas: 'entregue ao cliente' })]));
   assert.equal(o.linhas[0].nota, '[Gestor] Relatório: entregue ao cliente — Estudo Beta');
 });
+
+// ---------- o que já foi carregado no orcprev ----------
+test('horasEnviaveisPorDia: projeto e tipos com atividade contam; tipo sem atividade não; limites de datas', () => {
+  const h = L.horasEnviaveisPorDia([
+    reg({ data: '2026-10-19', horas: 3 }), reg({ data: '2026-10-19', horas: 2, tipoTrabalhoId: 'reun' }),
+    reg({ data: '2026-10-19', horas: 1, tipoTrabalhoId: 'form' }), reg({ data: '2026-10-20', horas: 0 }), reg({ data: '2026-10-30', horas: 4 })
+  ], id => tipos[id], '2026-10-19', '2026-10-25');
+  assert.deepEqual(h, { '2026-10-19': 5 });
+});
+
+test('estadoSemana: sem envios é pendente; com envio confirmado e dias cobertos é carregada', () => {
+  const horasDia = { '2026-10-19': 8, '2026-10-20': 7.9 };
+  const p = L.estadoSemana({ inicio: '2026-10-21', horasDia, envios: [] });
+  assert.equal(p.estado, 'pendente'); assert.equal(p.inicio, '2026-10-19'); assert.deepEqual(p.diasEmFalta, ['2026-10-19', '2026-10-20']);
+  const ok = L.estadoSemana({ inicio: '2026-10-19', horasDia, envios: [{ semanaInicio: '2026-10-19', criadoEm: '2026-10-23T09:00:00Z', confirmadoEm: '2026-10-23T09:05:00Z', dias: { '2026-10-19': 8, '2026-10-20': 8 } }] });
+  assert.equal(ok.estado, 'carregada'); assert.equal(ok.diasEmFalta.length, 0); assert.equal(ok.totalCarregado, 15.9);
+});
+
+test('estadoSemana: folga de 0,25 h por dia; acima disso a semana fica "alterada"', () => {
+  const envio = { semanaInicio: '2026-10-19', criadoEm: 'a', confirmadoEm: 'b', dias: { '2026-10-19': 8 } };
+  assert.equal(L.estadoSemana({ inicio: '2026-10-19', horasDia: { '2026-10-19': 8.2 }, envios: [envio] }).estado, 'carregada');
+  const alt = L.estadoSemana({ inicio: '2026-10-19', horasDia: { '2026-10-19': 8.5 }, envios: [envio] });
+  assert.equal(alt.estado, 'alterada'); assert.deepEqual(alt.diasEmFalta, ['2026-10-19']);
+});
+
+test('estadoSemana: usa o último envio confirmado; cópia por confirmar fica assinalada; manual também', () => {
+  const horasDia = { '2026-10-19': 8 };
+  const velho = { semanaInicio: '2026-10-19', criadoEm: '2026-10-20T08:00:00Z', confirmadoEm: '2026-10-20T08:10:00Z', dias: { '2026-10-19': 4 } };
+  const novo = { semanaInicio: '2026-10-19', criadoEm: '2026-10-22T08:00:00Z', confirmadoEm: '2026-10-22T08:10:00Z', dias: { '2026-10-19': 8 }, origem: 'manual' };
+  const r = L.estadoSemana({ inicio: '2026-10-19', horasDia, envios: [velho, novo] });
+  assert.equal(r.estado, 'carregada'); assert.equal(r.manual, true);
+  const c = L.estadoSemana({ inicio: '2026-10-19', horasDia, envios: [{ semanaInicio: '2026-10-19', criadoEm: '2026-10-21T08:00:00Z', confirmadoEm: null, dias: {} }] });
+  assert.equal(c.estado, 'pendente'); assert.equal(c.copiada, true);
+  assert.equal(L.estadoSemana({ inicio: '2026-10-19', horasDia: {}, envios: [] }).estado, 'vazia');
+});
+
+test('estadoSemana: dias antes de "desde" não contam', () => {
+  const r = L.estadoSemana({ inicio: '2026-10-19', horasDia: { '2026-10-19': 8, '2026-10-21': 8 }, envios: [], desdeISO: '2026-10-20' });
+  assert.deepEqual(r.diasEmFalta, ['2026-10-21']);
+  assert.equal(L.estadoSemana({ inicio: '2026-10-19', horasDia: { '2026-10-19': 8 }, envios: [], desdeISO: '2026-10-20' }).estado, 'vazia');
+});
+
+test('semanasDoControlo: da semana atual para trás, respeitando "desde" e o máximo', () => {
+  assert.deepEqual(L.semanasDoControlo({ hojeISO: '2026-11-13', max: 3 }), ['2026-11-09', '2026-11-02', '2026-10-26']);
+  assert.deepEqual(L.semanasDoControlo({ hojeISO: '2026-11-13', desdeISO: '2026-11-04', max: 8 }), ['2026-11-09', '2026-11-02']);
+});
+
+test('pacote: leva o registo só se estiver completo', () => {
+  const semana = { inicio: '2026-10-19', fim: '2026-10-25', linhas: [], avisos: [], totalGestor: 0, totalEnvio: 0 };
+  assert.equal(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana }).registo, undefined);
+  assert.equal(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana, registo: { url: 'u', chave: 'k' } }).registo, undefined);
+  assert.deepEqual(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana, registo: { url: 'u', chave: 'k', token: 't' } }).registo, { url: 'u', chave: 'k', token: 't' });
+});
