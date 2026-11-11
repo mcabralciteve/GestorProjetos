@@ -1091,7 +1091,8 @@ const Crm = {
       <button type="button" class="btn btn-sm" data-sec-acao="nova-proposta">+ Proposta</button><div class="crm-inline"></div>`;
     const slot = raiz.querySelector('.crm-inline');
     const abrirInline = p => {
-      slot.innerHTML = `<div class="crm-inline-form">${this.htmlFormProposta(p, true)}${this.botoesForm(!!p.id)}</div>`;
+      slot.innerHTML = `<div class="crm-inline-form">${this.htmlFormProposta(p, true)}${this.botoesForm(!!p.id)}<h4 class="crm-h">Orçamentos</h4><div class="crm-inline-orc">${p.id ? '' : '<p class="hint">Guarda a proposta para poderes criar orçamentos.</p>'}</div></div>`;
+      if (p.id && typeof Orc !== 'undefined') Orc.secOrcamentos(slot.querySelector('.crm-inline-orc'), p);
       this.ligarFormProposta(slot, p, () => this.secPropostas(raiz, opId), () => { slot.innerHTML = ''; });
     };
     this.ligarAcoes(raiz, {
