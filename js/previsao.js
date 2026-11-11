@@ -47,10 +47,18 @@ const Previsao = {
       const equipa = p.equipaId ? S.equipas.find(e => e.id === p.equipaId) : null;
       const dept = equipa && equipa.departamentoId ? S.departamentos.find(d => d.id === equipa.departamentoId) : null;
       const horasRegistadas = S.registos.filter(r => App.registoPertenceAoProjeto(r, p)).reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
-      const tarefas = (p.tarefas || []).filter(t => !App.temFilhos(p, t.id) && (t.progresso || 0) < 100).map(t => ({
-        inicio: t.inicio, fim: t.fim,
-        horasPorFazer: (t.recursoIds || []).reduce((s, rid) => s + Math.max(0, App.horasAlocadas(t, rid) - App.horasJaRegistadasTarefa(p, t, rid)), 0)
-      }));
+      // Horas por fazer de cada tarefa, também por EQUIPA do consultor (consultor sem equipa, ou que já não existe, conta na equipa do projeto).
+      const tarefas = (p.tarefas || []).filter(t => !App.temFilhos(p, t.id) && (t.progresso || 0) < 100).map(t => {
+        const horasPorEquipa = {};
+        (t.recursoIds || []).forEach(rid => {
+          const h = Math.max(0, App.horasAlocadas(t, rid) - App.horasJaRegistadasTarefa(p, t, rid));
+          if (!(h > 0)) return;
+          const rec = S.recursos.find(r => r.id === rid);
+          const eq = (rec && rec.equipaId) || p.equipaId || '';
+          horasPorEquipa[eq] = (horasPorEquipa[eq] || 0) + h;
+        });
+        return { inicio: t.inicio, fim: t.fim, horasPorFazer: Object.values(horasPorEquipa).reduce((s, h) => s + h, 0), horasPorEquipa };
+      });
       const rec = PrevisaoLogica.reconhecimentoBacklog({ valorVendido: p.valorVendido, horasVendidas: p.horasVendidas, horasRegistadas, tarefas, hojeISO, meses });
       // Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista.
       const fat = p.semFaturacao
@@ -62,8 +70,17 @@ const Previsao = {
       const base = {
         id: p.id, nome: App.rotuloProjeto(p), tipo: tipoEf.rotulo, tipoOrigem: tipoEf.origem, semFaturacao: !!p.semFaturacao, equipaId: p.equipaId || '', equipa: equipa ? equipa.nome : 'Por atribuir',
         deptId: dept ? dept.id : '', dept: dept ? dept.nome : '', suspenso: p.ativo === false, estado: p.estado, valorVendido: p.valorVendido || 0,
-        horasRegistadas, rec, fat
+        horasRegistadas, rec, fat, partes: []
       };
+      // O reconhecimento reparte-se pelas equipas dos consultores (a faturação fica toda na equipa do projeto: a fatura é do projeto).
+      if (rec) {
+        const porEq = PrevisaoLogica.repartirPorEquipa({ rec, tarefas, equipaProjeto: p.equipaId || '', hojeISO, meses });
+        base.partes = Object.entries(porEq).map(([eid, r]) => {
+          const eq = eid ? S.equipas.find(e => e.id === eid) : null, d = eq && eq.departamentoId ? S.departamentos.find(x => x.id === eq.departamentoId) : null;
+          return { equipaId: eid, equipa: eq ? eq.nome : 'Por atribuir', deptId: d ? d.id : '', rec: r };
+        }).sort((a, b) => b.rec.porReconhecer - a.rec.porReconhecer);
+        if (base.partes.length) base.equipa = base.partes.map(x => x.equipa).join(' + ');
+      }
       if (!rec) {
         if (p.estado !== 'Concluído') { semDados.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
         if (fat.total > 0) { linhas.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
@@ -124,9 +141,28 @@ const Previsao = {
     return out;
   },
 
+  // Filtra por tipo, direção e área. Nas oportunidades vale a equipa da oportunidade. Num projeto contratado, a ÁREA escolhida vê a parte
+  // do reconhecimento que as suas pessoas vão produzir (mesmo que o projeto seja de outra equipa) e, se for a equipa do projeto, as faturas.
   filtrar(linhas) {
     const f = this.filtros;
-    return linhas.filter(l => (!f.tipo || l.tipo === f.tipo) && (!f.dept || l.deptId === f.dept) && (!f.equipa || l.equipaId === f.equipa));
+    const porTipo = linhas.filter(l => !f.tipo || l.tipo === f.tipo);
+    if (!f.dept && !f.equipa) return porTipo;
+    const casa = (eqId, deptId) => (!f.equipa || eqId === f.equipa) && (!f.dept || deptId === f.dept);
+    const out = [];
+    porTipo.forEach(l => {
+      if (!l.partes) { if (casa(l.equipaId, l.deptId)) out.push(l); return; }       // oportunidade
+      const doProjeto = casa(l.equipaId, l.deptId);
+      const partes = l.partes.filter(p => casa(p.equipaId, p.deptId));
+      if (!partes.length && !(doProjeto && l.fat.total > 0)) return;
+      if (partes.length === l.partes.length && doProjeto) { out.push(l); return; }   // o projeto inteiro cabe no filtro
+      const meses = Object.keys(l.fat.porMes);
+      out.push(Object.assign({}, l, {
+        rec: l.rec ? PrevisaoLogica.recDasPartes(l.rec, partes.map(p => p.rec), meses) : l.rec,
+        fat: doProjeto ? l.fat : { porMes: PrevisaoLogica.vazio(meses), emAtraso: 0, nEmAtraso: 0, foraDoHorizonte: 0, semData: 0, total: 0 },
+        equipa: partes.length ? partes.map(p => p.equipa).join(' + ') : l.equipa, parcial: { doProjeto, equipas: partes.map(p => p.equipa) }
+      }));
+    });
+    return out;
   },
 
   // ---------- desenho ----------
@@ -270,9 +306,14 @@ const Previsao = {
         const dataFim = PrevisaoLogica.addMeses(l.inicio, l.duracao - 1);
         pressup = `${escapeHtml(l.etapa)}${l.categoria === 'ganha' ? ' (ganha, sem projeto)' : ''} · valor ${this.eur(l.valor)} × ${Math.round(l.peso * 100)}% = ${this.eur(l.valorPonderado)} · trabalho de ${this.rotuloMes(l.inicio)}/${l.inicio.slice(0, 4)} a ${this.rotuloMes(dataFim)}/${dataFim.slice(0, 4)} (${l.duracao} meses)${!l.duracaoDefinida ? ' — duração por defeito do tipo' : ''}${l.inicioOrigem === 'sem-fecho' ? ' — sem data de fecho: começa no mês seguinte' : ''} · ${l.temPlano ? 'plano de faturas: ' + l.plano.map(p => p.pct + '% em ' + this.rotuloMes(p.mes) + '/' + p.mes.slice(0, 4)).join(', ') : `sem plano de faturas: a faturação acompanha o trabalho, com ${l.atrasoFat} mês(es) de atraso`}. <a href="#" data-prev-op="${escapeAttr(l.id)}">Abrir oportunidade</a>`;
       } else {
-        pressup = l.rec
-          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}.`
-          : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`;
+        // Reconhecimento repartido pelas equipas dos consultores (quando há mais do que uma).
+        const tot = l.partes ? l.partes.reduce((s, x) => s + x.rec.porReconhecer, 0) : 0;
+        const reparto = l.partes && l.partes.length > 1 && tot > 0
+          ? ` · <b>por equipa</b> (horas por fazer de cada consultor; o que não tem horas previstas fica na equipa do projeto): ${l.partes.map(x => `${escapeHtml(x.equipa)} ${Math.round(x.rec.porReconhecer / tot * 100)}%`).join(' · ')}${l.parcial ? ` — a mostrar só ${l.parcial.equipas.map(escapeHtml).join(' + ') || 'as faturas'}${l.parcial.doProjeto ? '' : ' (as faturas ficam na equipa do projeto)'}` : ''}`
+          : '';
+        pressup = (l.rec
+          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}`
+          : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`) + (l.rec ? reparto + '.' : '');
       }
     return pressup;
   },

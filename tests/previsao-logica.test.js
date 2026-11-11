@@ -142,3 +142,74 @@ test('datas do trabalho para o projeto: dia 1 do mês de início ao último dia 
   assert.deepEqual(P.datasDoTrabalho('2026-12', 4), { inicio: '2026-12-01', fim: '2027-03-31' });
   assert.deepEqual(P.datasDoTrabalho('2026-11', 1), { inicio: '2026-11-01', fim: '2026-11-30' });
 });
+
+// ---------- Repartição do reconhecimento pelas equipas dos consultores ----------
+const somaPartes = (partes, k) => Object.values(partes).reduce((s, p) => s + p[k], 0);
+
+test('repartir por equipa: a soma das partes é o projeto inteiro e cada mês segue as horas dessa equipa', () => {
+  // 10000 € / 100 h = 100 €/h; tarefa de 26/10 a 6/11 (10 dias úteis) com 40 h da DCS e 20 h da RPA; nada registado
+  const tarefas = [{ inicio: '2026-10-26', fim: '2026-11-06', horasPorFazer: 60, horasPorEquipa: { DCS: 40, RPA: 20 } }];
+  const rec = P.reconhecimentoBacklog({ valorVendido: 10000, horasVendidas: 100, horasRegistadas: 0, tarefas, hojeISO: HOJE, meses });
+  const r = P.repartirPorEquipa({ rec, tarefas, equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  assert.equal(arred(r.DCS.porMes['2026-10']), 2000);       // 5 dias de outubro: 30 h × 100 €/h, 2/3 da DCS = 20 h
+  assert.equal(arred(r.RPA.porMes['2026-10']), 1000);
+  assert.equal(arred(r.DCS.porMes['2026-11']), 2000);
+  assert.equal(arred(r.RPA.porMes['2026-11']), 1000);
+  assert.equal(arred(somaPartes(r, 'porReconhecer')), arred(rec.porReconhecer));
+  assert.equal(arred(somaPartes(r, 'dentroDoHorizonte')), arred(rec.dentroDoHorizonte));
+  // 6000 € calendarizados (60 h) + 4000 € sem horas previstas, que ficam na equipa do projeto
+  assert.equal(arred(r.DCS.calendarizado), 4000);
+  assert.equal(arred(r.RPA.calendarizado), 2000);
+  assert.equal(arred(r.DCS.naoCalendarizado), 4000);
+  assert.equal(r.RPA.naoCalendarizado, 0);
+  assert.equal(arred(r.DCS.porReconhecer), 8000);
+  assert.equal(arred(r.RPA.porReconhecer), 2000);
+});
+
+test('repartir por equipa: horas em meses diferentes por equipa (a RPA só trabalha em novembro)', () => {
+  const tarefas = [
+    { inicio: '2026-10-26', fim: '2026-10-30', horasPorFazer: 20, horasPorEquipa: { DCS: 20 } },
+    { inicio: '2026-11-02', fim: '2026-11-06', horasPorFazer: 20, horasPorEquipa: { RPA: 20 } }
+  ];
+  const rec = P.reconhecimentoBacklog({ valorVendido: 4000, horasVendidas: 40, horasRegistadas: 0, tarefas, hojeISO: HOJE, meses });
+  const r = P.repartirPorEquipa({ rec, tarefas, equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  assert.equal(arred(r.DCS.porMes['2026-10']), 2000);
+  assert.equal(r.DCS.porMes['2026-11'], 0);
+  assert.equal(arred(r.RPA.porMes['2026-11']), 2000);
+  assert.equal(r.RPA.porMes['2026-10'], 0);
+});
+
+test('repartir por equipa: sem horas por consultor, tudo fica na equipa do projeto; sem equipa = chave vazia', () => {
+  const rec = P.reconhecimentoBacklog({ valorVendido: 5000, horasVendidas: 50, horasRegistadas: 10, tarefas: [], hojeISO: HOJE, meses });
+  const r = P.repartirPorEquipa({ rec, tarefas: [], equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  assert.deepEqual(Object.keys(r), ['DCS']);
+  assert.equal(arred(r.DCS.porReconhecer), 4000);
+  assert.equal(arred(r.DCS.naoCalendarizado), 4000);
+  assert.deepEqual(Object.keys(P.repartirPorEquipa({ rec, tarefas: [], equipaProjeto: '', hojeISO: HOJE, meses })), ['']);
+  assert.deepEqual(P.repartirPorEquipa({ rec: null, tarefas: [], equipaProjeto: 'DCS', hojeISO: HOJE, meses }), {});
+});
+
+test('repartir por equipa: o teto do backlog mantém-se (plano maior que o valor que falta reduz todas as equipas)', () => {
+  const tarefas = [{ inicio: '2026-10-26', fim: '2026-10-30', horasPorFazer: 100, horasPorEquipa: { DCS: 50, RPA: 50 } }];
+  const rec = P.reconhecimentoBacklog({ valorVendido: 1000, horasVendidas: 50, horasRegistadas: 0, tarefas, hojeISO: HOJE, meses });
+  const r = P.repartirPorEquipa({ rec, tarefas, equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  assert.equal(arred(r.DCS.porMes['2026-10'] + r.RPA.porMes['2026-10']), 1000);
+  assert.equal(arred(r.DCS.porReconhecer), 500);
+  assert.equal(arred(r.RPA.porReconhecer), 500);
+});
+
+test('recDasPartes: soma só as equipas escolhidas e recalcula a cobertura; sem partes dá zeros', () => {
+  const tarefas = [{ inicio: '2026-10-26', fim: '2026-11-06', horasPorFazer: 60, horasPorEquipa: { DCS: 40, RPA: 20 } }];
+  const rec = P.reconhecimentoBacklog({ valorVendido: 10000, horasVendidas: 100, horasRegistadas: 0, tarefas, hojeISO: HOJE, meses });
+  const r = P.repartirPorEquipa({ rec, tarefas, equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  const soRpa = P.recDasPartes(rec, [r.RPA], meses);
+  assert.equal(arred(soRpa.porReconhecer), 2000);
+  assert.equal(soRpa.cobertura, 1);
+  assert.equal(soRpa.euroHora, rec.euroHora);
+  const todas = P.recDasPartes(rec, Object.values(r), meses);
+  assert.equal(arred(todas.porReconhecer), arred(rec.porReconhecer));
+  assert.equal(arred(P.total(todas.porMes, meses)), arred(P.total(rec.porMes, meses)));
+  const nenhuma = P.recDasPartes(rec, [], meses);
+  assert.equal(nenhuma.porReconhecer, 0);
+  assert.equal(nenhuma.cobertura, 1);
+});

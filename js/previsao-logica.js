@@ -82,6 +82,60 @@ const PrevisaoLogica = {
     };
   },
 
+  // Reparte o reconhecimento do backlog de UM projeto pelas EQUIPAS dos consultores (um projeto da DCS pode ter consultores da RPA:
+  // cada equipa vê no mapa a sua parte). "rec" é o resultado de reconhecimentoBacklog; tarefas: [{ inicio, fim, horasPorEquipa:
+  // { equipaId: horasPorFazer } }]. Em cada mês, o valor reconhecido reparte-se pelas horas por fazer de cada equipa nesse mês; a parte
+  // do backlog com horas previstas reparte-se pelo total de horas por fazer de cada equipa; o que NÃO tem horas previstas (sem
+  // consultor) fica na equipa do projeto. Consultor sem equipa conta como da equipa do projeto (quem chama já o resolve em horasPorEquipa).
+  // A soma das partes é sempre igual ao projeto inteiro. Devolve { equipaId: { porMes, dentroDoHorizonte, calendarizado, naoCalendarizado, porReconhecer } }.
+  repartirPorEquipa({ rec, tarefas, equipaProjeto, hojeISO, meses }) {
+    if (!rec) return {};
+    const eqP = equipaProjeto || '';
+    const horasEq = {};                                   // equipa → { mês → horas }, em TODOS os meses (também fora do horizonte)
+    (tarefas || []).forEach(t => Object.entries(t.horasPorEquipa || {}).forEach(([eq, h]) => {
+      const d = this.distribuirHorasPorMes(t.inicio, t.fim, h, hojeISO);
+      const alvo = horasEq[eq] || (horasEq[eq] = {});
+      Object.entries(d).forEach(([m, x]) => { alvo[m] = (alvo[m] || 0) + x; });
+    }));
+    const totalMes = {}, totalEq = {};
+    let totalH = 0;
+    Object.entries(horasEq).forEach(([eq, ms]) => Object.entries(ms).forEach(([m, x]) => {
+      totalMes[m] = (totalMes[m] || 0) + x; totalEq[eq] = (totalEq[eq] || 0) + x; totalH += x;
+    }));
+    const out = {};
+    const parte = eq => out[eq] || (out[eq] = { porMes: this.vazio(meses), dentroDoHorizonte: 0, calendarizado: 0, naoCalendarizado: 0, porReconhecer: 0 });
+    if (!(totalH > 0)) {                                  // nenhuma hora prevista por consultor: tudo na equipa do projeto
+      Object.assign(parte(eqP), { porMes: Object.assign({}, rec.porMes), dentroDoHorizonte: rec.dentroDoHorizonte, calendarizado: rec.calendarizado, naoCalendarizado: rec.naoCalendarizado, porReconhecer: rec.porReconhecer });
+      return out;
+    }
+    Object.keys(totalEq).forEach(eq => {
+      const p = parte(eq);
+      meses.forEach(m => {
+        if (!(totalMes[m] > 0)) return;
+        const v = rec.porMes[m] * ((horasEq[eq][m] || 0) / totalMes[m]);
+        p.porMes[m] = v; p.dentroDoHorizonte += v;
+      });
+      p.calendarizado = rec.calendarizado * totalEq[eq] / totalH;
+    });
+    parte(eqP).naoCalendarizado = rec.naoCalendarizado;
+    Object.keys(out).forEach(eq => {
+      out[eq].porReconhecer = out[eq].calendarizado + out[eq].naoCalendarizado;
+      if (out[eq].porReconhecer < 0.005 && out[eq].dentroDoHorizonte < 0.005) delete out[eq];   // equipa sem nada neste projeto
+    });
+    return out;
+  },
+  // Reconhecimento só de algumas equipas (as partes escolhidas), com a mesma forma que reconhecimentoBacklog. "rec" é o do projeto inteiro
+  // (de onde vêm reconhecidoHoje, euroHora…); "partes" são os valores de repartirPorEquipa a incluir (pode ser nenhuma = zeros).
+  recDasPartes(rec, partes, meses) {
+    const s = f => partes.reduce((t, p) => t + f(p), 0);
+    const r = Object.assign({}, rec, {
+      porMes: this.somar(partes.map(p => p.porMes), meses), dentroDoHorizonte: s(p => p.dentroDoHorizonte),
+      calendarizado: s(p => p.calendarizado), naoCalendarizado: s(p => p.naoCalendarizado), porReconhecer: s(p => p.porReconhecer)
+    });
+    r.cobertura = r.porReconhecer > 0 ? r.calendarizado / r.porReconhecer : 1;
+    return r;
+  },
+
   // Faturas por emitir de UM projeto, por mês. faturas: [{ dataPrevista, valor, emitida }]. As com data anterior ao mês atual
   // ficam no mês atual ("em atraso"); as depois do horizonte ficam de fora ("foraDoHorizonte"); as sem data são "semData".
   faturacaoContratada({ faturas, hojeISO, meses }) {
