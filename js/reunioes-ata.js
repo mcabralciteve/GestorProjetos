@@ -109,7 +109,7 @@ const ReunioesAta = {
       partes.push(this.titulo('Documentos'));
       ficheiros.forEach(f => partes.push(this.par([f.nome, f.ligacao].filter(Boolean).join(' — '), { depois: 60 })));
     }
-    partes.push(this.par(`Ata elaborada${meta.emitidaPor ? ` por ${meta.emitidaPor}` : ''}${meta.emitidaEm ? ` em ${L.formatarData(meta.emitidaEm)}` : ''} no Gestor de Projetos.`, { italico: true, cor: '5B6B78', tam: 18, antes: 240 }));
+    partes.push(this.par(`Ata elaborada${meta.emitidaPor ? ` por ${meta.emitidaPor}` : ''}${meta.emitidaEm ? ` em ${L.formatarData(meta.emitidaEm)}` : ''} no FIO.`, { italico: true, cor: '5B6B78', tam: 18, antes: 240 }));
     return partes.join('');
   },
 

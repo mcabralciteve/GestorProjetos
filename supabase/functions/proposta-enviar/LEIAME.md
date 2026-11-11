@@ -20,7 +20,7 @@ aviso. Só quem tem acesso ao CRM (`crm_tem_acesso()`) pode chamar a função (a
    ```
    (sem `--no-verify-jwt`: esta função só aceita pedidos de utilizadores com sessão.)
 3. **Testar o email** na app com a caixa "Só um teste para mim" (envia só para o teu endereço, sem copiar nem mudar o estado).
-4. **Permissão do SharePoint** (tem de ser o administrador do Microsoft 365): na aplicação Azure usada pelo Gestor de Projetos (a das
+4. **Permissão do SharePoint** (tem de ser o administrador do Microsoft 365): na aplicação Azure usada pelo FIO (a das
    variáveis `MS_CLIENT_ID`/`MS_TENANT_ID`), em *API permissions → Microsoft Graph → Application permissions*:
    - **`Sites.Selected`** (recomendado) e depois dar-lhe acesso de **escrita** apenas ao site `https://citeve2.sharepoint.com/sites/CITEVEDEPTD`
      (Graph: `POST /sites/{site-id}/permissions` com `roles: ["write"]`); ou

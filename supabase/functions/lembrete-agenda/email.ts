@@ -81,7 +81,7 @@ export function assuntoDoResumo(r: ResumoDia): string {
 
 export function montarEmail(nome: string, diaTexto: string, r: ResumoDia, appUrl: string): EmailMontado {
   const primeiro = nome.split(' ')[0];
-  const rodape = 'Mensagem automática do Gestor de Projetos — podes desligá-la em "A minha conta".';
+  const rodape = 'Mensagem automática do FIO — podes desligá-la em "A minha conta".';
   const sec = seccoes(r);
   const resto = (s: Seccao) => s.total > s.linhas.length ? s.total - s.linhas.length : 0;
 

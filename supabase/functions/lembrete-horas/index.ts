@@ -30,8 +30,8 @@ function montarEmail(nome: string, dias: { iso: string; faltam: number }[]): Ema
   const assunto = `Tens ${dias.length} dia(s) por preencher no registo de horas`;
   const linhasTxt = dias.map(d => `  • ${formatarDia(d.iso)} — faltam ${formatarHoras(d.faltam)}`).join('\n');
   const linhasHtml = dias.map(d => `<li>${escapar(formatarDia(d.iso))} — faltam <b>${formatarHoras(d.faltam)}</b></li>`).join('');
-  const texto = `Olá ${primeiro},\n\nNos últimos ${DIAS_JANELA} dias úteis há ${dias.length} dia(s) com menos de 8h registadas (${formatarHoras(total)} em falta):\n\n${linhasTxt}\n\nRegista as horas em ${APP_URL}\n\n(Mensagem automática do Gestor de Projetos — podes desligá-la em "A minha conta". Feriados, fins de semana e ausências já não contam.)`;
-  const html = `<p>Olá ${escapar(primeiro)},</p><p>Nos últimos ${DIAS_JANELA} dias úteis há <b>${dias.length} dia(s)</b> com menos de 8h registadas (${formatarHoras(total)} em falta):</p><ul>${linhasHtml}</ul><p><a href="${APP_URL}">Registar as horas</a></p><p style="color:#888;font-size:12px">Mensagem automática do Gestor de Projetos — podes desligá-la em "A minha conta". Feriados, fins de semana e ausências já não contam.</p>`;
+  const texto = `Olá ${primeiro},\n\nNos últimos ${DIAS_JANELA} dias úteis há ${dias.length} dia(s) com menos de 8h registadas (${formatarHoras(total)} em falta):\n\n${linhasTxt}\n\nRegista as horas em ${APP_URL}\n\n(Mensagem automática do FIO — podes desligá-la em "A minha conta". Feriados, fins de semana e ausências já não contam.)`;
+  const html = `<p>Olá ${escapar(primeiro)},</p><p>Nos últimos ${DIAS_JANELA} dias úteis há <b>${dias.length} dia(s)</b> com menos de 8h registadas (${formatarHoras(total)} em falta):</p><ul>${linhasHtml}</ul><p><a href="${APP_URL}">Registar as horas</a></p><p style="color:#888;font-size:12px">Mensagem automática do FIO — podes desligá-la em "A minha conta". Feriados, fins de semana e ausências já não contam.</p>`;
   return { assunto, texto, html };
 }
 

@@ -187,7 +187,7 @@ const Backup = {
     const agora = new Date().toISOString();
     const partes = [
       '-- ============================================================================',
-      `-- Backup de DADOS do GestorProjetos — gerado em ${agora}`,
+      `-- Backup de DADOS do FIO (GestorProjetos) — gerado em ${agora}`,
       '-- ============================================================================',
       '-- Como restaurar:',
       '--   1) Num projeto Supabase novo (ou a limpar), corre primeiro o supabase/schema.sql',
