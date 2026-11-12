@@ -253,3 +253,34 @@ test('diasGravados e pedidoConfirmacao: soma por dia só das linhas ok; sem regi
   assert.equal(p.opcoes.headers.apikey, 'K');
   assert.deepEqual(JSON.parse(p.opcoes.body), { p_token: 'T', p_dias: { '2026-10-19': 8, '2026-10-20': 2 }, p_horas: 10, p_email: 'x@y.pt' });
 });
+
+// ---------- identificação do projeto do Gestor: projeto · cliente · nº ----------
+const linhaIfic = (extra) => lp('Acompanhamento IFIC', Object.assign({ tarefas: ['Reunião de Acompanhamento - Novembro 26'], projetos: ['Acompanhamento IFIC'], clientes: ['Oldtrading, Lda'],
+  origens: [{ nome: 'Acompanhamento IFIC', cliente: 'Oldtrading, Lda', idInterno: '2026/830' }], projeto: { ref: '', nome: 'Acompanhamento IFIC', idInterno: '2026/830' }, horas: 2 }, extra));
+
+test('origens: a nota leva projeto, cliente e nº do Gestor em qualquer destino (projeto, atividade, serviço)', () => {
+  const d = dados([], { services: servicos, activities: [{ code: 'OTHER' }, { code: 'CONSULTING' }] });
+  const esperado = '[Gestor] Reunião de Acompanhamento - Novembro 26 — Acompanhamento IFIC · Oldtrading, Lda · 2026/830';
+  const porEscolher = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: {} });
+  assert.equal(porEscolher.linhas[0].estado, 'escolher');
+  assert.equal(porEscolher.linhas[0].nota, esperado);
+  const projeto = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'projeto', id: 1 } } });
+  assert.equal(projeto.linhas[0].tipo, 'PROJECT'); assert.equal(projeto.linhas[0].nota, esperado);
+  assert.equal(I.corpoGravacao(projeto, d, pacote([linhaIfic()])).entries[0].note, esperado);
+  const atividade = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'atividade', atividade: 'OTHER' } } });
+  assert.equal(atividade.linhas[0].nota, esperado);
+  const servico = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'servico', id: 7, atividade: 'CONSULTING' } } });
+  assert.equal(servico.linhas[0].nota, esperado);
+  // a nota escrita à mão continua a mandar
+  const editada = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: { 0: { destino: 'projeto', id: 1, nota: 'Texto meu' } } });
+  assert.equal(editada.linhas[0].nota, '[Gestor] Texto meu');
+});
+
+test('textoOrigem: o painel mostra projeto · cliente · nº; pacote antigo mostra o nome e o nº; sem projeto fica vazio', () => {
+  const d = dados([], { activities: [{ code: 'OTHER' }] });
+  const p = I.planear({ pacote: pacote([linhaIfic()]), dados: d, memoria: {}, edicoes: {} });
+  assert.equal(I.textoOrigem(p.linhas[0]), 'Acompanhamento IFIC · Oldtrading, Lda · 2026/830');
+  assert.equal(I.textoOrigem({ projeto: { nome: 'TEXP@CT', idInterno: '2026/1' } }), 'TEXP@CT · 2026/1');
+  assert.equal(I.textoOrigem({ projeto: null }), '');
+  assert.equal(I.textoOrigem({ origens: [{ nome: 'A', cliente: 'X', idInterno: '1' }, { nome: 'B', cliente: '', idInterno: '2' }] }), 'A · X · 1; B · 2');
+});

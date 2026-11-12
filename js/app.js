@@ -10226,10 +10226,12 @@ const App = {
       m.querySelector('#orcSemPessoa').textContent = pessoa;
       const est = this.estadoOrcprevHtml(recurso, sem.inicio);
       const semEmail = !String(recurso.email || '').trim();
+      // Projeto · Cliente · nº do projeto: o mesmo texto que segue na nota para o orcprev.
+      const nomeOrigem = l => escapeHtml((l.origens && l.origens.length ? l.origens.map(o => OrcprevLogica.rotuloOrigem(o)).join('; ') : (l.projeto && l.projeto.nome)) || '(sem projeto)');
       const linhasHtml = sem.linhas.map(l => {
-        const destino = l.tipo === 'PROJECT' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
-          : l.tipo === 'APPLICATION' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + ` <span class="hint">→ Preparação de candidaturas${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
-          : l.tipo === 'SERVICE' ? escapeHtml((l.projeto && l.projeto.nome) || '(sem projeto)') + ` <span class="hint">→ ${l.atividade === 'PROTOTYPING' ? 'Prototipagem' : 'Consultoria'}${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
+        const destino = l.tipo === 'PROJECT' ? nomeOrigem(l) + (l.projeto && l.projeto.ref ? ` <span class="hint">→ ${escapeHtml(l.projeto.ref)}</span>` : '')
+          : l.tipo === 'APPLICATION' ? nomeOrigem(l) + ` <span class="hint">→ Preparação de candidaturas${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
+          : l.tipo === 'SERVICE' ? nomeOrigem(l) + ` <span class="hint">→ ${l.atividade === 'PROTOTYPING' ? 'Prototipagem' : 'Consultoria'}${l.projeto && l.projeto.ref ? ': ' + escapeHtml(l.projeto.ref) : ''}</span>`
             : `${escapeHtml(OrcprevLogica.nomeAtividade(l.atividade))} <span class="hint">(atividade)</span>`;
         return `<tr><td>${NOMES_DIA[new Date(l.data + 'T00:00:00Z').getUTCDay()]} ${fmtDia(l.data)}</td><td>${destino}</td><td style="text-align:right;">${fmtH(l.horas)} h</td></tr>`;
       }).join('');

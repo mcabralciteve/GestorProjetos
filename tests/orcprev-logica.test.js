@@ -34,7 +34,7 @@ test('várias tarefas do mesmo projeto no mesmo dia somam-se; nomes das tarefas 
   const s = L.linhasDaSemana(ctx([reg({ horas: 2, tarefaNome: 'Análise' }), reg({ horas: 1.5, tarefaNome: 'Relatório' }), reg({ horas: 1, tarefaNome: 'Análise' })]));
   assert.equal(s.linhas.length, 1);
   assert.equal(s.linhas[0].horas, 4.5);
-  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório');
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório — TEXP@CT · 2026/1'); // tarefas + projeto e nº do projeto no Gestor
   assert.deepEqual(s.linhas[0].projeto, { ref: '005323', nome: 'TEXP@CT', idInterno: '2026/1' });
   assert.equal(s.inicio, '2026-10-19'); assert.equal(s.fim, '2026-10-25');
 });
@@ -108,15 +108,19 @@ test('projeto de consultoria → serviço do orcprev; sem serviço → "Outras a
   assert.equal(sv.atividade, 'CONSULTING'); assert.deepEqual(sv.projeto, { ref: 'Alfa · Auditoria', nome: 'Auditoria Alfa', idInterno: '2026/50' });
   const outras = s.linhas[2];
   assert.equal(outras.atividade, 'OTHER'); assert.equal(outras.projeto, null); assert.equal(outras.horas, 2);
-  assert.equal(outras.nota, '[Gestor] Relatório — Estudo Beta; Estudo Gama');
+  assert.equal(outras.nota, '[Gestor] Relatório — Estudo Beta · 2026/51; Estudo Gama · 2026/52');
 });
 
 test('cada linha leva tarefas, projetos e clientes — para o importador poder refazer a nota se o destino mudar', () => {
   projetos.p1.cliente = 'Têxtil X';
   const s = L.linhasDaSemana(ctx([reg({ horas: 1, tarefaNome: 'Análise' }), reg({ horas: 1, tarefaNome: 'Relatório', cliente: 'Têxtil X' })]));
   assert.deepEqual([s.linhas[0].tarefas, s.linhas[0].projetos, s.linhas[0].clientes], [['Análise', 'Relatório'], ['TEXP@CT'], ['Têxtil X']]);
-  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório'); // num projeto do orcprev basta o que foi feito
-  assert.equal(L.textoNota(s.linhas[0], 'ACTIVITY'), 'Análise; Relatório — TEXP@CT (Têxtil X)');
+  assert.deepEqual(s.linhas[0].origens, [{ nome: 'TEXP@CT', cliente: 'Têxtil X', idInterno: '2026/1' }]);
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise; Relatório — TEXP@CT · Têxtil X · 2026/1'); // projeto, cliente e nº, qualquer que seja o destino
+  assert.equal(L.textoNota(s.linhas[0], 'ACTIVITY'), 'Análise; Relatório — TEXP@CT · Têxtil X · 2026/1');
+  // linha de um pacote antigo (sem "origens"): regra antiga
+  assert.equal(L.textoNota({ tarefas: ['T'], projetos: ['P'], clientes: ['C'] }, 'PROJECT'), 'T');
+  assert.equal(L.textoNota({ tarefas: ['T'], projetos: ['P'], clientes: ['C'] }, 'ACTIVITY'), 'T — P (C)');
   assert.equal(L.textoNota({ tarefas: [], projetos: [], clientes: ['Alfa'] }, 'ACTIVITY'), 'Alfa');
   assert.equal(L.montarNota('  '), '[Gestor]');
   delete projetos.p1.cliente;
@@ -131,7 +135,7 @@ test('candidatura: projeto do Gestor que corresponde a "Preparação de candidat
   assert.deepEqual(s.linhas.map(l => l.tipo), ['PROJECT', 'APPLICATION']);
   assert.equal(s.linhas[1].atividade, 'APPLICATION_PREP');
   assert.deepEqual(s.linhas[1].projeto, { ref: 'AI FACTORY', nome: 'Candidatura AI Factory', idInterno: '2026/60' });
-  assert.equal(s.linhas[1].nota, '[Gestor] Formulário'); // o projeto identifica-se no orcprev: basta o que foi feito
+  assert.equal(s.linhas[1].nota, '[Gestor] Formulário — Candidatura AI Factory · 2026/60');
 });
 
 test('as notas escritas no Gestor passam para a nota do orcprev (junto da tarefa a que pertencem)', () => {
@@ -141,10 +145,10 @@ test('as notas escritas no Gestor passam para a nota do orcprev (junto da tarefa
     reg({ horas: 1, tarefaNome: '', notas: 'só uma nota' }),
     reg({ horas: 1, tarefaNome: 'Análise', notas: 'revi o relatório final' }) // repetida: não duplica
   ]));
-  assert.equal(s.linhas[0].nota, '[Gestor] Análise: revi o relatório final; Reunião; só uma nota');
-  // num serviço / atividade, a nota leva também o projeto e o cliente
+  assert.equal(s.linhas[0].nota, '[Gestor] Análise: revi o relatório final; Reunião; só uma nota — TEXP@CT · 2026/1');
+  // num serviço / atividade é igual: tarefas e notas, depois o projeto
   const o = L.linhasDaSemana(ctx([reg({ projetoId: 'c2', projetoNome: 'Estudo Beta', projetoIdInterno: '2026/51', horas: 1, tarefaNome: 'Relatório', notas: 'entregue ao cliente' })]));
-  assert.equal(o.linhas[0].nota, '[Gestor] Relatório: entregue ao cliente — Estudo Beta');
+  assert.equal(o.linhas[0].nota, '[Gestor] Relatório: entregue ao cliente — Estudo Beta · 2026/51');
 });
 
 // ---------- o que já foi carregado no orcprev ----------
@@ -198,4 +202,23 @@ test('pacote: leva o registo só se estiver completo', () => {
   assert.equal(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana }).registo, undefined);
   assert.equal(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana, registo: { url: 'u', chave: 'k' } }).registo, undefined);
   assert.deepEqual(L.pacote({ email: 'a@b.pt', pessoa: 'A', semana, registo: { url: 'u', chave: 'k', token: 't' } }).registo, { url: 'u', chave: 'k', token: 't' });
+});
+
+// ---------- identificação do projeto no orcprev: projeto · cliente · nº ----------
+test('origens: projetos com o mesmo nome em clientes diferentes ficam distinguíveis na nota; tipo de trabalho leva só o cliente', () => {
+  projetos.i1 = { id: 'i1', idInterno: '2026/830', nome: 'Acompanhamento IFIC', cliente: 'Oldtrading, Lda', orcprevRef: '' };
+  projetos.i2 = { id: 'i2', idInterno: 'INT-2026-007', nome: 'Acompanhamento IFIC', cliente: 'Cordeiro e Campos, S.A', orcprevRef: '' };
+  const s = L.linhasDaSemana(ctx([
+    reg({ projetoId: 'i1', projetoNome: 'Acompanhamento IFIC', projetoIdInterno: '2026/830', horas: 2, tarefaNome: 'Reunião de Acompanhamento' }),
+    reg({ projetoId: 'i2', projetoNome: 'Acompanhamento IFIC', projetoIdInterno: 'INT-2026-007', horas: 1, tarefaNome: 'Reunião de Acompanhamento' }),
+    reg({ tipoTrabalhoId: 'reun', projetoId: null, projetoNome: '', projetoIdInterno: '', horas: 1, tarefaNome: '', cliente: 'Valmet, Lda' })
+  ]));
+  assert.deepEqual(s.linhas.map(l => l.nota).sort(), [
+    '[Gestor] Reunião de Acompanhamento — Acompanhamento IFIC · Cordeiro e Campos, S.A · INT-2026-007',
+    '[Gestor] Reunião de Acompanhamento — Acompanhamento IFIC · Oldtrading, Lda · 2026/830',
+    '[Gestor] Valmet, Lda'
+  ]);
+  assert.equal(L.rotuloOrigem({ nome: ' A ', cliente: '', idInterno: '2026/1' }), 'A · 2026/1');
+  assert.equal(L.rotuloOrigem(null), '');
+  delete projetos.i1; delete projetos.i2;
 });

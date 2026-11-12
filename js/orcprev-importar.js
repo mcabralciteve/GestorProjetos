@@ -110,11 +110,20 @@
     },
 
     // ---------- nota ----------
-    // Mesma regra do Gestor (OrcprevLogica.textoNota): num projeto do orcprev, só as tarefas; numa atividade ou serviço,
-    // acrescenta-se "— Projeto (Cliente)". Sem dados estruturados (pacote antigo), usa-se a nota que veio.
+    // Mesma regra do Gestor (OrcprevLogica.textoNota): as tarefas e, a seguir, "— Projeto · Cliente · nº do projeto" do Gestor,
+    // qualquer que seja o destino. Pacote sem "origens" (antigo): só nas atividades e serviços, "— Projeto (Cliente)".
+    // Sem dados estruturados (pacote ainda mais antigo), usa-se a nota que veio.
+    rotuloOrigem(o) { return [o && o.nome, o && o.cliente, o && o.idInterno].map(x => String(x || '').trim()).filter(Boolean).join(' · '); },
+    // De onde vem a linha, para mostrar no painel ("Vem do Gestor: …"): projeto, cliente e nº do projeto.
+    textoOrigem(l) {
+      if (Array.isArray(l.origens) && l.origens.length) return l.origens.map(o => this.rotuloOrigem(o)).filter(Boolean).join('; ');
+      const p = l.projeto;
+      return p ? [p.nome, p.idInterno].map(x => String(x || '').trim()).filter(Boolean).join(' · ') : '';
+    },
     textoNota(l, tipoFinal) {
       if (!Array.isArray(l.tarefas)) return String(l.nota || '').replace(/^\[Gestor\]\s*/, '');
       const tarefas = l.tarefas.join('; ');
+      if (Array.isArray(l.origens)) return [tarefas, l.origens.map(o => this.rotuloOrigem(o)).filter(Boolean).join('; ')].filter(Boolean).join(' — ');
       if (tipoFinal === 'PROJECT' || tipoFinal === 'APPLICATION') return tarefas;
       const projetos = l.projetos || [], clientes = l.clientes || [];
       const ctx = [];
@@ -226,7 +235,7 @@
       const linhas = (pacote.linhas || []).map((l, i) => {
         const chave = this.chaveProjeto(l.projeto);
         const base = { indice: i, data: l.data, tipo: l.tipo, tipoOriginal: l.tipo, atividade: l.atividade || null, horas: Number(l.horas) || 0, projeto: l.projeto || null,
-          tarefas: l.tarefas || null, projetos: l.projetos || null, clientes: l.clientes || null, chave, origem: 'automatico' };
+          tarefas: l.tarefas || null, projetos: l.projetos || null, clientes: l.clientes || null, origens: l.origens || null, chave, origem: 'automatico' };
         let r = automatico(l, base);
         // "soAberto": o editor foi aberto mas ainda não se mudou nada — conta como se não houvesse reajuste.
         const ov = edicoes && edicoes[i] && !edicoes[i].soAberto ? edicoes[i] : null;
@@ -471,7 +480,12 @@
       if (l.tipo === 'SERVICE') return linha(l.atividade === 'PROTOTYPING' ? 'Prototipagem, serviço' : 'Consultoria, serviço', l.servicoNomeOrcprev || 'por escolher');
       return linha('Atividade', l.atividade ? nomeAtividade(l.atividade) : 'por escolher');
     };
-    const origemTexto = l => l.projeto && l.projeto.nome ? l.projeto.nome : (l.tipoOriginal === 'ACTIVITY' ? 'Tipo de trabalho' : '');
+    // Projeto · Cliente · nº do projeto no Gestor (ou "Tipo de trabalho", com o cliente se o registo o tiver).
+    const origemTexto = l => {
+      const txt = Imp.textoOrigem(l);
+      const temProjeto = (l.origens || []).some(o => o && o.nome) || !!(l.projeto && l.projeto.nome);
+      return temProjeto ? txt : (l.tipoOriginal === 'ACTIVITY' ? 'Tipo de trabalho' + (txt ? ' · ' + txt : '') : txt);
+    };
 
     // Editor de uma linha: destino (projeto / serviço / atividade), alvo, nota e "lembrar".
     const editor = l => {
@@ -523,7 +537,7 @@
       const campoNota = h('input', { type: 'text', value: typeof ov.nota === 'string' ? ov.nota : l.textoNotaPadrao, maxlength: String(NOTA_MAX - MARCA.length - 1),
         style: 'width:100%;box-sizing:border-box;padding:5px;font:inherit;border:1px solid #cbd5e1;border-radius:6px;', oninput: ev => { ov.nota = ev.target.value; delete ov.soAberto; guardarRascunho(pacote, est); } });
       const lembrar = l.chave ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px;color:#475569;' },
-        h('input', { type: 'checkbox', onchange: ev => { ov.lembrar = ev.target.checked; guardarRascunho(pacote, est); } }), `Lembrar este destino para "${l.projeto && l.projeto.nome || l.chave}" (neste browser)`) : null;
+        h('input', { type: 'checkbox', onchange: ev => { ov.lembrar = ev.target.checked; guardarRascunho(pacote, est); } }), `Lembrar este destino para "${(l.projeto && origemTexto(l)) || l.chave}" (neste browser)`) : null;
       if (lembrar) lembrar.firstChild.checked = !!ov.lembrar;
       return h('div', { style: 'display:grid;gap:8px;' },
         h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;' }, h('span', { style: 'min-width:92px;color:#475569;' }, 'Enviar como'), selDestino, alvo),

@@ -117,7 +117,13 @@ const OrcprevLogica = {
     const inicio = this.segundaDaSemana(inicioISO);
     const fim = this.somarDias(inicio, 6);
     const grupos = new Map(); // chave → { data, tipo, atividade, projeto, horas, tarefas:Set, projetos:Set, clientes:Set }
-    const novoGrupo = (extra) => Object.assign({ horas: 0, tarefas: new Set(), projetos: new Set(), clientes: new Set() }, extra);
+    const novoGrupo = (extra) => Object.assign({ horas: 0, tarefas: new Set(), projetos: new Set(), clientes: new Set(), origens: new Map() }, extra);
+    // "origens" = de que projeto(s) do Gestor vêm as horas da linha: { nome, cliente, idInterno } (o nº GIAF ou interno).
+    // Vai na nota e aparece no importador, para se identificar o projeto no orcprev (há projetos com o mesmo nome em clientes diferentes).
+    const juntarOrigem = (grupo, nome, cliente, idInterno) => {
+      const o = { nome: String(nome || '').trim(), cliente: String(cliente || '').trim(), idInterno: String(idInterno || '').trim() };
+      if (o.nome || o.cliente || o.idInterno) grupo.origens.set(`${o.idInterno}|${o.nome}|${o.cliente}`, o);
+    };
     const semAtividade = new Map(); // nome do tipo → horas
     let totalGestor = 0;
 
@@ -155,13 +161,14 @@ const OrcprevLogica = {
         if (nome) grupo.projetos.add(nome);
         const cli = String(r.cliente || (proj && proj.cliente) || '').trim();
         if (cli) grupo.clientes.add(cli);
+        juntarOrigem(grupo, nome, cli, idInterno);
       } else if (!tipo.orcprevAtividade) {
         semAtividade.set(tipo.nome, (semAtividade.get(tipo.nome) || 0) + horas);
         return;
       } else {
         chave = `${r.data}|A|${tipo.orcprevAtividade}`;
         grupo = grupos.get(chave) || novoGrupo({ data: r.data, tipo: 'ACTIVITY', atividade: tipo.orcprevAtividade, projeto: null });
-        if (r.cliente) grupo.clientes.add(String(r.cliente).trim());
+        if (r.cliente) { grupo.clientes.add(String(r.cliente).trim()); juntarOrigem(grupo, '', r.cliente, ''); }
       }
       grupo.horas += horas;
       // "tarefas" leva, por registo, "Tarefa: nota que escreveste no Gestor" (ou só um dos dois): as notas passam todas para o orcprev.
@@ -182,9 +189,9 @@ const OrcprevLogica = {
     });
 
     const linhas = [...grupos.values()].filter(g => g.horas > 0).map(g => {
-      const tarefas = [...g.tarefas], projetos = [...g.projetos], clientes = [...g.clientes];
-      const nota = this.montarNota(this.textoNota({ tarefas, projetos, clientes }, g.tipo));
-      return { data: g.data, tipo: g.tipo, atividade: g.atividade, projeto: g.projeto, horas: g.horas, nota, tarefas, projetos, clientes };
+      const tarefas = [...g.tarefas], projetos = [...g.projetos], clientes = [...g.clientes], origens = [...g.origens.values()];
+      const nota = this.montarNota(this.textoNota({ tarefas, projetos, clientes, origens }, g.tipo));
+      return { data: g.data, tipo: g.tipo, atividade: g.atividade, projeto: g.projeto, horas: g.horas, nota, tarefas, projetos, clientes, origens };
     }).sort((a, b) => a.data.localeCompare(b.data)
       || (this._ordemTipo(a.tipo) - this._ordemTipo(b.tipo))
       || String((a.projeto && a.projeto.nome) || a.atividade || '').localeCompare(String((b.projeto && b.projeto.nome) || b.atividade || ''), 'pt'));
@@ -195,11 +202,14 @@ const OrcprevLogica = {
     const totalEnvio = linhas.reduce((s, l) => s + l.horas, 0);
     return { inicio, fim, linhas, avisos, totalGestor, totalEnvio };
   },
-  // Texto da nota (sem a marca): num projeto do orcprev basta o que foi feito (as tarefas); numa atividade ou serviço, que
-  // não identificam o projeto, acrescenta-se "— Projeto (Cliente)" para se saber de onde vêm as horas.
-  // O importador (js/orcprev-importar.js) repete esta regra quando a pessoa muda o destino de uma linha.
+  // Texto da nota (sem a marca): o que foi feito (as tarefas) e, a seguir, de que projeto do Gestor vêm as horas:
+  // "— Projeto · Cliente · nº do projeto" (GIAF ou interno), qualquer que seja o destino no orcprev — é assim que no orcprev
+  // se identifica o projeto e o cliente. O importador (js/orcprev-importar.js) repete esta regra.
+  // Sem "origens" (linha de um pacote antigo) vale a regra antiga: só nas atividades e serviços, "— Projeto (Cliente)".
+  rotuloOrigem(o) { return [o && o.nome, o && o.cliente, o && o.idInterno].map(x => String(x || '').trim()).filter(Boolean).join(' · '); },
   textoNota(l, tipoFinal) {
     const tarefas = (l.tarefas || []).join('; ');
+    if (Array.isArray(l.origens)) return [tarefas, l.origens.map(o => this.rotuloOrigem(o)).filter(Boolean).join('; ')].filter(Boolean).join(' — ');
     if (tipoFinal === 'PROJECT' || tipoFinal === 'APPLICATION') return tarefas;
     const projetos = l.projetos || [], clientes = l.clientes || [];
     const ctx = [];
