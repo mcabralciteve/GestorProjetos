@@ -987,6 +987,27 @@ td.occ-total,tr.cap-total th{background:var(--cinza-100);color:var(--cinza-900);
 .dia-ferias.fora-mes{visibility:hidden;cursor:default;}
 .dia-ferias.bloqueado{cursor:not-allowed;background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);color:var(--cinza-400);}
 .dia-ferias.selecionado{background:var(--azul);color:#fff;font-weight:700;}
+/* Calendário de Ausências: uma cor por tipo (as mesmas nos botões "Marcar como" e nos cartões do resumo). */
+.dia-ferias.t-ferias,.legend-swatch.t-ferias{background:var(--azul);}
+.dia-ferias.t-baixa,.legend-swatch.t-baixa{background:#7c3aed;}
+.dia-ferias.t-formacao,.legend-swatch.t-formacao{background:#c2410c;}
+.dia-ferias.t-outro,.legend-swatch.t-outro{background:#64748b;}
+.dia-ferias.t-ferias,.dia-ferias.t-baixa,.dia-ferias.t-formacao,.dia-ferias.t-outro{color:#fff;font-weight:700;}
+/* Em aprovação: contorno tracejado claro por dentro. Por submeter (marcado ou desmarcado agora): ponto no canto. */
+.dia-ferias.por-aprovar{outline:2px dashed #fde68a;outline-offset:-3px;}
+.dia-ferias.por-submeter{position:relative;}
+.dia-ferias.por-submeter::after{content:'';position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:#f59e0b;box-shadow:0 0 0 1px #fff;}
+.cal-aus-leg-pend{background:var(--azul);outline:2px dashed #fde68a;outline-offset:-3px;}
+.cal-aus-leg-sub{background:var(--cinza-100);position:relative;}
+.cal-aus-leg-sub::after{content:'';position:absolute;top:1px;right:1px;width:5px;height:5px;border-radius:50%;background:#f59e0b;}
+.cal-aus-resumo-wrap{margin:0 0 10px;}
+.cal-aus-resumo-tit{font-weight:700;font-size:13px;margin-bottom:6px;color:var(--cinza-900);}
+.cal-aus-resumo{display:flex;gap:10px;flex-wrap:wrap;}
+.cal-aus-cartao{display:flex;flex-direction:column;gap:2px;min-width:150px;padding:8px 12px;border:1px solid var(--cinza-200);border-radius:var(--radius);background:var(--branco);font-size:12.5px;}
+.cal-aus-cartao-tit{font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:2px;}
+.cal-aus-cartao b{font-size:15px;}
+.cal-aus-pend{color:#b45309;}
+#calAusTipos .chip-projeto{display:inline-flex;align-items:center;gap:6px;}
 /* Pedido de outra pessoa pendente de decisão (ver App.alternarDiaFerias) — três estados possíveis
    a cada clique: por decidir (amarelo) → aprovar (verde) → rejeitar (vermelho) → por decidir. */
 .dia-ferias.decisao-pendente{background:#fff3b0;color:var(--cinza-900);font-weight:700;}

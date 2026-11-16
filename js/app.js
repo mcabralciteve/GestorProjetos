@@ -82,16 +82,19 @@ const App = {
   modoRegistoDia: 'pessoal',
   filtrosAlocacoes: { dept: '', equipa: '', pessoa: '', projeto: '', cliente: '' },
   filtrosAusencias: { dept: '', equipa: '', pessoa: '' },
-  // Alterna entre a tabela (Lista) e o Calendário de Férias, dentro do separador Ausências — mesma
+  // Alterna entre a tabela (Lista) e o Calendário de Ausências, dentro do separador Ausências — mesma
   // ideia de modoRegistoDia, mas não vale a pena persistir entre sessões (ver aplicarModoAusencias).
   modoAusencias: 'lista',
-  // Estado do Calendário de Férias — só do lado do cliente, como diaRegistoPessoa/calMesAtual.
-  // "calFeriasSelecao" é o conjunto de datas (ISO) atualmente marcadas no ecrã, mutado por cada
-  // clique num dia; só é comparado com o que já existia em state.ausencias no momento de
-  // "Submeter" (ver submeterCalendarioFerias) — nada é gravado por um simples clique.
+  // Estado do Calendário de Ausências (os nomes "Ferias" são de quando só marcava férias) — só do lado do cliente, como
+  // diaRegistoPessoa/calMesAtual. "calFeriasSelecao" é um Map dia (ISO) → tipo de ausência com o que está marcado no ecrã,
+  // mutado por cada clique num dia; só é comparado com o que já existia em state.ausencias no momento de "Submeter"
+  // (ver submeterCalendarioFerias) — nada é gravado por um simples clique. "calAusTipo" é o tipo com que se marca
+  // ("Marcar como") e "filtrosCalAus" os filtros Direção/Área que encurtam a lista de colaboradores.
   calFeriasRecursoId: null,
   calFeriasAno: null,
   calFeriasSelecao: null,
+  calAusTipo: 'Férias',
+  filtrosCalAus: { dept: '', equipa: '' },
   // Decisões (aprovar/rejeitar) marcadas no Calendário de Férias, ainda não submetidas — chave é o
   // id do registo pendente, valor é 'aprovar'/'rejeitar' (ver alternarDiaFerias/submeterDecisoesFerias).
   decisoesFerias: null,
@@ -403,6 +406,8 @@ const App = {
       calendarioEquipaAusencias: document.getElementById('calendarioEquipaAusencias'),
       equipaAusMesLabel: document.getElementById('equipaAusMesLabel'),
       selPessoaCalFerias: document.getElementById('selPessoaCalFerias'),
+      fCalAusDept: document.getElementById('fCalAusDept'),
+      fCalAusEquipa: document.getElementById('fCalAusEquipa'),
       calFeriasAnoLabel: document.getElementById('calFeriasAnoLabel'),
       calendarioFerias: document.getElementById('calendarioFerias'),
       resumoDiasFerias: document.getElementById('resumoDiasFerias'),
@@ -3779,14 +3784,16 @@ const App = {
     const destinatarios = this.destinatariosParaRecurso(recurso.id);
     if (!destinatarios.length) return;
     const ator = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
-    const periodo = (r) => `${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
+    const periodo = (r) => `${r.tipo || 'Férias'}: ${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
+    const soFerias = [...aCriar, ...aEliminar].every(r => AusenciasCal.categoria(r.tipo || 'Férias') === 'Férias');
+    const oQue = soFerias ? 'férias' : 'ausências';
     const linhas = [];
     if (mensagem) linhas.push(mensagem, '');
-    linhas.push(`Alterações às férias de ${recurso.nome}:`, '');
+    linhas.push(`Alterações às ${oQue} de ${recurso.nome}:`, '');
     if (aCriar.length) { linhas.push('Novos períodos pedidos:'); aCriar.forEach(r => linhas.push(`  + ${periodo(r)}`)); linhas.push(''); }
     if (aEliminar.length) { linhas.push('Períodos removidos:'); aEliminar.forEach(r => linhas.push(`  - ${periodo(r)}`)); linhas.push(''); }
     linhas.push(`Ação feita por: ${ator ? ator.nome : '—'}`);
-    const assunto = `Alterações às férias — ${recurso.nome}`;
+    const assunto = `Alterações às ${oQue} — ${recurso.nome}`;
     window.open(`mailto:${destinatarios.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(linhas.join('\n'))}`, '_blank');
   },
   // mailto: nunca envia sozinho — é sempre o browser de quem está a agir a abrir o cliente de email,
@@ -4542,10 +4549,8 @@ const App = {
     // dirige alguma coisa, ou Admin — para os outros não há aqui equipa nenhuma para ver.
     if (e.btnModoAusEquipa) e.btnModoAusEquipa.style.display = (admin || liderDeAlgo) ? '' : 'none';
     // A "Lista" (tabela editável de ausências) é uma ferramenta de quem aprova: Team Leader/Diretor/Admin. Aos consultores
-    // gerava confusão — ficam só com o Calendário de Férias; baixas e ausências justificadas marcam-se em Horas → Dia.
+    // gerava confusão — ficam só com o Calendário de Ausências, onde marcam férias, baixas, formação e outras.
     if (e.btnModoAusLista) e.btnModoAusLista.style.display = this.podeVerListaAusencias() ? '' : 'none';
-    const dicaAus = document.getElementById('ausDicaConsultor');
-    if (dicaAus) dicaAus.hidden = this.podeVerListaAusencias();
     if (this.abaAtiva === 'ausencias' && this.modoAusencias === 'lista' && !this.podeVerListaAusencias()) this.aplicarModoAusencias();
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
@@ -5904,7 +5909,7 @@ const App = {
     // de volta para a Lista, em vez de ficar presa num modo que já não pode ver.
     const podeVerEquipa = this.souAdmin() || this.souLiderDeAlgumaEquipa();
     if (this.modoAusencias === 'equipa' && !podeVerEquipa) this.modoAusencias = 'lista';
-    // A Lista é só para quem aprova ausências (ver podeVerListaAusencias): os outros ficam no Calendário de Férias.
+    // A Lista é só para quem aprova ausências (ver podeVerListaAusencias): os outros ficam no Calendário de Ausências.
     if (this.modoAusencias === 'lista' && !this.podeVerListaAusencias()) this.modoAusencias = 'calendario';
     const lista = this.modoAusencias === 'lista';
     const equipa = this.modoAusencias === 'equipa';
@@ -5924,66 +5929,85 @@ const App = {
     this.aplicarModoAusencias();
   },
 
-  // ---------- Calendário de Férias ----------
-  // Uma forma muito mais simples de pedir férias do que preencher um intervalo de datas à mão:
-  // vê-se o ano inteiro, clica-se nos dias que se quer de férias (alternam livre/férias), os
-  // feriados e fins de semana já vêm bloqueados, e só ao clicar em "Submeter alterações" é que a
-  // diferença face ao que já lá estava é gravada e enviada para aprovação — um clique num dia,
-  // sozinho, nunca grava nada (ver calFeriasSelecao/submeterCalendarioFerias).
+  // ---------- Calendário de Ausências ----------
+  // (Os nomes "Ferias" ficaram de quando este calendário só marcava férias.) Vê-se o ano inteiro de UMA pessoa; escolhe-se o
+  // tipo (Férias/Baixa/Formação/Outro) e clica-se nos dias — fins de semana e feriados vêm bloqueados. Um clique nunca grava:
+  // só "Submeter alterações" envia a diferença face ao que estava gravado (regras em js/ausencias-calendario.js). O resumo por
+  // cima mostra os dias aprovados e em aprovação dessa pessoa — o mesmo para ela, para o seu Team Leader/Diretor e para o Admin.
   garantirCalendarioFerias() {
     if (!this.calFeriasAno) this.calFeriasAno = new Date().getFullYear();
+    if (!AusenciasCal.TIPOS.includes(this.calAusTipo)) this.calAusTipo = 'Férias';
+    if (!this.filtrosCalAus) this.filtrosCalAus = { dept: '', equipa: '' };
     if (this.calFeriasRecursoId === null) {
       const meuRecursoId = this.perfilAtual()?.recursoId;
       const escopo = this.escopoAusenciasPermitido();
       this.calFeriasRecursoId = (meuRecursoId && escopo.some(r => r.id === meuRecursoId)) ? meuRecursoId : (escopo[0] ? escopo[0].id : null);
     }
-    if (!this.calFeriasSelecao) this.recarregarSelecaoFerias();
+    if (!(this.calFeriasSelecao instanceof Map)) this.recarregarSelecaoFerias();
     if (!this.decisoesFerias) this.decisoesFerias = new Map();
   },
-  // O registo Férias pendente (se houver) que cobre este dia para este recurso — usado para saber
-  // se um clique deve entrar no ciclo de decisão (aprovar/rejeitar) em vez do simples toggle de
-  // seleção (ver alternarDiaFerias).
+  ausenciasDoCalendario(recursoId) { return this.state.ausencias.filter(a => a.recursoId === recursoId); },
+  // O pedido pendente (de qualquer tipo) que cobre este dia para este recurso — usado para saber se um clique deve entrar
+  // no ciclo de decisão (aprovar/rejeitar) em vez de marcar/desmarcar (ver alternarDiaFerias).
   registoPendenteNoDia(iso, recursoId) {
-    return this.state.ausencias.find(a => a.recursoId === recursoId && a.tipo === 'Férias' && a.estado === 'pendente' && iso >= a.dataInicio && iso <= a.dataFim) || null;
+    return this.state.ausencias.find(a => a.recursoId === recursoId && a.estado === 'pendente' && iso >= a.dataInicio && iso <= a.dataFim) || null;
   },
-  // (Re)constrói o conjunto de dias já marcados como Férias para a pessoa atual, a partir do que já
-  // está gravado (pendente ou aprovada — só "rejeitada" fica de fora, mesmo critério de sempre) —
-  // isto é o "estado anterior" com que a seleção no ecrã é comparada ao Submeter.
+  // (Re)constrói o que está marcado no ecrã (Map dia → tipo) a partir do que está gravado para a pessoa atual (pendente ou
+  // aprovada; só "rejeitada" fica de fora) — é o "estado anterior" com que a seleção é comparada ao Submeter.
   recarregarSelecaoFerias() {
-    const dias = new Set();
-    this.state.ausencias
-      .filter(a => a.recursoId === this.calFeriasRecursoId && a.tipo === 'Férias' && a.estado !== 'rejeitada')
-      .forEach(a => {
-        for (let d = DateUtil.parseISO(a.dataInicio); d <= DateUtil.parseISO(a.dataFim); d = DateUtil.addDays(d, 1)) dias.add(DateUtil.toISO(d));
-      });
-    this.calFeriasSelecao = dias;
+    this.calFeriasSelecao = AusenciasCal.selecaoDeAusencias(this.ausenciasDoCalendario(this.calFeriasRecursoId));
   },
-  // Porque é que este dia não pode ser marcado como férias — fim de semana, feriado, ou já é outro
-  // tipo de ausência (Baixa, Formação, Outro) da mesma pessoa; '' se estiver livre para marcar.
-  motivoDiaBloqueadoFerias(iso, recursoId) {
+  // Porque é que este dia não se pode marcar — fim de semana ou feriado; '' se estiver livre.
+  motivoDiaBloqueadoFerias(iso) {
     const diaSemana = DateUtil.parseISO(iso).getDay();
     if (diaSemana === 0 || diaSemana === 6) return 'Fim de semana';
     const feriado = this.state.feriados.find(f => f.data === iso);
-    if (feriado) return feriado.descricao || 'Feriado';
-    const outra = this.state.ausencias.find(a => a.recursoId === recursoId && a.tipo !== 'Férias' && a.estado !== 'rejeitada' && iso >= a.dataInicio && iso <= a.dataFim);
-    if (outra) return outra.tipo;
-    return '';
+    return feriado ? (feriado.descricao || 'Feriado') : '';
+  },
+  // Há marcações ou decisões no ecrã ainda por submeter?
+  calAusTemAlteracoes() {
+    if (!(this.calFeriasSelecao instanceof Map) || !this.calFeriasRecursoId) return false;
+    const { aCriar, aEliminar } = this.diffCalendarioFerias(this.calFeriasRecursoId);
+    return aCriar.length > 0 || aEliminar.length > 0 || !!(this.decisoesFerias && this.decisoesFerias.size);
   },
   selecionarPessoaCalFerias(recursoId) {
-    if (this.calFeriasSelecao && this.calFeriasRecursoId !== recursoId) {
-      const baseline = new Set();
-      this.state.ausencias.filter(a => a.recursoId === this.calFeriasRecursoId && a.tipo === 'Férias' && a.estado !== 'rejeitada')
-        .forEach(a => { for (let d = DateUtil.parseISO(a.dataInicio); d <= DateUtil.parseISO(a.dataFim); d = DateUtil.addDays(d, 1)) baseline.add(DateUtil.toISO(d)); });
-      const alterado = baseline.size !== this.calFeriasSelecao.size || [...this.calFeriasSelecao].some(iso => !baseline.has(iso));
-      const temDecisoes = this.decisoesFerias && this.decisoesFerias.size > 0;
-      if ((alterado || temDecisoes) && !confirm('Tens alterações/decisões de férias por submeter — mudar de colaborador descarta-as. Continuar?')) {
-        this.renderCalendarioFerias(); // repõe o <select> no valor anterior
-        return;
-      }
+    if (this.calFeriasRecursoId !== recursoId && this.calAusTemAlteracoes()
+      && !confirm('Tens alterações/decisões por submeter — mudar de colaborador descarta-as. Continuar?')) {
+      this.renderCalendarioFerias(); // repõe o <select> no valor anterior
+      return;
     }
     this.calFeriasRecursoId = recursoId;
     this.recarregarSelecaoFerias();
     if (this.decisoesFerias) this.decisoesFerias.clear();
+    this.renderCalendarioFerias();
+  },
+  // Filtros Direção/Área do calendário: só servem para encurtar a lista de colaboradores (dentro do que já se pode ver).
+  // Se a pessoa em vista deixar de caber no filtro, passa-se para a primeira da lista (perguntando antes, se houver
+  // alterações por submeter).
+  mudarFiltroCalAus() {
+    const e = this.els;
+    this.garantirCalendarioFerias();
+    const nova = this.reagirMudancaFiltroOrg(Object.assign({ pessoa: '' }, this.filtrosCalAus), { dept: e.fCalAusDept.value, equipa: e.fCalAusEquipa.value, pessoa: '' });
+    const lista = this.escopoAusenciasPermitido().filter(r => {
+      const o = this.orgDoRecurso(r);
+      return (!nova.dept || (o.deptId || '__sem__') === nova.dept) && (!nova.equipa || o.equipaId === nova.equipa);
+    }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const fica = lista.some(r => r.id === this.calFeriasRecursoId);
+    if (!fica && this.calAusTemAlteracoes() && !confirm('Tens alterações/decisões por submeter — mudar de colaborador descarta-as. Continuar?')) {
+      this.renderCalendarioFerias(); // repõe os filtros
+      return;
+    }
+    this.filtrosCalAus = { dept: nova.dept, equipa: nova.equipa };
+    if (!fica) {
+      this.calFeriasRecursoId = lista[0] ? lista[0].id : null;
+      this.recarregarSelecaoFerias();
+      if (this.decisoesFerias) this.decisoesFerias.clear();
+    }
+    this.renderCalendarioFerias();
+  },
+  escolherTipoCalAus(tipo) {
+    if (!AusenciasCal.TIPOS.includes(tipo)) return;
+    this.calAusTipo = tipo;
     this.renderCalendarioFerias();
   },
   navegarAnoFerias(delta) {
@@ -5991,11 +6015,10 @@ const App = {
     this.calFeriasAno += delta;
     this.renderCalendarioFerias();
   },
-  // Um dia que já tem um pedido pendente, visto por quem o pode decidir (nunca a própria pessoa —
-  // ver podeDecidirAusencia), entra num ciclo de decisão em vez do toggle normal: cada clique passa
-  // o registo INTEIRO (não só este dia — um pedido é sempre um intervalo com um único estado) por
-  // por decidir → aprovar → rejeitar → por decidir. Fora disso, é o toggle de sempre (marcar/
-  // desmarcar férias), quando a pessoa tem "gerir" (a sua própria, ou a sua equipa/departamento).
+  // Um dia que já tem um pedido pendente, visto por quem o pode decidir (nunca a própria pessoa — ver podeDecidirAusencia),
+  // entra num ciclo de decisão em vez de marcar/desmarcar: cada clique passa o registo INTEIRO (um pedido é sempre um
+  // intervalo com um único estado) por: por decidir → aprovar → rejeitar → por decidir. Fora disso: um dia livre fica com o
+  // tipo escolhido em "Marcar como"; um dia já marcado (de qualquer tipo) fica livre.
   alternarDiaFerias(iso) {
     const recursoId = this.calFeriasRecursoId;
     const pendente = this.registoPendenteNoDia(iso, recursoId);
@@ -6006,13 +6029,13 @@ const App = {
       this.renderCalendarioFerias();
       return;
     }
-    if (this.motivoDiaBloqueadoFerias(iso, recursoId)) return;
-    if (this.calFeriasSelecao.has(iso)) this.calFeriasSelecao.delete(iso); else this.calFeriasSelecao.add(iso);
+    if (this.motivoDiaBloqueadoFerias(iso)) return;
+    if (this.calFeriasSelecao.has(iso)) this.calFeriasSelecao.delete(iso); else this.calFeriasSelecao.set(iso, this.calAusTipo);
     this.renderCalendarioFerias();
   },
-  // Um mês compacto (7×6 células, cabeçalho com o nome) — cada dia é só um número clicável, sem
-  // nada dentro (ver .ano-ferias-grelha/.dia-ferias em css/style.css).
-  construirMesFerias(ano, mes, recursoId, hojeISO) {
+  // Um mês compacto (7×6 células, cabeçalho com o nome) — cada dia é só um número clicável (ver .dia-ferias em css/style.css).
+  // "gravado" = AusenciasCal.mapaDias da pessoa (o que está na base de dados), para distinguir aprovado / em aprovação / por submeter.
+  construirMesFerias(ano, mes, recursoId, hojeISO, gravado) {
     const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     const primeiroDiaMes = new Date(ano, mes, 1);
     const inicioGrelha = new Date(primeiroDiaMes);
@@ -6032,12 +6055,22 @@ const App = {
         if (emDecisao) {
           const decisao = this.decisoesFerias.get(pendente.id);
           classes.push(decisao === 'aprovar' ? 'decisao-aprovar' : decisao === 'rejeitar' ? 'decisao-rejeitar' : 'decisao-pendente');
-          titulo = decisao === 'aprovar' ? 'Marcado para aprovar — clica para rejeitar' : decisao === 'rejeitar' ? 'Marcado para rejeitar — clica para limpar' : 'Pedido pendente — clica para aprovar';
+          titulo = `${pendente.tipo} — ` + (decisao === 'aprovar' ? 'marcado para aprovar — clica para rejeitar' : decisao === 'rejeitar' ? 'marcado para rejeitar — clica para limpar' : 'pedido pendente — clica para aprovar');
         } else {
-          const motivo = this.motivoDiaBloqueadoFerias(iso, recursoId);
-          const selecionado = this.calFeriasSelecao.has(iso);
-          if (motivo) classes.push('bloqueado'); else if (selecionado) classes.push('selecionado');
-          titulo = motivo || (selecionado ? 'Férias — clica para desmarcar' : 'Clica para marcar férias');
+          const motivo = this.motivoDiaBloqueadoFerias(iso);
+          const tipo = this.calFeriasSelecao.get(iso);
+          if (motivo) { classes.push('bloqueado'); titulo = motivo; }
+          else if (tipo) {
+            const g = gravado.get(iso);
+            const igual = g && g.tipo === tipo;
+            classes.push('t-' + AusenciasCal.classe(tipo));
+            if (igual && g.estado === 'pendente') classes.push('por-aprovar');
+            if (!igual) classes.push('por-submeter');
+            titulo = `${tipo} — ${igual ? (g.estado === 'pendente' ? 'em aprovação' : 'aprovada') : 'por submeter'} — clica para desmarcar`;
+          } else {
+            if (gravado.has(iso)) classes.push('por-submeter');
+            titulo = gravado.has(iso) ? `Desmarcado (era ${gravado.get(iso).tipo}) — por submeter; clica para marcar ${this.calAusTipo}` : `Clica para marcar ${this.calAusTipo}`;
+          }
         }
         if (iso === hojeISO) classes.push('hoje');
         html += `<div class="${classes.join(' ')}" data-dia-ferias="${iso}" title="${escapeAttr(titulo)}">${cursor.getDate()}</div>`;
@@ -6052,49 +6085,49 @@ const App = {
     if (!e.calendarioFerias) return;
     this.garantirCalendarioFerias();
     const escopo = this.escopoAusenciasPermitido();
+    // Direção → Área → Colaborador: o Admin escolhe qualquer pessoa, o Diretor as das suas equipas, o Team Leader as da sua
+    // equipa; quem só se vê a si próprio não tem filtros (nem escolha).
+    const varios = escopo.length > 1;
+    let recursosOrg = escopo;
+    if (e.fCalAusDept && e.fCalAusEquipa) {
+      if (varios) {
+        recursosOrg = this.aplicarFiltroOrg(e.fCalAusDept, e.fCalAusEquipa, escopo, this.filtrosCalAus);
+        this.filtrosCalAus = { dept: e.fCalAusDept.value, equipa: e.fCalAusEquipa.value };
+      }
+      const lblDept = e.fCalAusDept.closest('label'), lblEq = e.fCalAusEquipa.closest('label');
+      if (lblDept) lblDept.style.display = varios && e.fCalAusDept.options.length > 2 ? '' : 'none';
+      if (lblEq) lblEq.style.display = varios && e.fCalAusEquipa.options.length > 2 ? '' : 'none';
+    }
     if (e.selPessoaCalFerias) {
       const valorAtual = this.calFeriasRecursoId;
-      e.selPessoaCalFerias.innerHTML = [...escopo].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
-      e.selPessoaCalFerias.value = escopo.some(r => r.id === valorAtual) ? valorAtual : (escopo[0] ? escopo[0].id : '');
-      if (e.selPessoaCalFerias.value !== this.calFeriasRecursoId) { this.calFeriasRecursoId = e.selPessoaCalFerias.value || null; this.recarregarSelecaoFerias(); }
+      const lista = [...recursosOrg].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+      e.selPessoaCalFerias.innerHTML = lista.map(r => `<option value="${r.id}">${escapeHtml(r.nome)}</option>`).join('');
+      e.selPessoaCalFerias.value = lista.some(r => r.id === valorAtual) ? valorAtual : (lista[0] ? lista[0].id : '');
+      if (e.selPessoaCalFerias.value !== this.calFeriasRecursoId) { this.calFeriasRecursoId = e.selPessoaCalFerias.value || null; this.recarregarSelecaoFerias(); this.decisoesFerias.clear(); }
+      const lblPessoa = e.selPessoaCalFerias.closest('label');
+      if (lblPessoa) lblPessoa.style.display = varios ? '' : 'none';
     }
     if (e.calFeriasAnoLabel) e.calFeriasAnoLabel.textContent = this.calFeriasAno;
+    document.querySelectorAll('#calAusTipos [data-cal-aus-tipo]').forEach(b => b.classList.toggle('ativo', b.dataset.calAusTipo === this.calAusTipo));
     const recurso = this.state.recursos.find(r => r.id === this.calFeriasRecursoId);
     if (!recurso) {
       e.calendarioFerias.innerHTML = '<p class="hint">Sem colaborador disponível.</p>';
-      if (e.resumoDiasFerias) e.resumoDiasFerias.textContent = '';
+      if (e.resumoDiasFerias) e.resumoDiasFerias.innerHTML = '';
       if (e.resumoFerias) e.resumoFerias.textContent = '';
       if (e.btnSubmeterFerias) e.btnSubmeterFerias.disabled = true;
       return;
     }
     const hojeISO = DateUtil.todayISO();
+    const ausencias = this.ausenciasDoCalendario(recurso.id);
+    const gravado = AusenciasCal.mapaDias(ausencias);
     let html = '';
-    for (let mes = 0; mes < 12; mes++) html += this.construirMesFerias(this.calFeriasAno, mes, recurso.id, hojeISO);
+    for (let mes = 0; mes < 12; mes++) html += this.construirMesFerias(this.calFeriasAno, mes, recurso.id, hojeISO, gravado);
     e.calendarioFerias.innerHTML = html;
     e.calendarioFerias.querySelectorAll('[data-dia-ferias]').forEach(el => {
       el.addEventListener('click', () => this.alternarDiaFerias(el.dataset.diaFerias));
     });
 
-    // Lista, por extenso, dos dias já marcados como férias no ano em vista (não só a diferença por
-    // submeter) — para a pessoa conseguir confirmar visualmente sem ter de percorrer os 12 meses.
-    if (e.resumoDiasFerias) {
-      const fmtPeriodo = (r) => r.dataInicio === r.dataFim
-        ? DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))
-        : `${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
-      const intervalosDoAno = this.calcularIntervalosFerias(this.calFeriasSelecao, recurso.id)
-        .filter(r => r.dataInicio.slice(0, 4) === String(this.calFeriasAno) || r.dataFim.slice(0, 4) === String(this.calFeriasAno));
-      // calFeriasSelecao pode conter fins de semana/feriados "atravessados" dentro de um período já
-      // gravado (ver recarregarSelecaoFerias, que repõe o intervalo completo dataInicio→dataFim) —
-      // para a contagem só interessam os dias úteis realmente gastos em férias.
-      const diaUtil = (iso) => {
-        const dow = DateUtil.parseISO(iso).getDay();
-        return dow !== 0 && dow !== 6 && !this.state.feriados.some(f => f.data === iso);
-      };
-      const totalDias = [...this.calFeriasSelecao].filter(iso => iso.slice(0, 4) === String(this.calFeriasAno) && diaUtil(iso)).length;
-      e.resumoDiasFerias.textContent = totalDias
-        ? `Férias marcadas em ${this.calFeriasAno} (${totalDias} dia(s)): ${intervalosDoAno.map(fmtPeriodo).join(', ')}`
-        : `Sem férias marcadas em ${this.calFeriasAno}.`;
-    }
+    if (e.resumoDiasFerias) e.resumoDiasFerias.innerHTML = this.htmlResumoCalAus(recurso, ausencias);
 
     const { aCriar, aEliminar } = this.diffCalendarioFerias(recurso.id);
     if (e.resumoFerias) {
@@ -6113,46 +6146,35 @@ const App = {
     }
     if (e.btnSubmeterDecisoesFerias) e.btnSubmeterDecisoesFerias.hidden = !(nAprovar || nRejeitar);
   },
-  // Agrupa um conjunto de datas (ISO) em intervalos contínuos [dataInicio, dataFim] — um "buraco"
-  // só quebra o intervalo se tiver pelo menos um dia que NÃO esteja bloqueado (fim de semana/
-  // feriado/outra ausência) e que também não esteja selecionado; um fim de semana ou feriado no
-  // meio de dois dias selecionados fica incluído no mesmo intervalo (tal como já acontecia ao
-  // escolher "De/Até" à mão no formulário antigo).
-  calcularIntervalosFerias(selecao, recursoId) {
-    if (!selecao.size) return [];
-    const datas = [...selecao].sort();
-    const min = DateUtil.parseISO(datas[0]), max = DateUtil.parseISO(datas[datas.length - 1]);
-    const intervalos = [];
-    let atual = null;
-    for (let d = new Date(min); d <= max; d = DateUtil.addDays(d, 1)) {
-      const iso = DateUtil.toISO(d);
-      if (selecao.has(iso)) {
-        if (!atual) atual = { dataInicio: iso, dataFim: iso };
-        else atual.dataFim = iso;
-      } else if (!this.motivoDiaBloqueadoFerias(iso, recursoId)) {
-        if (atual) { intervalos.push(atual); atual = null; }
-      }
-      // dia bloqueado no meio de um intervalo em aberto: não quebra, não estende — só "atravessa".
-    }
-    if (atual) intervalos.push(atual);
-    return intervalos;
+  // Resumo do ano da pessoa em vista, pelo que está GRAVADO (o que ainda não foi submetido não entra): dias úteis de férias
+  // aprovados e em aprovação, o mesmo para as outras ausências, e a lista dos períodos.
+  htmlResumoCalAus(recurso, ausencias) {
+    const ano = this.calFeriasAno;
+    const r = AusenciasCal.resumo(ausencias, ano, iso => !!this.motivoDiaBloqueadoFerias(iso));
+    const dias = n => `${n} dia${n === 1 ? '' : 's'}`;
+    const cartoes = r.linhas.map(l => `<div class="cal-aus-cartao">
+        <span class="cal-aus-cartao-tit"><span class="legend-swatch t-${AusenciasCal.classe(l.categoria)}"></span> ${escapeHtml(l.categoria)}</span>
+        <span><b>${l.aprovados}</b> aprovado${l.aprovados === 1 ? '' : 's'}</span>
+        <span class="${l.pendentes ? 'cal-aus-pend' : 'hint'}"><b>${l.pendentes}</b> em aprovação</span>
+        <span class="hint">total ${dias(l.aprovados + l.pendentes)}</span>
+      </div>`).join('');
+    const semOutras = r.linhas.length === 1 ? `<span class="hint" style="align-self:center;">Sem outras ausências em ${ano}.</span>` : '';
+    const fmt = p => p.dataInicio === p.dataFim ? DateUtil.formatShort(DateUtil.parseISO(p.dataInicio))
+      : `${DateUtil.formatShort(DateUtil.parseISO(p.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(p.dataFim))}`;
+    const periodos = r.periodos.length
+      ? `<p class="hint" style="margin:6px 0 0;">Períodos em ${ano}: ${r.periodos.map(p => `${escapeHtml(p.tipo)} ${fmt(p)}${p.estado === 'pendente' ? ' 🟡' : ''}`).join(' · ')}${r.periodos.some(p => p.estado === 'pendente') ? ' <span title="Em aprovação">(🟡 = em aprovação)</span>' : ''}</p>`
+      : '';
+    return `<div class="cal-aus-resumo-tit">${escapeHtml(recurso.nome)} — ${ano} <span class="hint">(dias úteis)</span></div>
+      <div class="cal-aus-resumo">${cartoes}${semOutras}</div>${periodos}`;
   },
-  // Compara a seleção atual do ecrã com o que já está gravado (baseline) e devolve só a diferença:
-  // "aCriar" (intervalos novos, a enviar para aprovação) e "aEliminar" (registos de Férias
-  // existentes que já não correspondem a nenhum intervalo final — ver submeterCalendarioFerias).
+  // Compara a seleção atual do ecrã com o que já está gravado e devolve só a diferença: "aCriar" (períodos novos, com o
+  // tipo) e "aEliminar" (registos existentes que contêm um dia alterado) — ver AusenciasCal.diff.
   diffCalendarioFerias(recursoId) {
-    const baseline = this.state.ausencias.filter(a => a.recursoId === recursoId && a.tipo === 'Férias' && a.estado !== 'rejeitada');
-    const chave = (ini, fim) => ini + '_' + fim;
-    const baselineMap = new Map(baseline.map(a => [chave(a.dataInicio, a.dataFim), a]));
-    const intervalosFinais = this.calcularIntervalosFerias(this.calFeriasSelecao, recursoId);
-    const chavesFinais = new Set(intervalosFinais.map(r => chave(r.dataInicio, r.dataFim)));
-    const aEliminar = baseline.filter(a => !chavesFinais.has(chave(a.dataInicio, a.dataFim)));
-    const aCriar = intervalosFinais.filter(r => !baselineMap.has(chave(r.dataInicio, r.dataFim)));
-    return { aCriar, aEliminar };
+    return AusenciasCal.diff(this.ausenciasDoCalendario(recursoId), this.calFeriasSelecao, iso => !!this.motivoDiaBloqueadoFerias(iso));
   },
   submeterCalendarioFerias() {
     const recurso = this.state.recursos.find(r => r.id === this.calFeriasRecursoId);
-    if (!recurso || !this.escopoAusenciasPermitido().some(r => r.id === recurso.id)) { this.toast('Não tens permissão para editar as férias desta pessoa.'); return; }
+    if (!recurso || !this.escopoAusenciasPermitido().some(r => r.id === recurso.id)) { this.toast('Não tens permissão para editar as ausências desta pessoa.'); return; }
     const { aCriar, aEliminar } = this.diffCalendarioFerias(recurso.id);
     if (!aCriar.length && !aEliminar.length) { this.toast('Sem alterações para submeter.'); return; }
     this.abrirModalSubmissaoFerias(recurso, aCriar, aEliminar);
@@ -6160,14 +6182,16 @@ const App = {
   // O resumo das datas (o que muda) nunca é editável aqui — só a mensagem de acompanhamento o é
   // (ver pedido do utilizador: customizável, "exceto na componente de alterações das datas").
   abrirModalSubmissaoFerias(recurso, aCriar, aEliminar) {
-    const fmt = (r) => `${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
+    const fmt = (r) => `${r.tipo}: ${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
     const linhas = [
-      ...aCriar.map(r => `<li>+ Novo período: ${escapeHtml(fmt(r))}</li>`),
-      ...aEliminar.map(r => `<li>− Período removido: ${escapeHtml(fmt(r))}</li>`)
+      ...aCriar.map(r => `<li>+ Novo período — ${escapeHtml(fmt(r))}</li>`),
+      ...aEliminar.map(r => `<li>− Período removido — ${escapeHtml(fmt(r))}</li>`)
     ].join('');
     const souORequerente = this.perfilAtual()?.recursoId === recurso.id;
-    const mensagemDefeito = souORequerente ? 'Solicito a aprovação/atualização das minhas férias.' : `Atualização das férias de ${recurso.nome}.`;
-    this.abrirModal(`Submeter férias — ${recurso.nome}`, `
+    const soFerias = [...aCriar, ...aEliminar].every(r => AusenciasCal.categoria(r.tipo) === 'Férias');
+    const oQue = soFerias ? 'férias' : 'ausências';
+    const mensagemDefeito = souORequerente ? `Solicito a aprovação/atualização das minhas ${oQue}.` : `Atualização das ${oQue} de ${recurso.nome}.`;
+    this.abrirModal(`Submeter ${oQue} — ${recurso.nome}`, `
       <p class="hint">Isto vai para o Team Leader/Diretor, com conhecimento de RH:</p>
       <ul style="margin:0 0 10px 18px;padding:0;">${linhas}</ul>
       <label>Mensagem <span style="font-weight:400;color:var(--cinza-500);">(o texto é teu; as datas acima não se editam aqui)</span>
@@ -6185,7 +6209,7 @@ const App = {
     const idsRemovidos = new Set(aEliminar.map(a => a.id));
     this.state.ausencias = this.state.ausencias.filter(a => !idsRemovidos.has(a.id));
     const novos = aCriar.map(r => {
-      const nova = this.novoAusenciaObj(recurso.id, r.dataInicio, r.dataFim, 'Férias', '');
+      const nova = this.novoAusenciaObj(recurso.id, r.dataInicio, r.dataFim, r.tipo || 'Férias', '');
       nova.criadoPor = meuRecursoId || null;
       nova.estado = (nova.criadoPor === nova.recursoId && !this.souAdmin()) ? 'pendente' : 'aprovada';
       return nova;
@@ -6199,7 +6223,7 @@ const App = {
     this.recarregarSelecaoFerias();
     this.renderCalendarioFerias();
     this.enviarEmailSubmissaoFerias(recurso, aCriar, aEliminar, mensagem);
-    this.toast('Alterações de férias submetidas.');
+    this.toast('Alterações submetidas.');
   },
   // Junta as decisões (aprovar/rejeitar) marcadas no calendário — sempre todas do mesmo
   // colaborador, porque decisoesFerias só é preenchido enquanto se vê o calendário dele (ver
@@ -6218,11 +6242,11 @@ const App = {
   // Tal como abrirModalSubmissaoFerias, o resumo de quem está a ser aprovado/rejeitado nunca é
   // editável aqui — só a mensagem de acompanhamento o é.
   abrirModalSubmissaoDecisoesFerias(recurso, itens) {
-    const fmt = (r) => `${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
+    const fmt = (r) => `${r.tipo}: ${DateUtil.formatShort(DateUtil.parseISO(r.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(r.dataFim))}`;
     const linhas = itens.map(({ registo, decisao }) =>
-      `<li>${decisao === 'aprovar' ? '✓ Aprovar' : '✗ Rejeitar'}: ${escapeHtml(fmt(registo))}</li>`
+      `<li>${decisao === 'aprovar' ? '✓ Aprovar' : '✗ Rejeitar'} — ${escapeHtml(fmt(registo))}</li>`
     ).join('');
-    const mensagemDefeito = 'Segue a decisão sobre o(s) pedido(s) de férias abaixo.';
+    const mensagemDefeito = 'Segue a decisão sobre o(s) pedido(s) de ausência abaixo.';
     this.abrirModal(`Submeter decisões — ${recurso.nome}`, `
       <p class="hint">Isto vai para o Team Leader/Diretor, com conhecimento de RH:</p>
       <ul style="margin:0 0 10px 18px;padding:0;">${linhas}</ul>
@@ -6256,6 +6280,7 @@ const App = {
     this.renderTabelaTarefas();
     this.renderCapacidade();
     this.renderDashboard();
+    this.recarregarSelecaoFerias();
     this.renderCalendarioFerias();
     this.enviarEmailDecisoesFerias(recurso, aprovadas, rejeitadas, mensagem);
     this.toast('Decisões submetidas.');
@@ -6268,14 +6293,14 @@ const App = {
     const destinatarios = this.destinatariosParaRecurso(recurso.id);
     if (!destinatarios.length) return;
     const ator = this.state.recursos.find(r => r.id === this.perfilAtual()?.recursoId);
-    const periodo = (a) => `${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}`;
+    const periodo = (a) => `${a.tipo}: ${DateUtil.formatShort(DateUtil.parseISO(a.dataInicio))} a ${DateUtil.formatShort(DateUtil.parseISO(a.dataFim))}`;
     const linhas = [];
     if (mensagem) linhas.push(mensagem, '');
-    linhas.push(`Decisões sobre os pedidos de férias de ${recurso.nome}:`, '');
+    linhas.push(`Decisões sobre os pedidos de ausência de ${recurso.nome}:`, '');
     if (aprovadas.length) { linhas.push('Aprovado:'); aprovadas.forEach(a => linhas.push(`  ✓ ${periodo(a)}`)); linhas.push(''); }
     if (rejeitadas.length) { linhas.push('Rejeitado:'); rejeitadas.forEach(a => linhas.push(`  ✗ ${periodo(a)}`)); linhas.push(''); }
     linhas.push(`Decidido por: ${ator ? ator.nome : '—'}`);
-    const assunto = `Decisões sobre férias — ${recurso.nome}`;
+    const assunto = `Decisões sobre ausências — ${recurso.nome}`;
     window.open(`mailto:${destinatarios.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(linhas.join('\n'))}`, '_blank');
   },
 
@@ -11606,6 +11631,10 @@ const App = {
     const btnEquipaAusSeg = document.getElementById('btnEquipaAusMesSeg');
     if (btnEquipaAusSeg) btnEquipaAusSeg.addEventListener('click', () => this.navegarMesEquipaAusencias(1));
     if (e.selPessoaCalFerias) e.selPessoaCalFerias.addEventListener('change', () => this.selecionarPessoaCalFerias(e.selPessoaCalFerias.value));
+    if (e.fCalAusDept) e.fCalAusDept.addEventListener('change', () => this.mudarFiltroCalAus());
+    if (e.fCalAusEquipa) e.fCalAusEquipa.addEventListener('change', () => this.mudarFiltroCalAus());
+    const calAusTipos = document.getElementById('calAusTipos');
+    if (calAusTipos) calAusTipos.addEventListener('click', (ev) => { const b = ev.target.closest('[data-cal-aus-tipo]'); if (b) this.escolherTipoCalAus(b.dataset.calAusTipo); });
     const btnAnoFeriasAnt = document.getElementById('btnAnoFeriasAnterior');
     if (btnAnoFeriasAnt) btnAnoFeriasAnt.addEventListener('click', () => this.navegarAnoFerias(-1));
     const btnAnoFeriasSeg = document.getElementById('btnAnoFeriasSeguinte');

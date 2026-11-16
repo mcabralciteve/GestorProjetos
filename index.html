@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112c">
+<link rel="stylesheet" href="css/style.css?v=20261116b">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -791,7 +791,7 @@
     <div class="filters" style="display:flex;gap:8px;margin-bottom:12px;">
       <button type="button" class="chip-projeto ativo" id="btnModoAusLista">📋 Lista</button>
       <button type="button" class="chip-projeto" id="btnModoAusEquipa" style="display:none;">📅 Vista de Equipa</button>
-      <button type="button" class="chip-projeto" id="btnModoAusCalendario">🗓 Calendário de Férias</button>
+      <button type="button" class="chip-projeto" id="btnModoAusCalendario">🗓 Calendário de Ausências</button>
     </div>
 
     <div id="ausFiltrosPartilhados" class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
@@ -805,7 +805,7 @@
         <span></span>
         <button id="btnAddAusencia" class="btn btn-primary btn-sm">+ Ausência</button>
       </div>
-      <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas. Para férias, o Calendário ao lado é mais simples.</p>
+      <p class="pagina-sub">As tuas próprias ausências, e as da tua equipa/departamento se lideras alguma — um pedido criado por ti fica pendente até ser aprovado pelo teu Team Leader/Diretor (ou pelo Administrador); as criadas por quem já aprova nascem já aprovadas. Para marcar, o Calendário ao lado é mais simples.</p>
       <div class="table-scroll">
         <table class="tabela-crud" id="tabelaAusencias">
           <thead><tr>
@@ -834,22 +834,33 @@
     </div>
 
     <div id="ausModoCalendario" hidden>
-      <p class="pagina-sub">Clica num dia para marcar/desmarcar férias — feriados e fins de semana já vêm bloqueados. No fim, carrega em "Submeter alterações": só o que mudou face ao estado anterior é enviado para aprovação do teu Team Leader/Diretor, com conhecimento de RH.</p>
-      <p class="pagina-sub" id="ausDicaConsultor" hidden>Baixa médica ou ausência justificada: marca-as em <b>Horas → Dia</b>, escolhendo esse tipo no registo. O estado dos teus pedidos (pendente, aprovado, rejeitado) aparece no cartão "As minhas ausências", em Início.</p>
-      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <p class="pagina-sub">Escolhe o tipo em "Marcar como" e clica nos dias — feriados e fins de semana já vêm bloqueados; clicar num dia marcado desmarca-o. No fim, carrega em "Submeter alterações": só o que mudou face ao estado anterior é enviado para aprovação do Team Leader/Diretor, com conhecimento de RH.</p>
+      <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <label class="zoom-label">Direção <select id="fCalAusDept"><option value="">Todos</option></select></label>
+        <label class="zoom-label">Área <select id="fCalAusEquipa"><option value="">Todas</option></select></label>
         <label class="zoom-label">Colaborador <select id="selPessoaCalFerias"></select></label>
         <label class="zoom-label">
           <button type="button" class="btn-icon" id="btnAnoFeriasAnterior" title="Ano anterior">◀</button>
           <b id="calFeriasAnoLabel" style="margin:0 6px;">—</b>
           <button type="button" class="btn-icon" id="btnAnoFeriasSeguinte" title="Ano seguinte">▶</button>
         </label>
-        <span class="legend-row" style="margin:0;">
-          <span><span class="legend-swatch" style="background:var(--azul);"></span> Férias</span>
+      </div>
+      <div class="filters" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <span class="zoom-label" style="margin:0;">Marcar como</span>
+        <span id="calAusTipos" style="display:inline-flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="chip-projeto ativo" data-cal-aus-tipo="Férias"><span class="legend-swatch t-ferias"></span> Férias</button>
+          <button type="button" class="chip-projeto" data-cal-aus-tipo="Baixa"><span class="legend-swatch t-baixa"></span> Baixa</button>
+          <button type="button" class="chip-projeto" data-cal-aus-tipo="Formação"><span class="legend-swatch t-formacao"></span> Formação</button>
+          <button type="button" class="chip-projeto" data-cal-aus-tipo="Outro"><span class="legend-swatch t-outro"></span> Outro</button>
+        </span>
+        <span class="legend-row" style="margin:0 0 0 8px;">
           <span><span class="legend-swatch" style="background:var(--cinza-100);"></span> Livre</span>
-          <span><span class="legend-swatch" style="background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);"></span> Indisponível</span>
+          <span><span class="legend-swatch" style="background:repeating-linear-gradient(135deg,var(--cinza-300),var(--cinza-300) 3px,var(--cinza-100) 3px,var(--cinza-100) 6px);"></span> Fim de semana / feriado</span>
+          <span><span class="legend-swatch cal-aus-leg-pend"></span> Em aprovação</span>
+          <span><span class="legend-swatch cal-aus-leg-sub"></span> Por submeter</span>
         </span>
       </div>
-      <p id="resumoDiasFerias" class="hint" style="margin:0 0 8px;"></p>
+      <div id="resumoDiasFerias" class="cal-aus-resumo-wrap"></div>
       <div class="pagina-head" style="margin-bottom:6px;">
         <span id="resumoFerias" class="hint"></span>
         <button type="button" class="btn btn-primary" id="btnSubmeterFerias" disabled>Submeter alterações</button>
@@ -1453,6 +1464,7 @@
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/navegacao.js?v=20261112a"></script>
+<script src="js/ausencias-calendario.js?v=20261116b"></script>
 <script src="js/orcprev-logica.js?v=20261112e"></script>
 <script src="js/orcprev-estado.js?v=20261112a"></script>
 <script src="js/horas-reais-logica.js?v=20261104a"></script>
@@ -1461,6 +1473,6 @@
 <script src="js/reunioes.js?v=20261103b"></script>
 <script src="js/licencas-logica.js?v=20261110a"></script>
 <script src="js/licencas.js?v=20261110a"></script>
-<script src="js/app.js?v=20261116a"></script>
+<script src="js/app.js?v=20261116b"></script>
 </body>
 </html>
