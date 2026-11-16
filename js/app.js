@@ -3635,6 +3635,10 @@ const App = {
     if (this.perfilAtual()?.recursoId === a.recursoId) return true;
     return this.souLiderDeAlgumaEquipa() && this.escopoAusenciasPermitido().some(r => r.id === a.recursoId);
   },
+  // A vista "Lista" (tabela editável) só existe para quem aprova ausências — Admin, Team Leaders e Diretores. É só uma
+  // simplificação do ecrã (pedido do utilizador: a Lista confundia os consultores); o que cada um pode ver/gerir continua
+  // a ser decidido por escopoAusenciasPermitido/possoGerirAusencia.
+  podeVerListaAusencias() { return this.souAdmin() || this.souLiderDeAlgumaEquipa(); },
   // Quem pode aprovar/rejeitar — nunca a própria pessoa (mesmo sendo Team Leader/Diretor), exceto o
   // Administrador: ninguém se aprova a si próprio.
   podeDecidirAusencia(a) {
@@ -4537,6 +4541,12 @@ const App = {
     // "Vista de Equipa" (calendário de ausências por dia, colorido por pessoa) só para quem lidera/
     // dirige alguma coisa, ou Admin — para os outros não há aqui equipa nenhuma para ver.
     if (e.btnModoAusEquipa) e.btnModoAusEquipa.style.display = (admin || liderDeAlgo) ? '' : 'none';
+    // A "Lista" (tabela editável de ausências) é uma ferramenta de quem aprova: Team Leader/Diretor/Admin. Aos consultores
+    // gerava confusão — ficam só com o Calendário de Férias; baixas e ausências justificadas marcam-se em Horas → Dia.
+    if (e.btnModoAusLista) e.btnModoAusLista.style.display = this.podeVerListaAusencias() ? '' : 'none';
+    const dicaAus = document.getElementById('ausDicaConsultor');
+    if (dicaAus) dicaAus.hidden = this.podeVerListaAusencias();
+    if (this.abaAtiva === 'ausencias' && this.modoAusencias === 'lista' && !this.podeVerListaAusencias()) this.aplicarModoAusencias();
     if (e.grupoBtnFaturacao) e.grupoBtnFaturacao.style.display = gestorDeAlgo ? '' : 'none';
     if (e.grupoBtnConfiguracoes) e.grupoBtnConfiguracoes.style.display = admin ? '' : 'none';
     // Ativos → Licenças: valores de custo, só Administrador e Diretores (a base de dados aplica a mesma regra — ver supabase/licencas.sql).
@@ -5178,6 +5188,15 @@ const App = {
   irParaAusencia(ausenciaId) {
     const a = this.state.ausencias.find(x => x.id === ausenciaId);
     if (!a) return;
+    // Quem não aprova ausências não tem a Lista: vai para o Calendário de Férias, no ano dessa ausência.
+    if (!this.podeVerListaAusencias()) {
+      this.garantirCalendarioFerias();
+      const ano = Number(String(a.dataInicio || '').slice(0, 4));
+      if (ano) this.calFeriasAno = ano;
+      this.modoAusencias = 'calendario';
+      this.irParaAba('ausencias');
+      return;
+    }
     this.filtrosAusencias.pessoa = a.recursoId;
     this.filtrosAusencias.dept = '';
     this.filtrosAusencias.equipa = '';
@@ -5885,6 +5904,8 @@ const App = {
     // de volta para a Lista, em vez de ficar presa num modo que já não pode ver.
     const podeVerEquipa = this.souAdmin() || this.souLiderDeAlgumaEquipa();
     if (this.modoAusencias === 'equipa' && !podeVerEquipa) this.modoAusencias = 'lista';
+    // A Lista é só para quem aprova ausências (ver podeVerListaAusencias): os outros ficam no Calendário de Férias.
+    if (this.modoAusencias === 'lista' && !this.podeVerListaAusencias()) this.modoAusencias = 'calendario';
     const lista = this.modoAusencias === 'lista';
     const equipa = this.modoAusencias === 'equipa';
     const calendario = this.modoAusencias === 'calendario';
