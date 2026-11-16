@@ -96,14 +96,16 @@ const LicencasLogica = {
   },
 
   // ---------- Listas ----------
-  // f: { texto, departamento, responsavel, projeto, estado, renovacao: '' | 'atrasadas' | '30' | '60' | '90', tipo }
-  // ctx: { hoje, nomeResponsavel(l), nomeDepartamento(l) } — para a pesquisa por texto.
+  // f: { texto, departamento, equipa, responsavel, projeto, estado, renovacao: '' | 'atrasadas' | '30' | '60' | '90', tipo }
+  // ctx: { hoje, nomeResponsavel(l), nomeDepartamento(l), equipaDe(l) → id da equipa (área) do responsável }.
   filtrar(lista, f, ctx) {
     f = f || {}; ctx = ctx || {};
     const q = this.norm(f.texto);
     return (lista || []).filter(l => {
       if (f.departamento && l.departamento_id !== f.departamento) return false;
       if (f.responsavel && l.responsavel_id !== f.responsavel) return false;
+      // Área = equipa do responsável (a licença não guarda equipa: segue a pessoa). Sem responsável não pertence a nenhuma área.
+      if (f.equipa && (!ctx.equipaDe || ctx.equipaDe(l) !== f.equipa)) return false;
       if (f.projeto === '_sem') { if (l.projeto_id || l.projeto_nome) return false; }
       else if (f.projeto && l.projeto_id !== f.projeto) return false;
       if (f.estado === 'abertas') { if (l.estado !== 'ativa' && !this.ehPrevista(l)) return false; } // ativas + por aprovar + em aquisição

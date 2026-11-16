@@ -8,7 +8,7 @@ const Licencas = {
   carregado: false,
   semTabela: false,
   erro: null,
-  filtros: { texto: '', departamento: '', responsavel: '', projeto: '', estado: 'abertas', renovacao: '', tipo: '' },
+  filtros: { texto: '', departamento: '', equipa: '', responsavel: '', projeto: '', estado: 'abertas', renovacao: '', tipo: '' },
   atual: null,       // licença aberta no formulário (cópia)
   original: '',      // JSON da licença como foi aberta/gravada
   _aGuardar: false,
@@ -42,7 +42,7 @@ const Licencas = {
   },
   // Clique no sino: abre as licenças só com as que aguardam aprovação.
   verParaAprovar() {
-    this.filtros = { texto: '', departamento: '', responsavel: '', projeto: '', estado: 'por_aprovar', renovacao: '', tipo: '' };
+    this.filtros = { texto: '', departamento: '', equipa: '', responsavel: '', projeto: '', estado: 'por_aprovar', renovacao: '', tipo: '' };
     App.irParaAba('licencas');
   },
   hoje() { return DateUtil.todayISO(); },
@@ -56,13 +56,23 @@ const Licencas = {
     return p ? App.rotuloProjetoCompleto(p) : (l.projeto_nome || '');
   },
   ctxFiltro() {
-    return { hoje: this.hoje(), nomeResponsavel: l => this.nomePessoa(l.responsavel_id), nomeDepartamento: l => this.nomeDepartamento(l.departamento_id) };
+    return { hoje: this.hoje(), nomeResponsavel: l => this.nomePessoa(l.responsavel_id), nomeDepartamento: l => this.nomeDepartamento(l.departamento_id), equipaDe: l => this.equipaDe(l) };
+  },
+  // Área (= equipa) de uma licença: a do responsável. Sem responsável, ou responsável sem equipa: nenhuma.
+  equipaDe(l) {
+    const r = l && l.responsavel_id ? App.state.recursos.find(x => x.id === l.responsavel_id) : null;
+    return r && r.equipaId ? r.equipaId : null;
+  },
+  // Áreas para o filtro: as equipas dos responsáveis das licenças (só as do departamento escolhido, se houver filtro por departamento).
+  areasParaFiltro(todas, departamentoId) {
+    const ids = new Set(todas.map(l => this.equipaDe(l)).filter(Boolean));
+    return App.state.equipas.filter(e => ids.has(e.id) && (!departamentoId || e.departamentoId === departamentoId)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   },
 
   // ---------- Dados ----------
   limpar() {
     this.lista = []; this.carregado = false; this.semTabela = false; this.erro = null; this.atual = null; this.original = ''; this._aCarregar = null;
-    this.filtros = { texto: '', departamento: '', responsavel: '', projeto: '', estado: 'abertas', renovacao: '', tipo: '' };
+    this.filtros = { texto: '', departamento: '', equipa: '', responsavel: '', projeto: '', estado: 'abertas', renovacao: '', tipo: '' };
     const c = this.corpo(); if (c) c.innerHTML = '';
   },
   async carregar(forcar) {
@@ -110,10 +120,11 @@ const Licencas = {
     const eur = v => this.L.eur(v);
     const opt = (v, t, sel) => `<option value="${escapeAttr(v)}"${sel === v ? ' selected' : ''}>${escapeHtml(t)}</option>`;
     const deps = App.state.departamentos.filter(d => todas.some(l => l.departamento_id === d.id) || this.departamentosEditaveis().some(x => x.id === d.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const areas = this.areasParaFiltro(todas, f.departamento);
     const resp = App.state.recursos.filter(r => todas.some(l => l.responsavel_id === r.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
     const projs = [...new Map(todas.filter(l => l.projeto_id).map(l => [l.projeto_id, this.rotuloProjeto(l)])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt'));
-    // Os totais do topo seguem os filtros de departamento/responsável/projeto/tipo (não o de estado nem o de renovação): assim vêem-se sempre as ativas.
-    const base = this.L.filtrar(todas, { departamento: f.departamento, responsavel: f.responsavel, projeto: f.projeto, tipo: f.tipo, texto: f.texto }, this.ctxFiltro());
+    // Os totais do topo seguem os filtros de departamento/área/responsável/projeto/tipo (não o de estado nem o de renovação): assim vêem-se sempre as ativas.
+    const base = this.L.filtrar(todas, { departamento: f.departamento, equipa: f.equipa, responsavel: f.responsavel, projeto: f.projeto, tipo: f.tipo, texto: f.texto }, this.ctxFiltro());
     const r = this.L.resumo(base, hoje);
     const kpi = (rotulo, valor, sub, cls) => `<div class="an-kpi${cls ? ' ' + cls : ''}"><b>${valor}</b><span>${escapeHtml(rotulo)}</span>${sub ? `<span class="prev-sub">${sub}</span>` : ''}</div>`;
     const subRen = x => x.n ? `${x.n} licença${x.n === 1 ? '' : 's'} · ${eur(x.valor)}` : 'nenhuma';
@@ -137,6 +148,7 @@ const Licencas = {
       <div class="filters crm-barra">
         <label class="zoom-label">Pesquisar <input type="text" data-lic-filtro="texto" value="${escapeAttr(f.texto)}" placeholder="Software, fornecedor, pessoa, projeto…"></label>
         <label class="zoom-label">Departamento <select data-lic-filtro="departamento">${opt('', 'Todos', f.departamento)}${deps.map(d => opt(d.id, d.nome, f.departamento)).join('')}</select></label>
+        <label class="zoom-label">Área <select data-lic-filtro="equipa">${opt('', 'Todas', f.equipa)}${areas.map(e => opt(e.id, e.nome, f.equipa)).join('')}</select></label>
         <label class="zoom-label">Responsável <select data-lic-filtro="responsavel">${opt('', 'Todos', f.responsavel)}${resp.map(x => opt(x.id, x.nome, f.responsavel)).join('')}</select></label>
         <label class="zoom-label">Projeto <select data-lic-filtro="projeto">${opt('', 'Todos', f.projeto)}${opt('_sem', 'Sem projeto', f.projeto)}${projs.map(([id, t]) => opt(id, t, f.projeto)).join('')}</select></label>
         <label class="zoom-label">Estado <select data-lic-filtro="estado">${opt('abertas', 'Ativas e por adquirir', f.estado)}${opt('', 'Todos', f.estado)}${Object.entries(this.L.ESTADOS).map(([k, v]) => opt(k, v, f.estado)).join('')}</select></label>
@@ -215,7 +227,7 @@ const Licencas = {
       else if (acao === 'recusar') this.decidir([el.dataset.id], 'recusar');
       else if (acao === 'adquirir') this.decidir([el.dataset.id], 'adquirir');
       else if (acao === 'aprovar-dep') this.aprovarDepartamento(el.dataset.dep);
-      else if (acao === 'ver-dep') { this.filtros.estado = 'por_aprovar'; this.filtros.departamento = el.dataset.dep || ''; this.renderPagina(); }
+      else if (acao === 'ver-dep') { this.filtros.estado = 'por_aprovar'; this.filtros.equipa = ''; this.filtros.departamento = el.dataset.dep || ''; this.renderPagina(); }
       else if (acao === 'avisar') this.avisarDiretor(el.dataset.dep);
     });
     const aoFiltrar = ev => {
@@ -223,6 +235,11 @@ const Licencas = {
       if (t.dataset.licFiltro === undefined) return;
       if (t.tagName === 'INPUT' && ev.type === 'change') return; // o texto filtra a escrever
       this.filtros[t.dataset.licFiltro] = t.value;
+      // Mudar de departamento: a área escolhida deixa de valer se for de outro departamento (como Direção → Área noutros ecrãs).
+      if (t.dataset.licFiltro === 'departamento' && this.filtros.equipa) {
+        const eq = App.state.equipas.find(e => e.id === this.filtros.equipa);
+        if (t.value && (!eq || eq.departamentoId !== t.value)) this.filtros.equipa = '';
+      }
       const pos = t.selectionStart;
       this.renderPagina();
       const novo = raiz.querySelector(`[data-lic-filtro="${t.dataset.licFiltro}"]`);

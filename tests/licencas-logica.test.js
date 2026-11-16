@@ -180,3 +180,13 @@ test('recusar: guarda o motivo sem espaços; linha de pedido para o email', () =
   assert.match(txt, /^• Claude Team — Milton Cabral — 18,00\s?€ \/ mês \(216,00\s?€\/ano\) — financiada a 50% — DIH 2\.0$/);
   assert.match(L.linhaPedido(lic({ n_licencas: 6, periodicidade: 'anual', valor: 408 }), '', ''), /^• Office \(6 lic\.\) — sem responsável — 408,00\s?€ \/ ano$/);
 });
+
+test('filtrar por área: segue a equipa do responsável; sem responsável não pertence a nenhuma', () => {
+  const eq = { r1: 'dcs', r2: 'dsa' };
+  const ctx = { equipaDe: l => eq[l.responsavel_id] || null };
+  const todas = [lic({ id: 'a', responsavel_id: 'r1' }), lic({ id: 'b', responsavel_id: 'r2' }), lic({ id: 'c', responsavel_id: null })];
+  assert.deepEqual(L.filtrar(todas, { equipa: 'dcs' }, ctx).map(x => x.id), ['a']);
+  assert.deepEqual(L.filtrar(todas, { equipa: 'dsa' }, ctx).map(x => x.id), ['b']);
+  assert.equal(L.filtrar(todas, { equipa: '' }, ctx).length, 3);
+  assert.equal(L.filtrar(todas, { equipa: 'dcs' }, {}).length, 0);     // sem forma de saber a equipa: nada passa
+});
