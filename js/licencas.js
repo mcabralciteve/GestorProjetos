@@ -63,6 +63,7 @@ const Licencas = {
     const r = l && l.responsavel_id ? App.state.recursos.find(x => x.id === l.responsavel_id) : null;
     return r && r.equipaId ? r.equipaId : null;
   },
+  nomeArea(l) { const id = this.equipaDe(l), e = id ? App.state.equipas.find(x => x.id === id) : null; return e ? e.nome : ''; },
   // Áreas para o filtro: as equipas dos responsáveis das licenças (só as do departamento escolhido, se houver filtro por departamento).
   areasParaFiltro(todas, departamentoId) {
     const ids = new Set(todas.map(l => this.equipaDe(l)).filter(Boolean));
@@ -157,7 +158,7 @@ const Licencas = {
           <button type="button" class="ib" data-lic-acao="excel" data-tip="Exportar a lista (com os filtros) para Excel" aria-label="Exportar para Excel"><span>Excel</span></button>
           <button type="button" class="ib ib-pri" data-lic-acao="nova" data-tip="Registar uma licença" aria-label="Nova licença">${Icones.svg('plus')}<span>Nova licença</span></button></span>
       </div>
-      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Software</th><th>Responsável</th><th>Departamento</th><th>Projeto</th><th class="num">Valor</th><th class="num">Custo anual / aquisição</th><th class="num">Financ.</th><th class="num">A cargo do dep.</th><th>Renovação</th><th>Estado</th></tr></thead><tbody>${linhas}</tbody></table></div>`
+      ${lista.length ? `<div class="table-scroll"><table class="tabela-crud"><thead><tr><th>Software</th><th>Responsável</th><th>Departamento</th><th>Área</th><th>Projeto</th><th class="num">Valor</th><th class="num">Custo anual / aquisição</th><th class="num">Financ.</th><th class="num">A cargo do dep.</th><th>Renovação</th><th>Estado</th></tr></thead><tbody>${linhas}</tbody></table></div>`
         : `<p class="hint" style="margin-top:14px">${todas.length ? 'Nenhuma licença com estes filtros.' : 'Ainda não há licenças registadas. Regista a primeira em "+ Nova licença".'}</p>`}
       <div class="lic-resumos">${grupo('Totais por departamento', 'departamento', id => this.nomeDepartamento(id))}${grupo('Totais por projeto', 'projeto', (id, l) => this.rotuloProjeto(l))}</div>
       <p class="hint" style="margin-top:10px">Valores em € sem IVA. Nos totais só entram licenças ativas (as por aprovar e as em processo de aquisição são uma previsão, à parte, até serem adquiridas). Subscrição: o custo anual é o valor × 12 (mensal) ou × 1 (anual); perpétua: o valor de aquisição. Financiado = custo × taxa de financiamento do projeto.</p>`;
@@ -179,6 +180,7 @@ const Licencas = {
       <td><b>${escapeHtml(l.nome)}</b>${l.fornecedor ? `<div class="hint" style="margin:0">${escapeHtml(l.fornecedor)}${l.n_licencas ? ' · ' + l.n_licencas + ' lic.' : ''}</div>` : (l.n_licencas ? `<div class="hint" style="margin:0">${l.n_licencas} lic.</div>` : '')}</td>
       <td>${escapeHtml(this.nomePessoa(l.responsavel_id) || '—')}</td>
       <td>${escapeHtml(this.nomeDepartamento(l.departamento_id) || '—')}</td>
+      <td>${escapeHtml(this.nomeArea(l) || '—')}</td>
       <td>${proj ? escapeHtml(proj) : '—'}</td>
       <td class="num" style="white-space:nowrap">${eur(l.valor)}<span class="hint">${nPer}</span></td>
       <td class="num">${eur(this.L.valorBase(l))}</td>
@@ -583,7 +585,7 @@ const Licencas = {
       const X = XlsxEstilo, S = this.L, hoje = this.hoje();
       const lista = S.ordenar(S.filtrar(this.lista, this.filtros, this.ctxFiltro()), hoje);
       if (!lista.length) { App.toast('Não há licenças para exportar com estes filtros.'); return; }
-      const cab = ['Software', 'Fornecedor', 'Tipo', 'Periodicidade', 'N.º lic.', 'Valor (período / aquisição)', 'Custo anual / aquisição', 'Taxa financ.', 'Financiado', 'A cargo do dep.', 'Responsável', 'Departamento', 'Projeto', 'Início', 'Próx. renovação', 'Renova auto.', 'Estado', 'Notas'];
+      const cab = ['Software', 'Fornecedor', 'Tipo', 'Periodicidade', 'N.º lic.', 'Valor (período / aquisição)', 'Custo anual / aquisição', 'Taxa financ.', 'Financiado', 'A cargo do dep.', 'Responsável', 'Departamento', 'Área', 'Projeto', 'Início', 'Próx. renovação', 'Renova auto.', 'Estado', 'Notas'];
       const EUR = '#,##0.00 "€"', primeira = 5, ultima = primeira + lista.length - 1;
       const linhas = [
         { altura: 24, celulas: [{ v: 'Licenças de software', e: { negrito: true, tam: 14 }, colspan: 6 }] },
@@ -604,14 +606,14 @@ const Licencas = {
           { v: taxa, e: Object.assign({ formato: '0.0%', alinha: 'right' }, b) },
           { v: fin, f: `${X.ref(r, 6)}*${X.ref(r, 7)}`, e: Object.assign({ formato: EUR, alinha: 'right' }, b) },
           { v: S.r2(custo - fin), f: `${X.ref(r, 6)}-${X.ref(r, 8)}`, e: Object.assign({ formato: EUR, alinha: 'right' }, b) },
-          { v: this.nomePessoa(l.responsavel_id), e: b }, { v: this.nomeDepartamento(l.departamento_id), e: b },
+          { v: this.nomePessoa(l.responsavel_id), e: b }, { v: this.nomeDepartamento(l.departamento_id), e: b }, { v: this.nomeArea(l), e: b },
           { v: this.rotuloProjeto(l), e: b }, { v: l.data_inicio ? S.formatarData(l.data_inicio) : '', e: b },
           { v: prox ? S.formatarData(prox) : '', e: b }, { v: S.ehSubscricao(l) ? (l.renovacao_automatica ? 'Sim' : 'Não') : '', e: b },
           { v: S.ESTADOS[l.estado] || l.estado, e: b }, { v: l.notas, e: b }
         ] });
       });
       // Totais: só as ativas (coluna Estado = "Ativa").
-      const soma = (col) => `SUMIF(${X.ref(primeira, 16)}:${X.ref(ultima, 16)},"Ativa",${X.ref(primeira, col)}:${X.ref(ultima, col)})`;
+      const soma = (col) => `SUMIF(${X.ref(primeira, 17)}:${X.ref(ultima, 17)},"Ativa",${X.ref(primeira, col)}:${X.ref(ultima, col)})`;
       const ativas = lista.filter(l => l.estado === 'ativa');
       const tot = ativas.reduce((a, l) => { const c = S.valorBase(l), f = S.r2(c * S.taxa(l) / 100); a.c += c; a.f += f; a.l += c - f; return a; }, { c: 0, f: 0, l: 0 });
       const te = Object.assign({ negrito: true, fundo: 'DCE8F3', borda: 'topo', formato: EUR, alinha: 'right' });
@@ -623,7 +625,7 @@ const Licencas = {
       // Previsão: as por aprovar e as em processo de aquisição, à parte (não entram no total acima).
       const pendentes = lista.filter(l => S.ehPrevista(l));
       if (pendentes.length) {
-        const somaP = (col) => S.ESTADOS_PREVISTOS.map(e => `SUMIF(${X.ref(primeira, 16)}:${X.ref(ultima, 16)},"${S.ESTADOS[e]}",${X.ref(primeira, col)}:${X.ref(ultima, col)})`).join('+');
+        const somaP = (col) => S.ESTADOS_PREVISTOS.map(e => `SUMIF(${X.ref(primeira, 17)}:${X.ref(ultima, 17)},"${S.ESTADOS[e]}",${X.ref(primeira, col)}:${X.ref(ultima, col)})`).join('+');
         const tp = pendentes.reduce((a, l) => { const c = S.valorBase(l), f = S.r2(c * S.taxa(l) / 100); a.c += c; a.f += f; a.l += c - f; return a; }, { c: 0, f: 0, l: 0 });
         const tpe = { negrito: true, fundo: 'FFF4D6', formato: EUR, alinha: 'right' };
         linhas.push({ altura: 20, celulas: [
@@ -634,7 +636,7 @@ const Licencas = {
       }
       const spec = {
         nome: 'Licenças', paisagem: true,
-        larguras: [28, 18, 16, 13, 8, 18, 18, 10, 16, 16, 20, 20, 30, 12, 14, 10, 11, 36],
+        larguras: [28, 18, 16, 13, 8, 18, 18, 10, 16, 16, 20, 20, 12, 30, 12, 14, 10, 11, 36],
         congelar: { linhas: 4, colunas: 1 },
         autofiltro: { linha: 4, de: 0, ate: cab.length - 1, ultimaLinha: ultima },
         linhas
