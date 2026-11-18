@@ -3859,16 +3859,46 @@ const App = {
   },
   eliminarFatura(projetoId, faturaId) {
     const p = this.state.projetos[projetoId];
-    if (!p) return;
+    if (!p || !this.possoEditarProjeto(p.id)) return;
     if (!confirm('Eliminar esta fatura?')) return;
     p.faturas = p.faturas.filter(f => f.id !== faturaId);
     this.persist();
     this.renderFaturacao();
     this.renderGanttAtual();
   },
+  // Passa uma fatura para outro projeto (Faturação → coluna Projeto). Só Administrador, o Gestor ou o Diretor, e só entre projetos
+  // que a pessoa pode editar (os dois lados). A fatura recebe um id novo: gravar_filhos_projeto escreve um projeto de cada vez e
+  // reaproveitar o id podia chocar com a linha que ainda está no projeto de origem. Uma fatura "por rubricas" fica com o mesmo
+  // valor mas fixo (as rubricas pertencem ao orçamento do projeto de origem); uma em % mantém a percentagem, por isso o valor
+  // muda com o valor vendido do novo projeto (a confirmação diz quanto). Mover é uma alteração normal: o "Desfazer" repõe-na.
+  moverFatura(projetoId, faturaId, destinoId) {
+    const origem = this.state.projetos[projetoId], destino = this.state.projetos[destinoId];
+    const f = origem && origem.faturas.find(x => x.id === faturaId);
+    if (!origem || !destino || !f || origem.id === destino.id) { this.renderTabelaFaturas(); return; }
+    if (!this.possoEditarProjeto(origem.id) || !this.possoEditarProjeto(destino.id)) { this.toast('Não tens permissão para mover faturas entre estes projetos.'); this.renderTabelaFaturas(); return; }
+    const valorAntes = this.valorFatura(f, origem);
+    const copia = JSON.parse(JSON.stringify(f));
+    if (copia.tipo === 'rubricas') { copia.tipo = 'valor'; copia.valor = valorAntes; copia.rubricas = []; }
+    const valorDepois = this.valorFatura(copia, destino);
+    const eur = n => n.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) + ' €';
+    const linhas = [`Mover esta fatura de "${this.rotuloProjetoCompleto(origem)}" para "${this.rotuloProjetoCompleto(destino)}"?`];
+    if (f.tipo === 'percentagem') linhas.push(`É de ${f.percentagem}%: o valor passa de ${eur(valorAntes)} para ${eur(valorDepois)}.`);
+    if (f.tipo === 'rubricas') linhas.push(`Era uma fatura por rubricas do orçamento: passa a valor fixo de ${eur(valorAntes)}.`);
+    if (f.emitida) linhas.push(`Atenção: já está emitida${f.numeroRegisto ? ` (nº ${f.numeroRegisto})` : ''}.`);
+    if (!confirm(linhas.join('\n\n'))) { this.renderTabelaFaturas(); return; }
+    copia.id = crypto.randomUUID();
+    origem.faturas = origem.faturas.filter(x => x.id !== faturaId);
+    destino.faturas.unshift(copia);
+    this.persist();
+    this.renderFaturacao();
+    this.renderGanttAtual();
+    this.renderInfoProjeto();
+    this.toast(`Fatura movida para "${this.rotuloProjetoCompleto(destino)}".`);
+    if (this.projetoSobreFaturado(destino)) this.toast(`⚠ "${destino.nome}" fica com ${eur(this.totalFaturadoProjeto(destino))} em faturas planeadas, acima dos ${eur(destino.valorVendido || 0)} vendidos.`);
+  },
   atualizarFatura(projetoId, faturaId, campo, valor) {
     const p = this.state.projetos[projetoId];
-    if (!p) return;
+    if (!p || !this.possoEditarProjeto(p.id)) return;
     const f = p.faturas.find(x => x.id === faturaId);
     if (!f) return;
     if (campo === 'emitida') {
@@ -8424,6 +8454,8 @@ const App = {
       e.corpoTabelaFaturas.innerHTML = '<tr class="empty-row"><td colspan="10" style="text-align:center;color:var(--cinza-500);padding:20px">Sem faturas para os filtros selecionados.</td></tr>';
       return;
     }
+    // Projetos para onde se pode mover uma fatura: os que esta pessoa pode editar (os mesmos de que vê as faturas).
+    const destinosProjeto = Object.values(this.state.projetos).filter(x => this.possoEditarProjeto(x.id)).sort((a, b) => this.compararProjetos(a, b));
     filtradas.forEach(({ projeto: p, fatura: fat }) => {
       const valor = this.valorFatura(fat, p);
       const sobreFaturado = this.projetoSobreFaturado(p);
@@ -8431,7 +8463,7 @@ const App = {
       tr.className = sobreFaturado ? 'linha-sobre-faturado' : '';
       tr.dataset.faturaId = fat.id;
       tr.innerHTML = `
-        <td>${escapeHtml(p.idInterno || p.nome)}${p.cliente ? ` <span style="color:var(--cinza-500);">(${escapeHtml(p.cliente)})</span>` : ''}</td>
+        <td><select data-mover-projeto class="sel-projeto-fatura" title="Projeto a que esta fatura pertence — escolhe outro para a mover">${destinosProjeto.map(d => `<option value="${escapeAttr(d.id)}"${d.id === p.id ? ' selected' : ''}>${escapeHtml(this.rotuloProjetoCompleto(d))}</option>`).join('')}</select></td>
         <td><input type="date" value="${fat.dataPrevista}" data-campo="dataPrevista"></td>
         <td>
           <select data-campo="tipo">
@@ -8458,6 +8490,7 @@ const App = {
         });
       });
       tr.querySelector('.col-acoes button').addEventListener('click', () => this.eliminarFatura(p.id, fat.id));
+      tr.querySelector('[data-mover-projeto]').addEventListener('change', (ev) => this.moverFatura(p.id, fat.id, ev.target.value));
       const bRub = tr.querySelector('[data-acao-rubricas]');
       if (bRub) bRub.addEventListener('click', () => this.abrirModalRubricasFatura(p.id, fat.id));
       e.corpoTabelaFaturas.appendChild(tr);

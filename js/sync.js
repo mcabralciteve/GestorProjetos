@@ -150,6 +150,14 @@ const Sync = {
       if (error) throw error; // a cascata trata de tarefas/faturas/tarefa_recursos desse projeto
     }
     const alterados = Object.keys(depoisMap).filter(id => JSON.stringify(antesMap[id]) !== JSON.stringify(depoisMap[id]));
+    // Uma fatura movida de um projeto para outro (Faturação) mexe nos dois, e cada projeto grava-se à parte: grava-se primeiro o que
+    // ganhou faturas e só depois o que as perdeu. Se a rede falhar entre os dois, a fatura fica repetida (fácil de ver e apagar)
+    // em vez de desaparecer. A ordem entre os outros projetos mantém-se (a ordenação é estável).
+    const ganhouFaturas = id => {
+      const antes = new Set(((antesMap[id] && antesMap[id].faturas) || []).map(f => f.id));
+      return ((depoisMap[id] && depoisMap[id].faturas) || []).some(f => !antes.has(f.id));
+    };
+    alterados.sort((a, b) => Number(ganhouFaturas(b)) - Number(ganhouFaturas(a)));
     for (const id of alterados) {
       await this.sincronizarUmProjeto(depoisMap[id]);
     }
