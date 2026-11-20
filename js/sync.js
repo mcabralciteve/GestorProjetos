@@ -258,25 +258,45 @@ const Sync = {
   },
 
   // ---------- Leitura: reconstrói App.state a partir das 10 tabelas ----------
+  // O Supabase devolve NO MÁXIMO 1000 linhas por pedido, sem avisar — com mais, as restantes ficam simplesmente de fora
+  // (foi o que aconteceu aos registos de horas ao passarem das 1000: faltavam na app e no backup). Por isso toda a
+  // tabela que pode crescer lê-se por páginas, com uma ordem estável (ordens + a chave) para nenhuma linha se repetir
+  // nem escapar entre páginas. Devolve { data, error } como um pedido normal, para encaixar no resto do código.
+  PAGINA_LEITURA: 1000,
+  async lerTudo(tabela, ordens, chave) {
+    const colunasOrdem = (ordens || []).map(o => (typeof o === 'string' ? { col: o, asc: true } : o));
+    const desempate = chave === undefined ? ['id'] : [].concat(chave);
+    let todas = [];
+    for (let de = 0; ; de += this.PAGINA_LEITURA) {
+      let q = supabaseClient.from(tabela).select('*');
+      colunasOrdem.forEach(o => { q = q.order(o.col, { ascending: o.asc !== false }); });
+      desempate.forEach(c => { q = q.order(c); });
+      const { data, error } = await q.range(de, de + this.PAGINA_LEITURA - 1);
+      if (error) return { data: null, error };
+      todas = todas.concat(data || []);
+      if (!data || data.length < this.PAGINA_LEITURA) break;
+    }
+    return { data: todas, error: null };
+  },
   async carregarDeSupabase() {
     const [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt, he, co] = await Promise.all([
       supabaseClient.from('equipas').select('*'),
       supabaseClient.from('departamentos').select('*'),
       supabaseClient.from('recursos').select('*'),
       supabaseClient.from('feriados').select('*'),
-      supabaseClient.from('ausencias').select('*'),
-      supabaseClient.from('registos').select('*'),
+      this.lerTudo('ausencias'),
+      this.lerTudo('registos'),
       // Ordenado por criação (mais antigo primeiro) — sem isto, a ordem que a Supabase devolve não
       // é garantida nem previsível, e "o meu primeiro projeto" (usado como omissão ao entrar — ver
       // App.aoMudarSessao/meusProjetosDiretamente — e a ordem natural do seletor do Gantt) acabava
       // a mostrar um projeto qualquer, não necessariamente o mais antigo do utilizador.
       supabaseClient.from('projetos').select('*').order('criado_em', { ascending: true }),
-      supabaseClient.from('tarefas').select('*').order('ordem', { ascending: true }),
-      supabaseClient.from('tarefa_recursos').select('*'),
-      supabaseClient.from('faturas').select('*'),
-      supabaseClient.from('pontos_situacao').select('*'),
-      supabaseClient.from('proximos_passos').select('*'),
-      supabaseClient.from('reservas_viatura').select('*'),
+      this.lerTudo('tarefas', ['ordem']),
+      this.lerTudo('tarefa_recursos', [], ['tarefa_id', 'recurso_id']),
+      this.lerTudo('faturas'),
+      this.lerTudo('pontos_situacao'),
+      this.lerTudo('proximos_passos'),
+      this.lerTudo('reservas_viatura'),
       supabaseClient.from('configuracoes').select('*').eq('id', 1).maybeSingle(),
       supabaseClient.from('tipos_trabalho').select('*'),
       // "historico_equipas" é a tabela mais recente (ver schema.sql) — só existe depois de alguém
@@ -289,7 +309,7 @@ const Sync = {
       // conseguir repartir horas antigas de quem já mudou de equipa antes de a tabela existir).
       supabaseClient.from('historico_equipas').select('*').then(r => r, () => ({ data: [], error: null })),
       // Comentários das tarefas (supabase/tarefa_comentarios.sql): mesma regra — sem a tabela, a app continua sem comentários.
-      supabaseClient.from('tarefa_comentarios').select('*').order('criado_em', { ascending: true }).then(r => r, () => ({ data: [], error: { message: 'sem tabela' } }))
+      this.lerTudo('tarefa_comentarios', ['criado_em']).then(r => r, () => ({ data: [], error: { message: 'sem tabela' } }))
     ]);
     [eq, dep, rec, fer, aus, reg, proj, tar, tr, fat, ps, pp, rv, cfg, tt].forEach(r => { if (r.error) throw r.error; });
     if (he.error) { console.warn('historico_equipas ainda não existe no Supabase — corre supabase/schema.sql. A app continua, mas sem histórico de mudanças de equipa.', he.error); he.data = []; }
