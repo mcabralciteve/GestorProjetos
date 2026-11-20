@@ -1,4 +1,4 @@
-// Lógica pura (sem rede nem base de dados) do lembrete de sexta-feira "horas por carregar no orcprev".
+// Lógica pura (sem rede nem base de dados) do lembrete semanal "horas por carregar no orcprev".
 // ESPELHA js/orcprev-logica.js (OrcprevLogica.horasEnviaveisPorDia / estadoSemana) — o ecrã "Horas → Orcprev" do Gestor e
 // este email têm de dar a mesma resposta. Se uma regra mudar numa, muda na outra.
 //
@@ -20,7 +20,12 @@ const paraUTC = (iso: string) => { const [a, m, d] = iso.split('-').map(Number);
 export const somarDias = (iso: string, n: number): string => { const d = paraUTC(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 // Segunda-feira da semana que contém o dia (o orcprev começa a semana à segunda; o domingo pertence à semana que acabou).
 export const segundaDaSemana = (iso: string): string => { const dow = paraUTC(iso).getUTCDay(); return somarDias(iso, dow === 0 ? -6 : 1 - dow); };
-export const ehSexta = (iso: string): boolean => paraUTC(iso).getUTCDay() === 5;
+// Dia da semana de uma data ISO: 0 = domingo … 6 = sábado (o mesmo número do cron e de lembrete_orcprev_dia).
+export const diaDaSemana = (iso: string): number => paraUTC(iso).getUTCDay();
+// Dia configurado válido (0 a 6 inteiro); qualquer outra coisa volta à sexta-feira, o valor original do lembrete.
+export const DIA_POR_OMISSAO = 5;
+export const diaConfigurado = (v: unknown): number => { const n = Number(v); return Number.isInteger(n) && n >= 0 && n <= 6 && v !== null && v !== '' ? n : DIA_POR_OMISSAO; };
+export const NOMES_DIA_SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
 // Horas do Gestor que seguem para o orcprev, por dia: registos de projeto + os tipos de trabalho com atividade do orcprev
 // definida (os que a não têm nunca são enviados). tiposSemAtividade = ids dos tipos SEM atividade.

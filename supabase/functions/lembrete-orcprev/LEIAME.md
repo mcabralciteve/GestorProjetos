@@ -1,6 +1,6 @@
-# Lembrete de sexta-feira: horas por carregar no orcprev
+# Lembrete semanal: horas por carregar no orcprev
 
-À sexta-feira, à hora configurada (**Horas → Orcprev**, por omissão 09:00), cada pessoa **com conta e email** que tenha horas
+No dia da semana e à hora configurados (**Horas → Orcprev**, por omissão sexta-feira às 09:00), cada pessoa **com conta e email** que tenha horas
 registadas no Gestor ainda **não carregadas no orcprev** recebe um email com os dias em falta e, por semana, um **link direto**
 que abre o Gestor (depois do login) já na janela "Horas → orcprev" dessa semana, pronta a copiar. Quem não tem nada em falta não
 recebe nada. Respeita o interruptor, "A minha conta" (lembretes desligados) e o Modo piloto, como os outros lembretes.
@@ -24,10 +24,13 @@ recebe nada. Respeita o interruptor, "A minha conta" (lembretes desligados) e o 
    ```bash
    supabase functions deploy lembrete-orcprev --no-verify-jwt
    ```
-3. **Testar sem enviar nada** (quem receberia e quantos dias; `forcar=1` porque hoje pode não ser sexta-feira):
+3. **Testar sem enviar nada** (quem receberia e quantos dias; `forcar=1` porque hoje pode não ser o dia configurado):
    ```bash
    curl -H "x-cron-secret: <CRON_SECRET>" "https://<ref>.supabase.co/functions/v1/lembrete-orcprev?dry=1&forcar=1"
    ```
    Para ver o email de uma pessoa, enviado só para ti: `...?apenas=a.pessoa@citeve.pt&destino=o.teu@email.pt&forcar=1`.
-4. **Agendar**: corre `agendar_lembrete_orcprev.sql` (nesta pasta) depois de trocar `<ref>` e `<CRON_SECRET>`.
-5. **Ligar**: Horas → Orcprev → "Lembrete de sexta-feira" → marca "Enviar à sexta-feira", escolhe a hora e a data de início → Guardar.
+4. **Agendar**: corre `agendar_lembrete_orcprev.sql` (nesta pasta) depois de trocar `<ref>` e `<CRON_SECRET>`. O agendamento corre
+   **todos os dias** de 10 em 10 minutos; quem decide o dia e a hora do envio é a configuração (o resto das chamadas responde
+   "só se envia à …" e termina). Se tiveres um agendamento antigo só às sextas (`*/10 * * * 5`), tem de passar a `*/10 * * * *`
+   para o dia escolhido funcionar.
+5. **Ligar**: Horas → Orcprev → "Lembrete semanal" → marca "Enviar o lembrete", escolhe o dia da semana, a hora e a data de início → Guardar.

@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { ehSexta, horasEnviaveisPorDia, segundaDaSemana, semanasPorCarregar, type Envio, type RegistoOrc } from './logica.ts';
+import { diaConfigurado, diaDaSemana, horasEnviaveisPorDia, segundaDaSemana, semanasPorCarregar, type Envio, type RegistoOrc } from './logica.ts';
 import { linkDaSemana, montarEmail } from './email.ts';
 
 // 2026-11-13 é sexta-feira; a segunda dessa semana é 2026-11-09.
@@ -9,11 +9,18 @@ const envio = (semana: string, dias: Record<string, number>, confirmado: string 
   ({ recurso_id: 'r1', semana_inicio: semana, criado_em: criado, confirmado_em: confirmado, dias });
 const nenhum = new Set<string>();
 
-Deno.test('datas: segunda-feira da semana e sexta-feira', () => {
+Deno.test('dia configurado: só 0 a 6 inteiros; o resto volta à sexta-feira', () => {
+  assertEquals([0, 1, 5, 6, '3', 3].map(diaConfigurado), [0, 1, 5, 6, 3, 3]);
+  assertEquals([null, undefined, '', 7, -1, 2.5, 'x'].map(diaConfigurado), [5, 5, 5, 5, 5, 5, 5]);
+  assertEquals(diaDaSemana('2026-11-16'), 1); // segunda-feira
+  assertEquals(diaDaSemana('2026-11-22'), 0); // domingo
+});
+
+Deno.test('datas: segunda-feira da semana e dia da semana', () => {
   assertEquals(segundaDaSemana('2026-11-13'), '2026-11-09');
   assertEquals(segundaDaSemana('2026-11-15'), '2026-11-09'); // domingo pertence à semana que acabou
-  assertEquals(ehSexta('2026-11-13'), true);
-  assertEquals(ehSexta('2026-11-12'), false);
+  assertEquals(diaDaSemana('2026-11-13'), 5);
+  assertEquals(diaDaSemana('2026-11-12'), 4);
 });
 
 Deno.test('horas enviáveis: tipos sem atividade e horas nulas ficam de fora; só dentro do intervalo', () => {

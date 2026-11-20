@@ -9,7 +9,7 @@ const OrcprevEstado = {
   semTabela: false,
   erro: null,
   _aCarregar: null,
-  cfg: null,          // { ativo, hora, desde } do lembrete de sexta-feira (só o Administrador o vê/edita)
+  cfg: null,          // { ativo, dia, hora, desde } do lembrete semanal (só o Administrador o vê/edita); dia: 0 = domingo … 6 = sábado
   semCfg: false,
   vista: 'eu',        // 'eu' | 'equipa' | 'todos'
   SEMANAS: 8,
@@ -50,15 +50,19 @@ const OrcprevEstado = {
     })();
     return this._aCarregar;
   },
+  // Dia da semana do lembrete: 0 (domingo) a 6 (sábado); sem valor (coluna ainda não criada) = sexta-feira, o original.
+  DIAS_SEMANA: [[1, 'Segunda-feira'], [2, 'Terça-feira'], [3, 'Quarta-feira'], [4, 'Quinta-feira'], [5, 'Sexta-feira'], [6, 'Sábado'], [0, 'Domingo']],
+  diaValido(v) { const n = Number(v); return v !== null && v !== undefined && v !== '' && Number.isInteger(n) && n >= 0 && n <= 6 ? n : 5; },
+  nomeDia(n) { const d = this.DIAS_SEMANA.find(x => x[0] === n); return d ? d[1] : 'Sexta-feira'; },
   async carregarCfg() {
     try {
-      const { data, error } = await supabaseClient.from('configuracoes').select('lembrete_orcprev_ativo,lembrete_orcprev_hora,orcprev_controlo_desde').eq('id', 1).maybeSingle();
+      const { data, error } = await supabaseClient.from('configuracoes').select('lembrete_orcprev_ativo,lembrete_orcprev_dia,lembrete_orcprev_hora,orcprev_controlo_desde').eq('id', 1).maybeSingle();
       if (error) throw error;
-      this.cfg = { ativo: !!(data && data.lembrete_orcprev_ativo), hora: (data && data.lembrete_orcprev_hora) || '09:00', desde: (data && data.orcprev_controlo_desde) || '' };
+      this.cfg = { ativo: !!(data && data.lembrete_orcprev_ativo), dia: this.diaValido(data && data.lembrete_orcprev_dia), hora: (data && data.lembrete_orcprev_hora) || '09:00', desde: (data && data.orcprev_controlo_desde) || '' };
       this.semCfg = false;
     } catch (e) { this.semCfg = true; }
   },
-  // Chamado ao entrar na app: carrega em fundo (para saber se a tabela existe) e trata do link "#orcprev=AAAA-MM-DD" do email de sexta-feira.
+  // Chamado ao entrar na app: carrega em fundo (para saber se a tabela existe) e trata do link "#orcprev=AAAA-MM-DD" do email do lembrete semanal.
   async aoEntrar() {
     await this.carregar();
     await this.carregarCfg();
@@ -174,10 +178,11 @@ const OrcprevEstado = {
   htmlConfig() {
     if (!App.souAdmin() || this.semCfg || !this.cfg) return '';
     const k = this.cfg;
-    return `<div class="card" style="margin-top:14px;"><b>Lembrete de sexta-feira</b>
-      <p class="hint" style="margin:4px 0 8px;">À sexta-feira, cada pessoa recebe por email as datas com horas por carregar no orcprev, com um link direto para a cópia da semana. Só segue para quem tem conta e não desligou os lembretes (e, em modo piloto, para as pessoas marcadas). A função <code>lembrete-orcprev</code> e o seu agendamento instalam-se à parte (ver LEIAME).</p>
+    return `<div class="card" style="margin-top:14px;"><b>Lembrete semanal</b>
+      <p class="hint" style="margin:4px 0 8px;">No dia da semana e à hora escolhidos, cada pessoa recebe por email as datas com horas por carregar no orcprev, com um link direto para a cópia da semana. Só segue para quem tem conta e não desligou os lembretes (e, em modo piloto, para as pessoas marcadas). A função <code>lembrete-orcprev</code> e o seu agendamento instalam-se à parte (ver LEIAME).</p>
       <div style="display:flex;gap:14px;align-items:end;flex-wrap:wrap;">
-        <label style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" data-orcest-cfg="ativo" ${k.ativo ? 'checked' : ''}> Enviar à sexta-feira</label>
+        <label style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" data-orcest-cfg="ativo" ${k.ativo ? 'checked' : ''}> Enviar o lembrete</label>
+        <label>Dia da semana <select data-orcest-cfg="dia">${this.DIAS_SEMANA.map(([n, nome]) => `<option value="${n}" ${k.dia === n ? 'selected' : ''}>${nome}</option>`).join('')}</select></label>
         <label>Hora <input type="time" data-orcest-cfg="hora" value="${escapeAttr(k.hora)}"></label>
         <label>Contar a partir de <input type="date" data-orcest-cfg="desde" value="${escapeAttr(k.desde)}"></label>
         <button type="button" class="btn btn-primary btn-sm" data-orcest="guardar-cfg">Guardar</button>
@@ -197,13 +202,13 @@ const OrcprevEstado = {
   async guardarCfg(c) {
     const v = n => c.querySelector(`[data-orcest-cfg="${n}"]`);
     const msg = c.querySelector('[data-orcest-msg]');
-    const novo = { ativo: v('ativo').checked, hora: v('hora').value || '09:00', desde: v('desde').value || '' };
+    const novo = { ativo: v('ativo').checked, dia: this.diaValido(v('dia').value), hora: v('hora').value || '09:00', desde: v('desde').value || '' };
     if (novo.desde && !App.anoDataPlausivel(novo.desde)) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Data inválida.'; return; }
     msg.style.color = ''; msg.textContent = 'A gravar…';
-    const { error } = await supabaseClient.from('configuracoes').update({ lembrete_orcprev_ativo: novo.ativo, lembrete_orcprev_hora: novo.hora, orcprev_controlo_desde: novo.desde || null }).eq('id', 1);
+    const { error } = await supabaseClient.from('configuracoes').update({ lembrete_orcprev_ativo: novo.ativo, lembrete_orcprev_dia: novo.dia, lembrete_orcprev_hora: novo.hora, orcprev_controlo_desde: novo.desde || null }).eq('id', 1);
     if (error) { msg.style.color = 'var(--vermelho)'; msg.textContent = 'Não foi possível gravar: ' + error.message; return; }
     this.cfg = novo;
-    App.toast('Guardado.');
+    App.toast(novo.ativo ? `Guardado. O lembrete segue ${novo.dia === 0 || novo.dia === 6 ? 'ao' : 'à'} ${this.nomeDia(novo.dia).toLowerCase()}, às ${novo.hora}.` : 'Guardado.');
     this.render();
   }
 };

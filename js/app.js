@@ -10273,7 +10273,7 @@ const App = {
       <div id="orcSemCorpo"></div>
       <div style="display:flex;gap:10px;align-items:center;margin:10px 0 4px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="btnOrcCopiar">Copiar semana</button>
-        ${ehEu ? '<button class="btn btn-sm" id="btnOrcManual" title="Se já lançaste esta semana à mão no orcprev, marca-a como carregada (deixa de aparecer como em falta e de entrar no lembrete de sexta-feira)">Já lancei à mão</button>' : ''}
+        ${ehEu ? '<button class="btn btn-sm" id="btnOrcManual" title="Se já lançaste esta semana à mão no orcprev, marca-a como carregada (deixa de aparecer como em falta e de entrar no lembrete semanal)">Já lancei à mão</button>' : ''}
         <span class="hint" id="orcCopiarMsg"></span>
       </div>
       <details style="margin-top:10px;">

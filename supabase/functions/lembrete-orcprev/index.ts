@@ -1,7 +1,7 @@
-// Lembrete de sexta-feira: horas registadas no Gestor que ainda não foram carregadas no orcprev, por pessoa, com o link direto
+// Lembrete semanal: horas registadas no Gestor que ainda não foram carregadas no orcprev, por pessoa, com o link direto
 // para a cópia de cada semana. Mesma proteção, agendamento e parâmetros de teste do lembrete-horas (ver o cabeçalho desse
-// index.ts): ?dry=1, ?apenas=, ?destino=, ?forcar=1. Só corre à sexta-feira (?forcar=1 corre em qualquer dia, sem marcar o dia).
-// Configuração em Horas → Orcprev (Administrador): interruptor, hora, e a data a partir da qual se conta (lembrete_orcprev_*,
+// index.ts): ?dry=1, ?apenas=, ?destino=, ?forcar=1. Só corre no dia da semana configurado (?forcar=1 corre em qualquer dia, sem marcar o dia).
+// Configuração em Horas → Orcprev (Administrador): interruptor, dia da semana, hora, e a data a partir da qual se conta (lembrete_orcprev_*,
 // orcprev_controlo_desde). Quem não tem nada por carregar não recebe nada.
 import {
   APP_URL, autorizado, criarDb, despachar, elegiveis, lerParametros, lerTudo, resposta,
@@ -9,7 +9,7 @@ import {
 } from '../_shared/comum.ts';
 import { hojeEmLisboa, horaAtualEmLisboa } from '../lembrete-horas/logica.ts';
 import { montarEmail, totalDias } from './email.ts';
-import { ehSexta, semanasPorCarregar, somarDias, SEMANAS_MAX, type Envio, type RegistoOrc } from './logica.ts';
+import { diaConfigurado, diaDaSemana, NOMES_DIA_SEMANA, semanasPorCarregar, somarDias, SEMANAS_MAX, type Envio, type RegistoOrc } from './logica.ts';
 
 Deno.serve(async (req) => {
   if (!autorizado(req)) return resposta({ erro: 'não autorizado' }, 401);
@@ -18,10 +18,11 @@ Deno.serve(async (req) => {
   const hoje = hojeEmLisboa();
 
   const { data: cfg, error: erroCfg } = await db.from('configuracoes')
-    .select('lembrete_orcprev_ativo,lembretes_piloto_ativo,lembrete_orcprev_hora,lembrete_orcprev_ultimo_envio,orcprev_controlo_desde').eq('id', 1).maybeSingle();
+    .select('lembrete_orcprev_ativo,lembretes_piloto_ativo,lembrete_orcprev_dia,lembrete_orcprev_hora,lembrete_orcprev_ultimo_envio,orcprev_controlo_desde').eq('id', 1).maybeSingle();
   if (erroCfg) return resposta({ erro: String(erroCfg.message ?? erroCfg), dica: 'corre supabase/orcprev_registo.sql' }, 500);
   if (!cfg?.lembrete_orcprev_ativo && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'interruptor desligado' });
-  if (!ehSexta(hoje) && !p.forcar) return resposta({ hoje, enviados: 0, motivo: 'só se envia à sexta-feira' });
+  const diaCfg = diaConfigurado(cfg?.lembrete_orcprev_dia);
+  if (diaDaSemana(hoje) !== diaCfg && !p.forcar) return resposta({ hoje, enviados: 0, motivo: `só se envia à ${NOMES_DIA_SEMANA[diaCfg]}` });
 
   const horaConfigurada = cfg?.lembrete_orcprev_hora || '09:00';
   if (!p.forcar) {
@@ -57,5 +58,5 @@ Deno.serve(async (req) => {
   }
   // Só uma chamada "a sério" marca o dia como feito — ver a mesma nota em lembrete-horas/index.ts.
   if (!p.dry && !p.forcar) await db.from('configuracoes').update({ lembrete_orcprev_ultimo_envio: hoje }).eq('id', 1);
-  return resposta({ hoje, dry: p.dry, horaConfigurada, desde, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
+  return resposta({ hoje, dry: p.dry, dia: NOMES_DIA_SEMANA[diaCfg], horaConfigurada, desde, candidatos: candidatos.length, enviados: resultado.filter(x => x.estado === 'enviado').length, resultado });
 });

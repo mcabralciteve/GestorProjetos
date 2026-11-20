@@ -93,11 +93,16 @@ end $$;
 revoke all on function public.orcprev_marcar_manual(date, date, jsonb) from public, anon;
 grant execute on function public.orcprev_marcar_manual(date, date, jsonb) to authenticated;
 
--- Lembrete de sexta-feira (função "lembrete-orcprev"): interruptor, hora, 1 envio por dia e data a partir da
+-- Lembrete semanal (função "lembrete-orcprev"): interruptor, dia da semana, hora, 1 envio por dia e data a partir da
 -- qual se começa a contar (antes disso nada é considerado em atraso — o que se lançou à mão no passado).
 alter table public.configuracoes add column if not exists lembrete_orcprev_ativo boolean not null default false;
 alter table public.configuracoes add column if not exists lembrete_orcprev_hora text not null default '09:00';
 alter table public.configuracoes add column if not exists lembrete_orcprev_ultimo_envio date;
 alter table public.configuracoes add column if not exists orcprev_controlo_desde date;
+-- Dia da semana do lembrete (configurável em Horas → Orcprev): 0 = domingo, 1 = segunda … 5 = sexta (por omissão), 6 = sábado.
+alter table public.configuracoes add column if not exists lembrete_orcprev_dia smallint not null default 5;
+do $$ begin
+  alter table public.configuracoes add constraint configuracoes_lembrete_orcprev_dia_chk check (lembrete_orcprev_dia between 0 and 6);
+exception when duplicate_object then null; end $$;
 
 notify pgrst, 'reload schema';
