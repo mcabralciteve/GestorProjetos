@@ -94,7 +94,8 @@ const Backup = {
       tarefa_id: r.tarefaId || null, horas: r.horas, notas: r.notas || '', origem: r.origem || 'app',
       user_id: null, // ver nota grande no topo do ficheiro
       submetido_em: r.submetidoEm || null, cliente: r.cliente || '',
-      crm_conta_id: r.crmContaId || null, crm_oportunidade_id: r.crmOportunidadeId || null, oportunidade_texto: r.oportunidadeTexto || ''
+      crm_conta_id: r.crmContaId || null, crm_oportunidade_id: r.crmOportunidadeId || null, oportunidade_texto: r.oportunidadeTexto || '',
+      hora_inicio: r.horaInicio || null, hora_fim: r.horaFim || null
     }));
 
     linhas.pontos_situacao = [];

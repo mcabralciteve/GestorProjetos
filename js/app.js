@@ -354,6 +354,10 @@ const App = {
       regLoteAte: document.getElementById('regLoteAte'),
       regHorasHint: document.getElementById('regHorasHint'),
       regHoras: document.getElementById('regHoras'),
+      regIntervaloWrap: document.getElementById('regIntervaloWrap'),
+      regHoraInicio: document.getElementById('regHoraInicio'),
+      regHoraFim: document.getElementById('regHoraFim'),
+      regIntervaloHint: document.getElementById('regIntervaloHint'),
       regNotas: document.getElementById('regNotas'),
       regMsg: document.getElementById('regMsg'),
       btnSubmeterRegisto: document.getElementById('btnSubmeterRegisto'),
@@ -736,6 +740,8 @@ const App = {
       if (r.crmContaId === undefined) r.crmContaId = null;
       if (r.crmOportunidadeId === undefined) r.crmOportunidadeId = null;
       if (r.oportunidadeTexto === undefined) r.oportunidadeTexto = '';
+      if (r.horaInicio === undefined) r.horaInicio = '';
+      if (r.horaFim === undefined) r.horaFim = '';
     });
     if (!this.state.ausencias) this.state.ausencias = [];
     // Compatibilidade com ausências guardadas antes da aprovação — já contavam como
@@ -4019,6 +4025,8 @@ const App = {
       crmContaId: dados.crmContaId || null,
       crmOportunidadeId: dados.crmOportunidadeId || null,
       oportunidadeTexto: dados.oportunidadeTexto || '',
+      horaInicio: dados.horaInicio || '',
+      horaFim: dados.horaFim || '',
       horas: dados.horas,
       notas: dados.notas || '',
       origem: dados.origem || 'app',
@@ -7062,6 +7070,13 @@ const App = {
     }
     if (e.regModoLoteWrap) e.regModoLoteWrap.style.display = tipo.requerProjeto ? '' : 'none';
     if (!tipo.requerProjeto && e.regModoLote) e.regModoLote.checked = false;
+    // Horas de ausência: opcionalmente por intervalo (das … às …).
+    if (e.regIntervaloWrap) {
+      const comIntervalo = !!tipo.criaAusencia && this.intervaloDisponivel();
+      e.regIntervaloWrap.style.display = comIntervalo ? '' : 'none';
+      if (!comIntervalo) { e.regHoraInicio.value = ''; e.regHoraFim.value = ''; }
+      this.sincronizarIntervaloUI(e.regHoraInicio, e.regHoraFim, e.regHoras, e.regIntervaloHint);
+    }
     this.aplicarModoLoteRegisto();
   },
   // Alterna entre registo dia-a-dia (o de sempre) e registo em lote: um total de horas para a
@@ -7180,6 +7195,11 @@ const App = {
       const h = parseFloat(valor);
       if (!h || h <= 0) { this.toast('Horas é obrigatório e tem de ser maior que zero.'); this.renderTabelaRegistos(); return; }
       r.horas = h; campos.horas = h;
+      // Horas escritas à mão deixam de bater com o intervalo guardado: o intervalo sai (a pessoa pode voltar a indicá-lo ao editar).
+      if (r.horaInicio && Math.abs(h - (IntervaloHoras.horas(r.horaInicio, r.horaFim) || 0)) > 0.005) {
+        r.horaInicio = ''; r.horaFim = '';
+        if (Sync.temIntervalo !== false) { campos.hora_inicio = null; campos.hora_fim = null; }
+      }
       this.invalidarIndiceRegistos();
     } else if (campo === 'notas') {
       r.notas = valor.trim(); campos.notas = r.notas;
@@ -7221,6 +7241,11 @@ const App = {
     if ('tipoTrabalhoId' in alteracoes) { r.tipoTrabalhoId = alteracoes.tipoTrabalhoId; campos.tipo_trabalho_id = r.tipoTrabalhoId; }
     if ('horas' in alteracoes) { r.horas = alteracoes.horas; campos.horas = r.horas; }
     if ('notas' in alteracoes) { r.notas = alteracoes.notas; campos.notas = r.notas; }
+    // Intervalo de horas (só nas ausências por horas — ver IntervaloHoras): vazio = sem intervalo.
+    if ('horaInicio' in alteracoes || 'horaFim' in alteracoes) {
+      r.horaInicio = alteracoes.horaInicio || ''; r.horaFim = alteracoes.horaFim || '';
+      if (Sync.temIntervalo !== false) { campos.hora_inicio = r.horaInicio || null; campos.hora_fim = r.horaFim || null; }
+    }
     if ('projetoIdInterno' in alteracoes) {
       const proj = Object.values(this.state.projetos).find(p => p.idInterno === alteracoes.projetoIdInterno);
       r.projetoIdInterno = alteracoes.projetoIdInterno || '';
@@ -7267,6 +7292,30 @@ const App = {
     this.renderTabelaRegistos();
     this.renderRegistoDia();
   },
+  // ---------- Horas de ausência por intervalo (das … às …) ----------
+  // Só se oferece se a base de dados já tiver as colunas (supabase/registo_intervalo.sql).
+  intervaloDisponivel() { return Sync.temIntervalo !== false; },
+  // Quando início e fim são válidos, as horas calculam-se e o campo fica só de leitura; senão voltam a ser editáveis à mão.
+  sincronizarIntervaloUI(inpIni, inpFim, inpHoras, hint) {
+    const h = IntervaloHoras.horas(inpIni.value, inpFim.value);
+    if (h !== null) {
+      inpHoras.value = h; inpHoras.readOnly = true;
+      hint.textContent = `= ${String(h).replace('.', ',')} h`;
+    } else {
+      inpHoras.readOnly = false;
+      hint.textContent = (inpIni.value || inpFim.value)
+        ? 'Indica o início e o fim (o fim tem de ser depois do início) — ou limpa os dois e escreve só as horas.'
+        : 'Opcional: indica o intervalo e as horas calculam-se sozinhas — ou escreve só as horas.';
+    }
+  },
+  // Valida o intervalo de um registo (vazio = sem intervalo, é válido) e devolve { horaInicio, horaFim, horas } ou { erro }.
+  validarIntervaloRegisto(ini, fim, { pessoa, data, ignorarId, tipoNome }) {
+    if (!ini && !fim) return { horaInicio: '', horaFim: '', horas: null };
+    if (!IntervaloHoras.valido(ini, fim)) return { erro: 'Intervalo inválido: indica a hora de início e a de fim (o fim tem de ser depois do início).' };
+    const c = IntervaloHoras.conflito(this.state.registos, { pessoa, data, ini, fim, ignorarId });
+    if (c) return { erro: `Já há horas de ausência registadas das ${c.horaInicio} às ${c.horaFim} neste dia — o intervalo ${ini}–${fim} sobrepõe-se.` };
+    return { horaInicio: ini, horaFim: fim, horas: IntervaloHoras.horas(ini, fim) };
+  },
   submeterFormRegisto() {
     const e = this.els;
     const pessoa = e.regPessoa.value;
@@ -7310,17 +7359,25 @@ const App = {
           return;
         }
       }
+      let horaInicio = '', horaFim = '', horasFinais = horas;
+      if (tipo.criaAusencia && this.intervaloDisponivel()) {
+        const iv = this.validarIntervaloRegisto(e.regHoraInicio.value, e.regHoraFim.value, { pessoa, data, tipoNome: tipo.nome });
+        if (iv.erro) { e.regMsg.textContent = iv.erro; e.regMsg.style.color = 'var(--vermelho)'; return; }
+        horaInicio = iv.horaInicio; horaFim = iv.horaFim;
+        if (iv.horas !== null) horasFinais = iv.horas;
+      }
       const rc = tipo.comercial && !tipo.criaAusencia && this._rcRegisto ? this._rcRegisto.ler() : null;
       this.submeterRegisto({
         data, pessoa, tipoTrabalhoId: tipo.id, projetoIdInterno: '', projetoNome: '', projetoId: null, cliente: rc ? rc.cliente : '',
         crmContaId: rc ? rc.crmContaId : null, crmOportunidadeId: rc ? rc.crmOportunidadeId : null, oportunidadeTexto: rc ? rc.oportunidadeTexto : '',
-        tarefaNome: '', tarefaId: null, horas, notas,
+        tarefaNome: '', tarefaId: null, horas: horasFinais, horaInicio, horaFim, notas,
         origem: 'app-gestor-projetos', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
       });
       e.regMsg.textContent = 'Registo guardado.';
       e.regMsg.style.color = 'var(--verde)';
       e.regHoras.value = '';
       e.regNotas.value = '';
+      if (e.regHoraInicio) { e.regHoraInicio.value = ''; e.regHoraFim.value = ''; this.sincronizarIntervaloUI(e.regHoraInicio, e.regHoraFim, e.regHoras, e.regIntervaloHint); }
       if (rc) { this._rcRegisto = null; e.regComercialWrap.innerHTML = ''; this.aplicarTipoRegisto(); }   // bloco novo para o próximo registo
       return;
     }
@@ -7643,7 +7700,7 @@ const App = {
         <td>${semProjeto ? '<span style="color:var(--cinza-500)">—</span>' : '<select data-campo="projetoIdInterno" style="min-width:200px"></select>'}</td>
         <td class="cel-cliente">${escapeHtml(r.cliente) || '<span style="color:var(--cinza-500)">—</span>'}</td>
         <td>${semProjeto ? (r.oportunidadeTexto ? `<span title="Oportunidade associada (atividade comercial)">${escapeHtml(r.oportunidadeTexto)}</span>` : '<span style="color:var(--cinza-500)">—</span>') : '<select data-campo="tarefaNome" style="min-width:160px"></select>'}</td>
-        <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"></td>
+        <td><input type="number" min="0.1" step="0.1" value="${parseFloat(r.horas) || 0}" data-campo="horas" style="width:60px"${r.horaInicio ? ` title="${escapeAttr(IntervaloHoras.rotulo(r.horaInicio, r.horaFim))}"` : ''}>${r.horaInicio ? `<div class="hint" style="font-size:10.5px;white-space:nowrap;">${escapeHtml(IntervaloHoras.rotulo(r.horaInicio, r.horaFim))}</div>` : ''}</td>
         <td><input type="text" value="${escapeAttr(r.notas)}" data-campo="notas" style="min-width:160px"></td>
         <td><span style="color:var(--cinza-500);font-size:11px">${escapeHtml(r.origem)}</span></td>
         <td class="col-acoes"><button class="btn-icon" data-editar-registo="${r.id}" title="Editar este registo (todos os campos, como no Registo do Dia)">✎</button><button class="btn-icon" data-eliminar="${r.id}" title="Eliminar">🗑</button></td>`;
@@ -7860,7 +7917,7 @@ const App = {
         // o nome do Tipo de Trabalho no lugar, para nunca mostrar uma barra em branco.
         const rotulo = r.projetoNome || (r.cliente ? `${this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome} — ${r.cliente}` : this.tipoTrabalhoPorId(r.tipoTrabalhoId).nome);
         const linha1 = mostrarPessoaNaBarra ? `${escapeHtml(r.pessoa)} — ${escapeHtml(rotulo)}` : escapeHtml(rotulo);
-        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${this.nomeTarefaRegisto(r) ? ' · ' + escapeAttr(this.nomeTarefaRegisto(r)) : ''} · ${horas}h${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
+        const titulo = `${escapeAttr(r.pessoa)} · ${escapeAttr(rotulo)}${this.nomeTarefaRegisto(r) ? ' · ' + escapeAttr(this.nomeTarefaRegisto(r)) : ''} · ${horas}h${r.horaInicio ? ' (' + escapeAttr(IntervaloHoras.rotulo(r.horaInicio, r.horaFim)) + ')' : ''}${r.notas ? ' · ' + escapeAttr(r.notas) : ''}`;
         return `<div class="cal-bloco" style="height:${altura}px;background:${cor};" title="${titulo}">
           <span class="cal-bloco-linha1">${linha1}</span>
           <span class="cal-bloco-linha2">${escapeHtml(this.nomeTarefaRegisto(r) || r.oportunidadeTexto || '')} · ${horas}h</span>
@@ -8089,7 +8146,7 @@ const App = {
         ${registoExistente.projetoNome ? `<p><b>Projeto:</b> ${escapeHtml(registoExistente.projetoNome)}</p><p><b>Tarefa:</b> ${escapeHtml(this.rotuloTarefaRegisto(registoExistente) || '—')}</p>` : ''}
         ${!registoExistente.projetoNome && registoExistente.cliente ? `<p><b>Cliente:</b> ${escapeHtml(registoExistente.cliente)}</p>` : ''}
         ${registoExistente.oportunidadeTexto ? `<p><b>Oportunidade:</b> ${escapeHtml(registoExistente.oportunidadeTexto)}</p>` : ''}
-        <p><b>Horas:</b> ${registoExistente.horas}h</p>
+        <p><b>Horas:</b> ${registoExistente.horas}h${registoExistente.horaInicio ? ` (${escapeHtml(IntervaloHoras.rotulo(registoExistente.horaInicio, registoExistente.horaFim))})` : ''}</p>
         ${registoExistente.notas ? `<p><b>Notas:</b> ${escapeHtml(registoExistente.notas)}</p>` : ''}
         <p class="hint">Só o Administrador (ou o Gestor do projeto, quando aplicável) pode editar este registo.</p>`);
       return;
@@ -8162,6 +8219,13 @@ const App = {
         <label>Tarefa <select id="blocoTarefa"><option value="">Seleciona…</option></select></label>
       </div>
       <div id="blocoComercialWrap" style="display:none;"></div>
+      <div id="blocoIntervaloWrap" style="display:none;">
+        <div class="row-2">
+          <label>Das <input type="time" id="blocoHoraInicio" value="${escapeAttr(registoExistente ? registoExistente.horaInicio || '' : '')}"></label>
+          <label>Às <input type="time" id="blocoHoraFim" value="${escapeAttr(registoExistente ? registoExistente.horaFim || '' : '')}"></label>
+        </div>
+        <p class="hint" id="blocoIntervaloHint" style="margin:2px 0 8px;"></p>
+      </div>
       <div id="blocoHorasWrap"><label>Horas <input type="number" id="blocoHoras" min="0.25" step="0.25" value="${horasDefeito}"></label></div>
       <label><span>Notas <span style="font-weight:400;color:var(--cinza-500);">(opcional)</span></span>
         <textarea id="blocoNotas" rows="2">${escapeHtml(registoExistente ? registoExistente.notas : '')}</textarea>
@@ -8186,6 +8250,13 @@ const App = {
     const selTarefa = m.querySelector('#blocoTarefa');
     const wrapDuracao = m.querySelector('#blocoDuracaoWrap');
     const hintDuracao = m.querySelector('#blocoDuracaoHint');
+    // Intervalo de horas (das … às …) — só nas ausências por horas; as horas calculam-se sozinhas quando o intervalo é válido.
+    const wrapIntervalo = m.querySelector('#blocoIntervaloWrap');
+    const inpHoraInicio = m.querySelector('#blocoHoraInicio');
+    const inpHoraFim = m.querySelector('#blocoHoraFim');
+    const hintIntervalo = m.querySelector('#blocoIntervaloHint');
+    const inpHoras = m.querySelector('#blocoHoras');
+    const sincronizarIntervalo = () => this.sincronizarIntervaloUI(inpHoraInicio, inpHoraFim, inpHoras, hintIntervalo);
     // Num tipo "cria ausência" novo, escolhe-se entre período (dias) e só algumas horas de um dia.
     const modoDias = () => { const r = m.querySelector('input[name="blocoDuracao"]:checked'); return !r || r.value === 'dias'; };
 
@@ -8237,7 +8308,13 @@ const App = {
       wrapDataFim.style.display = porDias ? '' : 'none';
       wrapHoras.style.display = porDias ? 'none' : '';
       lblData.textContent = porDias ? 'Data início' : 'Data';
+      const comIntervalo = !!tipo.criaAusencia && !porDias && this.intervaloDisponivel();
+      wrapIntervalo.style.display = comIntervalo ? '' : 'none';
+      if (!comIntervalo) { inpHoraInicio.value = ''; inpHoraFim.value = ''; }
+      sincronizarIntervalo();
     };
+    inpHoraInicio.addEventListener('input', sincronizarIntervalo);
+    inpHoraFim.addEventListener('input', sincronizarIntervalo);
     atualizarCamposPorTipo();
     selTipo.addEventListener('change', atualizarCamposPorTipo);
     const selPessoa = m.querySelector('#blocoPessoa');
@@ -8283,7 +8360,13 @@ const App = {
         const motivo = this.diaBloqueadoRegisto(data, recurso);
         if (motivo) { this.toast(`Não é possível registar horas em ${DateUtil.formatShort(DateUtil.parseISO(data))} — ${motivo}.`); return; }
       }
-      const horas = parseFloat(m.querySelector('#blocoHoras').value);
+      let horaInicio = '', horaFim = '', horasIntervalo = null;
+      if (tipo.criaAusencia && this.intervaloDisponivel()) {
+        const iv = this.validarIntervaloRegisto(inpHoraInicio.value, inpHoraFim.value, { pessoa, data, ignorarId: registoId, tipoNome: tipo.nome });
+        if (iv.erro) { this.toast(iv.erro); return; }
+        horaInicio = iv.horaInicio; horaFim = iv.horaFim; horasIntervalo = iv.horas;
+      }
+      const horas = horasIntervalo !== null ? horasIntervalo : parseFloat(inpHoras.value);
       if (!horas || horas <= 0) { this.toast('Indica quantas horas.'); return; }
       let projetoIdInterno = '', tarefaSelecionadaId = '';
       if (tipo.requerProjeto) {
@@ -8302,7 +8385,7 @@ const App = {
       if (registoExistente) {
         this.gravarLinhaRegisto(registoExistente.id, {
           ...(mudarPessoa ? { pessoa } : {}),
-          data, tipoTrabalhoId: tipo.id, horas, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' }),
+          data, tipoTrabalhoId: tipo.id, horas, horaInicio, horaFim, notas, projetoIdInterno, ...(projetoIdInterno ? { tarefaId: tarefaSelecionadaId } : { tarefaNome: '' }),
           cliente: rc.cliente, crmContaId: rc.crmContaId, crmOportunidadeId: rc.crmOportunidadeId, oportunidadeTexto: rc.oportunidadeTexto
         });
       } else {
@@ -8311,7 +8394,7 @@ const App = {
           projetoIdInterno, projetoNome: proj ? proj.nome : '', projetoId: proj ? proj.id : null,
           crmContaId: rc.crmContaId, crmOportunidadeId: rc.crmOportunidadeId, oportunidadeTexto: rc.oportunidadeTexto,
           cliente: proj ? (proj.cliente || '') : rc.cliente, tarefaNome, tarefaId: tarefaReal ? tarefaReal.id : null,
-          horas, notas, origem: 'app-gestor-projetos-dia', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
+          horas, horaInicio, horaFim, notas, origem: 'app-gestor-projetos-dia', userId: this.usuarioAtualId, submetidoEm: new Date().toISOString()
         });
       }
       this.fecharModal();
@@ -11703,6 +11786,7 @@ const App = {
     e.regPessoa.addEventListener('change', () => this.renderProjetosRegisto());
     e.regProjeto.addEventListener('change', () => this.renderTarefasRegisto());
     e.regTipo.addEventListener('change', () => this.aplicarTipoRegisto());
+    [e.regHoraInicio, e.regHoraFim].forEach(inp => { if (inp) inp.addEventListener('input', () => this.sincronizarIntervaloUI(e.regHoraInicio, e.regHoraFim, e.regHoras, e.regIntervaloHint)); });
     if (e.regTarefa) e.regTarefa.addEventListener('change', () => this.aplicarModoLoteRegisto());
     if (e.regModoLote) e.regModoLote.addEventListener('change', () => this.aplicarModoLoteRegisto());
     e.formRegisto.addEventListener('submit', (ev) => { ev.preventDefault(); this.submeterFormRegisto(); });

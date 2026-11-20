@@ -1129,6 +1129,13 @@
           <label>De <input type="date" id="regLoteDe"></label>
           <label>Até <input type="date" id="regLoteAte"></label>
         </div>
+        <div id="regIntervaloWrap" style="display:none;">
+          <div class="row-2">
+            <label>Das <input type="time" id="regHoraInicio"></label>
+            <label>Às <input type="time" id="regHoraFim"></label>
+          </div>
+          <p class="hint" id="regIntervaloHint" style="margin:2px 0 8px;"></p>
+        </div>
         <label><span class="rotulo-campo"><span class="obrig">*</span> Horas <span class="nota" id="regHorasHint"></span></span>
           <input type="number" id="regHoras" min="0.25" step="0.25" placeholder="ex.: 2.5" required>
         </label>
@@ -1439,12 +1446,12 @@
 <script src="js/comentarios-logica.js?v=20261101a"></script>
 <script src="js/reunioes-logica.js?v=20261103a"></script>
 <script src="js/reunioes-ata.js?v=20261111a"></script>
-<script src="js/sync.js?v=20261120a"></script>
+<script src="js/sync.js?v=20261120b"></script>
 <script src="js/gantt.js?v=20261103a"></script>
 <script src="js/capacidade.js?v=20261106a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
-<script src="js/backup.js?v=20261111a"></script>
+<script src="js/backup.js?v=20261120b"></script>
 <script src="js/analise-horas.js?v=20261016b"></script>
 <script src="js/analise-financeira.js?v=20260929g"></script>
 <script src="js/crm-logica.js?v=20261106a"></script>
@@ -1464,6 +1471,7 @@
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/navegacao.js?v=20261112a"></script>
+<script src="js/intervalo-horas.js?v=20261120a"></script>
 <script src="js/ausencias-calendario.js?v=20261116b"></script>
 <script src="js/orcprev-logica.js?v=20261112e"></script>
 <script src="js/orcprev-estado.js?v=20261120a"></script>
@@ -1473,6 +1481,6 @@
 <script src="js/reunioes.js?v=20261103b"></script>
 <script src="js/licencas-logica.js?v=20261116a"></script>
 <script src="js/licencas.js?v=20261116b"></script>
-<script src="js/app.js?v=20261120a"></script>
+<script src="js/app.js?v=20261120b"></script>
 </body>
 </html>

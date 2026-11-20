@@ -106,7 +106,9 @@ const Sync = {
         projeto_id_interno: r.projetoIdInterno, projeto_nome: r.projetoNome, cliente: r.cliente || '', tarefa_nome: r.tarefaNome,
         tarefa_id: r.tarefaId || null, tipo_trabalho_id: r.tipoTrabalhoId || null,
         horas: r.horas, notas: r.notas, origem: r.origem, user_id: r.userId || null, submetido_em: r.submetidoEm,
-        ...(this.temComercial ? { crm_conta_id: r.crmContaId || null, crm_oportunidade_id: r.crmOportunidadeId || null, oportunidade_texto: r.oportunidadeTexto || '' } : {})
+        ...(this.temComercial ? { crm_conta_id: r.crmContaId || null, crm_oportunidade_id: r.crmOportunidadeId || null, oportunidade_texto: r.oportunidadeTexto || '' } : {}),
+        // Intervalo de horas das ausências (supabase/registo_intervalo.sql): sem as colunas, não se envia.
+        ...(this.temIntervalo ? { hora_inicio: r.horaInicio || null, hora_fim: r.horaFim || null } : {})
       }));
       const { error } = await supabaseClient.from('registos').insert(linhas);
       if (error) throw error;
@@ -355,8 +357,10 @@ const Sync = {
       projetoNome: r.projeto_nome, cliente: r.cliente || '', tarefaNome: r.tarefa_nome, tarefaId: r.tarefa_id || null,
       tipoTrabalhoId: r.tipo_trabalho_id || null,
       horas: Number(r.horas) || 0, notas: r.notas, origem: r.origem, userId: r.user_id, submetidoEm: r.submetido_em,
-      crmContaId: r.crm_conta_id || null, crmOportunidadeId: r.crm_oportunidade_id || null, oportunidadeTexto: r.oportunidade_texto || ''
+      crmContaId: r.crm_conta_id || null, crmOportunidadeId: r.crm_oportunidade_id || null, oportunidadeTexto: r.oportunidade_texto || '',
+      horaInicio: r.hora_inicio || '', horaFim: r.hora_fim || ''
     }));
+    this.temIntervalo = reg.data.length === 0 || 'hora_inicio' in reg.data[0];
 
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
     this.temTipoProjeto = proj.data.length === 0 || 'tipo_projeto' in proj.data[0];
