@@ -1251,6 +1251,16 @@ create table if not exists public.crm_oportunidade_faturas (
   percentagem numeric not null check (percentagem >= 0 and percentagem <= 100)
 );
 create index if not exists crm_oportunidade_faturas_op_idx on public.crm_oportunidade_faturas(oportunidade_id);
+-- Plano de faturação por marcos (ver plano_faturacao_marcos.sql): marco 'adjudicacao' | 'execucao' (+ execucao_pct) | 'final'; NULL = mês fixo.
+alter table public.crm_oportunidade_faturas add column if not exists marco text;
+alter table public.crm_oportunidade_faturas add column if not exists execucao_pct numeric;
+do $$ begin
+  alter table public.crm_oportunidade_faturas add constraint crm_oportunidade_faturas_marco_chk check (
+    (marco is null and execucao_pct is null)
+    or (marco in ('adjudicacao', 'final') and execucao_pct is null)
+    or (marco = 'execucao' and execucao_pct is not null and execucao_pct >= 0 and execucao_pct <= 100)
+  );
+exception when duplicate_object then null; end $$;
 
 alter table public.crm_oportunidade_faturas enable row level security;
 drop policy if exists "crm_acesso" on public.crm_oportunidade_faturas;

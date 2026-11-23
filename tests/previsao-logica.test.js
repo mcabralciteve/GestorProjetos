@@ -213,3 +213,22 @@ test('recDasPartes: soma só as equipas escolhidas e recalcula a cobertura; sem 
   assert.equal(nenhuma.porReconhecer, 0);
   assert.equal(nenhuma.cobertura, 1);
 });
+
+// ---- Plano de faturação por marcos ----
+test('dataDoMarco: adjudicação = fecho; execução X% = início + X% da duração em dias; final = último dia; sem marco = fim do mês', () => {
+  const L = require('../js/previsao-logica.js');
+  const ctx = { fechoISO: '2026-12-15', inicioMes: '2027-01', duracao: 2 };   // 01/01 a 28/02/2027 = 58 dias
+  assert.equal(L.dataDoMarco({ marco: 'adjudicacao' }, ctx), '2026-12-15');
+  assert.equal(L.dataDoMarco({ marco: 'final' }, ctx), '2027-02-28');
+  assert.equal(L.dataDoMarco({ marco: 'execucao', execPct: 0 }, ctx), '2027-01-01');
+  assert.equal(L.dataDoMarco({ marco: 'execucao', execPct: 50 }, ctx), '2027-01-30');   // 29 dias depois do início
+  assert.equal(L.dataDoMarco({ marco: 'execucao', execPct: 100 }, ctx), '2027-02-28');
+  assert.equal(L.dataDoMarco({ marco: 'adjudicacao' }, { inicioMes: '2027-01', duracao: 2 }), '2027-01-01');   // sem fecho: início
+  assert.equal(L.dataDoMarco({ marco: null, mes: '2027-03' }, ctx), '2027-03-31');
+});
+test('resolverPlano: ordena por data e devolve o mês de cada marco', () => {
+  const L = require('../js/previsao-logica.js');
+  const r = L.resolverPlano([{ marco: 'final', pct: 30 }, { marco: 'adjudicacao', pct: 20 }, { marco: 'execucao', execPct: 50, pct: 50 }], { fechoISO: '2026-12-15', inicioMes: '2027-01', duracao: 2 });
+  assert.deepEqual(r.map(x => [x.marco, x.mes, x.pct]), [['adjudicacao', '2026-12', 20], ['execucao', '2027-01', 50], ['final', '2027-02', 30]]);
+  assert.equal(L.rotuloMarco({ marco: 'execucao', execPct: 50 }), '50% de execução');
+});

@@ -140,6 +140,17 @@ const CrmLogica = {
     return doOp.find(p => p.estado === 'aceite') || doOp.slice().sort((a, b) => (b.versao || 0) - (a.versao || 0))[0] || null;
   },
 
+  // Valor estimado de uma oportunidade ABERTA que já tem orçamento: o da proposta aceite, senão o da versão mais alta que tenha
+  // valor (as sem orçamento não contam). null = não mexer (sem orçamento, ou oportunidade já ganha/perdida: o valor fechado fica).
+  // valorDe(proposta) devolve o valor vindo dos orçamentos.
+  valorEstimadoPorOrcamento(op, propostas, etapaPorId, valorDe) {
+    if (!op || this.categoriaDe(op, etapaPorId) !== 'aberta') return null;
+    const doOp = propostas.filter(p => p.oportunidade_id === op.id)
+      .sort((a, b) => (b.estado === 'aceite') - (a.estado === 'aceite') || (b.versao || 0) - (a.versao || 0));
+    for (const p of doOp) { const v = Number(valorDe(p)) || 0; if (v > 0) return Math.round(v * 100) / 100; }
+    return null;
+  },
+
   // ============================ Fase 2: dashboard ============================
   // Intervalo [de, ate] (datas ISO inclusivas, ou null = sem limite) de um período predefinido.
   periodoPreset(preset, hojeISO) {

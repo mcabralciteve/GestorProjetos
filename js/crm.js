@@ -86,6 +86,7 @@ const Crm = {
       this.carregado = true;
       this.reindexar();
       this.recalcularFollowups();
+      this.reconciliarValoresOrcamento();   // sem esperar: acerta os valores de oportunidades abertas que já têm orçamento
     })();
     try { await this._aCarregar; this.erroCarga = null; }
     catch (err) { this.erroCarga = this.msgErro(err); throw err; }
@@ -515,7 +516,7 @@ const Crm = {
         <td><select data-op-ed="conta_id" data-id="${id}" data-lazy="contas" style="min-width:210px;"><option value="${escapeAttr(op.conta_id)}" selected>${escapeHtml(conta ? conta.nome : '—')}</option></select></td>
         <td>${escapeHtml(tipo ? tipo.nome : '—')}</td>
         <td><select data-op-ed="etapa_id" data-id="${id}" style="min-width:170px;">${optEtapa(op)}</select></td>
-        <td><input type="number" min="0" step="any" data-op-ed="valor_estimado" data-id="${id}" value="${Number(op.valor_estimado) || 0}" style="width:100px;text-align:right;"></td>
+        <td><input type="number" min="0" step="any" data-op-ed="valor_estimado" data-id="${id}" value="${Number(op.valor_estimado) || 0}" style="width:100px;text-align:right;"${this.valorPorOrcamento(op) !== null ? ' readonly title="Vem do orçamento da proposta — altera-se no orçamento."' : ''}></td>
         <td data-op-calc="prob">${Math.round(CrmLogica.probabilidadeDe(op, this.idx.etapa))}%</td>
         <td data-op-calc="pond" style="white-space:nowrap;">${this.euro(CrmLogica.valorPonderado(op, this.idx.etapa))}</td>
         <td><input type="date" data-op-ed="data_prevista_fecho" data-id="${id}" value="${escapeAttr(op.data_prevista_fecho || '')}" style="width:140px;"></td>
@@ -701,9 +702,22 @@ const Crm = {
       ${campo('fatura com', 'prev_fat_atraso_meses', 0, 24, temAtraso ? Number(t.prev_fat_atraso_meses) || 0 : 1, !temAtraso, temAtraso ? 'Sem plano de faturas, a faturação acompanha o trabalho com este atraso.' : 'Corre supabase/previsao_fase_c.sql.')} mês(es) de atraso (sem plano de faturas)
       ${temAtraso ? '' : '<span class="hint">— corre supabase/previsao_fase_c.sql para editar o atraso.</span>'}</div>`;
   },
+  // Plano de faturação da oportunidade, já com a data de cada marco calculada (ver PrevisaoLogica.dataDoMarco): [{ marco, execPct, pct, data, mes }].
   planoFaturasDaOp(opId) {
-    return (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
-      .map(f => ({ mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0 })).sort((a, b) => a.mes.localeCompare(b.mes));
+    const op = this.idx.op.get(opId);
+    const linhas = (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
+      .map(f => ({ marco: f.marco || null, execPct: f.execucao_pct === null || f.execucao_pct === undefined ? null : Number(f.execucao_pct), mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0 }));
+    return PrevisaoLogica.resolverPlano(linhas, this.contextoPlano(op));
+  },
+  // O que os marcos precisam da oportunidade: data de fecho (adjudicação), início e duração (execução e final). Os valores podem vir do
+  // formulário aberto (ainda por guardar) em vez da oportunidade gravada.
+  contextoPlano(op, formulario) {
+    op = op || {};
+    const f = formulario || {};
+    const def = this.defeitosDoTipo(f.tipoId || op.tipo_id);
+    const fechoISO = f.fecho !== undefined ? f.fecho : (op.data_prevista_fecho || '');
+    const ini = PrevisaoLogica.inicioDaOportunidade({ inicioPrevisto: f.inicio !== undefined ? (f.inicio ? f.inicio + '-01' : null) : op.inicio_previsto, dataFecho: fechoISO || null, aposFecho: def.apos, hojeISO: this.hoje() });
+    return { fechoISO, inicioMes: ini.mes, duracao: (f.duracao !== undefined ? Number(f.duracao) : op.duracao_meses) || def.duracao };
   },
   // O projeto de uma oportunidade GANHA que já tem projeto na app (é então o projeto que conta na Previsão, não a oportunidade), ou null.
   projetoDaOpGanha(o) {
@@ -819,7 +833,7 @@ const Crm = {
       </div>
       <div class="row-2">
         <label>Etapa <select id="opEtapa"></select></label>
-        <label>Valor estimado (€) <input type="number" id="opValor" min="0" step="0.01" value="${Number(o.valor_estimado) || 0}"></label>
+        <label>Valor estimado (€)${op && this.valorPorOrcamento(op) !== null ? ' <span class="nota">(do orçamento)</span>' : ''} <input type="number" id="opValor" min="0" step="0.01" value="${Number(o.valor_estimado) || 0}"${op && this.valorPorOrcamento(op) !== null ? ' readonly title="Vem do orçamento da proposta — altera-se no orçamento."' : ''}></label>
       </div>
       <div id="opPerdaWrap" style="display:none;">
         <div class="row-2">
@@ -1031,8 +1045,31 @@ const Crm = {
     const p = this.idx.proposta.get(propostaId);
     if (!p) return;
     const v = this.valorProposta(p);
-    if (Number(p.valor) === v) return;
-    try { await this.gravar('propostas', Object.assign({}, p, { valor: v })); this.renderAtual(); } catch (err) { console.error(err); }
+    try {
+      if (Number(p.valor) !== v) await this.gravar('propostas', Object.assign({}, p, { valor: v }));
+      await this.sincronizarValorOportunidade(p.oportunidade_id);
+      this.renderAtual();
+    } catch (err) { console.error(err); }
+  },
+  // Valor da oportunidade aberta que já tem orçamento (null = é o que lá estiver: sem orçamento, ou já ganha/perdida).
+  valorPorOrcamento(op) {
+    if (!op || typeof Orc === 'undefined' || Orc.indisponivel) return null;
+    return CrmLogica.valorEstimadoPorOrcamento(op, this.d.propostas, this.idx.etapa, p => this.valorProposta(p));
+  },
+  // Ao abrir o CRM: oportunidades abertas cujo valor ficou diferente do orçamento (criadas antes desta regra) são acertadas.
+  async reconciliarValoresOrcamento() {
+    try {
+      const ids = this.d.oportunidades.filter(o => { const v = this.valorPorOrcamento(o); return v !== null && Number(o.valor_estimado) !== v; }).map(o => o.id);
+      for (const id of ids) await this.sincronizarValorOportunidade(id);
+      if (ids.length && this.renderAtual) this.renderAtual();
+    } catch (err) { console.error(err); }
+  },
+  // O valor estimado da oportunidade acompanha o orçamento: guardar, validar, rejeitar ou apagar um orçamento reajusta-o.
+  async sincronizarValorOportunidade(opId) {
+    const op = this.idx.op.get(opId);
+    const v = this.valorPorOrcamento(op);
+    if (v === null || Number(op.valor_estimado) === v) return;
+    await this.gravar('oportunidades', Object.assign({}, op, { valor_estimado: v }));
   },
   // Referência GIAF da oportunidade (a sua, ou a do projeto ligado).
   refGiafDaOp(op) { return op ? CrmLogica.refGiafDaOportunidade(op, App.state.projetos[op.projeto_id]) : ''; },

@@ -238,7 +238,8 @@ const Orc = {
         ${btnEstado('validado', '✔ Validar (adjudicado)', 'btn-primary')}${btnEstado('rejeitado', 'Rejeitar')}
         ${!editavel ? '<button type="button" class="btn" data-orc-acao="nova-versao">Nova versão a partir deste</button>' : ''}
         ${editavel ? '<button type="button" class="btn" data-orc-acao="atualizar-tarifas" title="Volta a copiar o valor/hora de cada consultor das Pessoas">Atualizar valores/hora</button>' : ''}
-        <button type="button" class="btn" data-orc-acao="excel" title="Só a parte para o cliente: sem margem, custos específicos nem valores/hora">⬇ Proposta cliente (Excel)</button>
+        <button type="button" class="btn" data-orc-acao="excel" title="Só a parte para o cliente: sem margem, custos específicos nem valores/hora. Fica na pasta da proposta (se a pasta CLIENTES estiver ligada neste computador); senão, nas Transferências.">⬇ Proposta cliente (Excel)</button>
+        ${PastaLocal.suportado() ? '<button type="button" class="btn" data-orc-acao="pasta-clientes" title="Escolhe, uma vez neste computador, a pasta CLIENTES sincronizada do SharePoint/OneDrive, para o Excel ser guardado na pasta de cada proposta">📁 Pasta CLIENTES…</button>' : ''}
         <button type="button" class="btn" data-orc-acao="word" title="Preenche a capa e os honorários do modelo de proposta DG015 (Word)">📄 Proposta Word (DG015)</button>
         <button type="button" class="btn" data-orc-acao="voltar">← Voltar à proposta</button>
         ${editavel && !o._novo ? '<button type="button" class="btn btn-danger" data-orc-acao="eliminar">Eliminar</button>' : ''}
@@ -309,6 +310,7 @@ const Orc = {
       else if (acao === 'nova-versao') this.novaVersao();
       else if (acao === 'atualizar-tarifas') this.atualizarTarifas();
       else if (acao === 'excel') this.exportarExcel();
+      else if (acao === 'pasta-clientes') this.ligarPastaClientes();
       else if (acao === 'word') this.abrirWord();
       else if (acao === 'enviar') this.abrirEnvio();
       else if (acao === 'voltar') this.voltar();
@@ -401,8 +403,35 @@ const Orc = {
       const resp = App.state.recursos.find(r => r.id === (op.responsavel_id || Crm.meuRecursoId()));
       const dados = { cliente: conta.nome || '', projeto: op.titulo || '', data: DateUtil.todayISO(), validadeDias: o.validade_dias, responsavel: resp ? resp.nome : '', pc: OrcLogica.propostaCliente(o) };
       const nome = `Proposta_${(conta.nome || 'cliente').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').slice(0, 40)}_v${o.versao}_${DateUtil.todayISO()}.xlsx`;
-      await OrcExport.descarregar(dados, nome);
+      const blob = await OrcExport.blobDaProposta(dados);
+      // Primeiro tenta a pasta da proposta (neste computador); se não der, vai para as Transferências e diz porquê.
+      const r = await this.guardarNaPastaDaProposta(blob, nome);
+      if (r.ok) { App.toast(`Excel guardado na pasta da proposta (${r.onde}).`); return; }
+      App.descarregarBlob(blob, nome);
+      App.toast(`Excel descarregado para as Transferências — ${r.motivoTexto}.`);
     } catch (err) { App.toast(err.message || 'Não consegui gerar o Excel.'); }
+  },
+  // Pasta da proposta = o link do campo "Documento" da proposta, seguido dentro da pasta CLIENTES escolhida neste computador.
+  async guardarNaPastaDaProposta(blob, nome) {
+    const falha = motivo => ({ ok: false, motivo, motivoTexto: PastaLocal.MOTIVOS[motivo] || motivo });
+    if (!PastaLocal.suportado()) return { ok: false, motivo: 'nao-suportado', motivoTexto: 'este browser não deixa guardar em pastas (usa o Chrome ou o Edge)' };
+    try {
+      const par = await this.carregarParametros(true);
+      const segmentos = this.proposta && par && par.sharepoint_url
+        ? PastaLocal.segmentosRelativos(this.proposta.caminho_documento, par.sharepoint_url, u => OrcEnvio.lerLinkSharePoint(u)) : null;
+      const raiz = await PastaLocal.raizGuardada();
+      if (!raiz) return falha('sem-pasta-clientes');
+      const r = await PastaLocal.guardar(raiz, segmentos, nome, blob);
+      return r.ok ? r : falha(r.motivo);
+    } catch (err) { console.error(err); return falha('erro-escrita'); }
+  },
+  // Escolher (uma vez, neste computador) a pasta CLIENTES — a mesma do SharePoint, sincronizada com o OneDrive.
+  async ligarPastaClientes() {
+    if (!PastaLocal.suportado()) { App.toast('Este browser não deixa guardar em pastas — usa o Chrome ou o Edge.'); return; }
+    try {
+      const pasta = await PastaLocal.escolherRaiz();
+      App.toast(`Pasta ligada: ${pasta.name}. Os Excel das propostas passam a ser guardados na pasta de cada proposta.`);
+    } catch (err) { if (err && err.name !== 'AbortError') App.toast('Não consegui ligar a pasta.'); }
   },
 
   reabrirEditor() {

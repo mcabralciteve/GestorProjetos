@@ -320,3 +320,20 @@ test('aFechar: só em curso e com data; ultrapassadas (dias=0) ou também as dos
   assert.deepEqual(C.aFechar(ops, porId, HOJE, 30).map(x => x.id), ['velha', 'deOutro', 'empate', 'recente', 'hoje', 'daqui5']);
   assert.deepEqual(C.aFechar([], porId, HOJE, 0), []);
 });
+
+// ---- Valor estimado da oportunidade acompanha o orçamento ----
+test('valorEstimadoPorOrcamento: aceite primeiro, senão a versão mais alta com valor; fechadas e sem orçamento não mexem', () => {
+  const ex = new Map([['ea', { categoria: 'aberta' }], ['eg', { categoria: 'ganha' }]]);
+  const op = { id: 'o1', etapa_id: 'ea' };
+  const props = [{ id: 'p1', oportunidade_id: 'o1', versao: 1, estado: 'enviada' }, { id: 'p2', oportunidade_id: 'o1', versao: 2, estado: 'rascunho' }, { id: 'p3', oportunidade_id: 'outra', versao: 9, estado: 'aceite' }];
+  const valores = { p1: 1000, p2: 0, p3: 5 };
+  assert.equal(C.valorEstimadoPorOrcamento(op, props, ex, p => valores[p.id]), 1000);          // v2 sem orçamento: usa a v1
+  valores.p2 = 1500.456;
+  assert.equal(C.valorEstimadoPorOrcamento(op, props, ex, p => valores[p.id]), 1500.46);       // a mais alta
+  props[0].estado = 'aceite';
+  assert.equal(C.valorEstimadoPorOrcamento(op, props, ex, p => valores[p.id]), 1000);          // a aceite manda
+  valores.p1 = 0; valores.p2 = 0;
+  assert.equal(C.valorEstimadoPorOrcamento(op, props, ex, p => valores[p.id]), null);          // sem orçamento: não mexe
+  valores.p1 = 1000;
+  assert.equal(C.valorEstimadoPorOrcamento({ id: 'o1', etapa_id: 'eg' }, props, ex, p => valores[p.id]), null);  // ganha: o valor fica
+});
