@@ -1455,7 +1455,7 @@ const App = {
         if (opts.previsao.equipaId && this.state.equipas.some(e => e.id === opts.previsao.equipaId)) p.equipaId = opts.previsao.equipaId;
         opts.previsao.plano.forEach(f => {
           const fatura = this.novaFaturaObj();
-          fatura.tipo = 'percentagem'; fatura.percentagem = f.pct; fatura.dataPrevista = PrevisaoLogica.ultimoDiaDoMes(f.mes);
+          fatura.tipo = 'percentagem'; fatura.percentagem = f.pct; fatura.dataPrevista = f.data || PrevisaoLogica.ultimoDiaDoMes(f.mes);   // a data do marco (adjudicação, X% de execução, final)
           p.faturas.push(fatura);
         });
       }
