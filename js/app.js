@@ -386,6 +386,7 @@ const App = {
       reservaJustificacao: document.getElementById('reservaJustificacao'),
       reservaJustificacaoHint: document.getElementById('reservaJustificacaoHint'),
       reservaDistanciaKm: document.getElementById('reservaDistanciaKm'),
+      reservaNumPessoas: document.getElementById('reservaNumPessoas'),
       reservaDataPedido: document.getElementById('reservaDataPedido'),
       reservaDataInicio: document.getElementById('reservaDataInicio'),
       reservaHoraInicio: document.getElementById('reservaHoraInicio'),
@@ -8884,6 +8885,8 @@ const App = {
     const distanciaKm = e.reservaDistanciaKm.value.trim();
     const empresa = e.reservaEmpresa.value.trim();
     const localidade = e.reservaLocalidade.value.trim();
+    // Nº de pessoas na viatura (por omissão 1): inteiro >= 1. Também vai para a Justificação.
+    const numPessoas = Math.floor(Number(e.reservaNumPessoas.value));
     // Sem projeto (uma das três atividades — RESERVA_TIPOS_ATIVIDADE), é o próprio tipo que ocupa o
     // lugar onde normalmente iria o nome do projeto (célula F15 do Mapa de Despesas); a Justificação,
     // escrita pela pessoa, é que explica do que se trata em concreto (ver reservaJustificacaoHint).
@@ -8901,7 +8904,8 @@ const App = {
       // Em ambos os casos a pessoa pode ter editado o campo, por isso lê-se sempre o que lá está.
       gestor: e.reservaGestor.value.trim(),
       projeto: rotuloAssociacao,
-      justificacao: `${textoJustificacao} - Destino: ${empresa}, ${localidade}` + (distanciaKm ? ` - ${distanciaKm}km no total previsto.` : ''),
+      justificacao: `${textoJustificacao} - Destino: ${empresa}, ${localidade}` + (distanciaKm ? ` - ${distanciaKm}km no total previsto` : '') +
+        (numPessoas >= 1 ? ` - ${numPessoas} ${numPessoas === 1 ? 'pessoa' : 'pessoas'} na viatura.` : '.'),
       data_pedido: e.reservaDataPedido.value,
       data_inicio: e.reservaDataInicio.value,
       hora_inicio: e.reservaHoraInicio.value,
@@ -8909,6 +8913,7 @@ const App = {
       hora_fim: e.reservaHoraFim.value
     };
     if (!recurso) { this.toast('A tua conta ainda não está associada a um consultor.'); return; }
+    if (!Number.isFinite(numPessoas) || numPessoas < 1) { this.toast('Indica quantas pessoas vão na viatura (mínimo 1).'); return; }
     if (!tipo) { this.toast('Escolhe a que associar este pedido, em "Associar a".'); return; }
     if (ehProjeto && !projeto) { this.toast('Escolhe o projeto.'); return; }
     if (!dados.area || !dados.chefia || !textoJustificacao || !empresa || !localidade || !distanciaKm || !dados.data_pedido || !dados.data_inicio || !dados.hora_inicio || !dados.data_fim || !dados.hora_fim) {
