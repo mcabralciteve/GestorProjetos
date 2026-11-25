@@ -328,24 +328,100 @@ const Capacidade = {
   // da mesma tarefa que passariam a ficar com um conflito que não tinham (mover a tarefa mexe nas
   // datas de todos).
   avaliarDeslocamento(projeto, tarefa, recurso, novoInicioISO, novoFimISO, conflitosAntes) {
-    const simular = (rec, inicioISO, fimISO) => this.intervalosCriticos(rec, {
+    const depois = this._simularJanela(projeto, tarefa, recurso, novoInicioISO, novoFimISO);
+    const resolve = depois.length < conflitosAntes && !depois.some(v => v.envolveExtra);
+    return { resolve, problemasOutros: resolve ? this._problemasNosOutros(projeto, tarefa, recurso, novoInicioISO, novoFimISO) : [] };
+  },
+  // Violações de "recurso" se a tarefa passasse a ocupar [inicioISO, fimISO] (com o que ainda falta fazer dela).
+  _simularJanela(projeto, tarefa, rec, inicioISO, fimISO) {
+    return this.intervalosCriticos(rec, {
       excluir: { projetoId: projeto.id, taskId: tarefa.id },
       extra: { inicio: DateUtil.parseISO(inicioISO), fim: DateUtil.parseISO(fimISO), horas: this.horasRestantesTarefa(projeto, tarefa, rec.id) },
       extraNome: tarefa.nome
     });
-    const depois = simular(recurso, novoInicioISO, novoFimISO);
-    const resolve = depois.length < conflitosAntes && !depois.some(v => v.envolveExtra);
-    const problemasOutros = [];
-    if (resolve) {
-      tarefa.recursoIds.filter(id => id !== recurso.id).forEach(id => {
-        const outro = App.state.recursos.find(x => x.id === id);
-        if (!outro) return;
-        const base = simular(outro, tarefa.inicio, tarefa.fim).filter(v => v.envolveExtra).length;
-        const novo = simular(outro, novoInicioISO, novoFimISO).filter(v => v.envolveExtra).length;
-        if (novo > base) problemasOutros.push(outro.nome);
-      });
+  },
+  // Nomes dos OUTROS consultores da tarefa que passariam a ter um conflito que não tinham (mexer nas datas mexe em todos).
+  _problemasNosOutros(projeto, tarefa, recurso, novoInicioISO, novoFimISO) {
+    const out = [];
+    tarefa.recursoIds.filter(id => id !== recurso.id).forEach(id => {
+      const outro = App.state.recursos.find(x => x.id === id);
+      if (!outro) return;
+      const base = this._simularJanela(projeto, tarefa, outro, tarefa.inicio, tarefa.fim).filter(v => v.envolveExtra).length;
+      const novo = this._simularJanela(projeto, tarefa, outro, novoInicioISO, novoFimISO).filter(v => v.envolveExtra).length;
+      if (novo > base) out.push(outro.nome);
+    });
+    return out;
+  },
+  // A tarefa, na janela proposta, deixa de fazer parte de qualquer conflito de "recurso"? (não exige que os outros desapareçam:
+  // serve para dizer "aqui já cabe"). Devolve { semConflito, problemasOutros }.
+  avaliarJanela(projeto, tarefa, recurso, novoInicioISO, novoFimISO) {
+    const depois = this._simularJanela(projeto, tarefa, recurso, novoInicioISO, novoFimISO);
+    const semConflito = !depois.some(v => v.envolveExtra);
+    return { semConflito, problemasOutros: semConflito ? this._problemasNosOutros(projeto, tarefa, recurso, novoInicioISO, novoFimISO) : [] };
+  },
+
+  // Folga diária de "recurso" (horas livres por dia, sem contar uma tarefa à escolha): capacidade do dia menos o que as OUTRAS
+  // tarefas dele lá põem (ver horasTarefaNoDia). O total do dia calcula-se uma vez e guarda-se, para testar várias tarefas/janelas.
+  criarFolga(recurso) {
+    const hojeISO = DateUtil.todayISO();
+    const totais = new Map();
+    return {
+      livreSem: (projeto, tarefa, d) => {
+        if (this.ehFimDeSemana(d)) return 0;
+        const cap = this.capacidadeDiaria(d, recurso);
+        if (cap <= 0) return 0;
+        const iso = DateUtil.toISO(d);
+        if (!totais.has(iso)) totais.set(iso, this.alocacaoDiaria(d, recurso.id));
+        const fimEfetivo = tarefa.fim < hojeISO ? hojeISO : tarefa.fim;
+        const proprio = (tarefa.recursoIds.includes(recurso.id) && iso >= tarefa.inicio && iso <= fimEfetivo) ? this.horasTarefaNoDia(projeto, tarefa, recurso.id, d) : 0;
+        return Math.max(0, cap - (totais.get(iso) - proprio));
+      }
+    };
+  },
+  // "Mover para a próxima disponibilidade": a primeira janela, a partir de hoje, em que o que FALTA desta tarefa cabe na folga do
+  // consultor. Tarefa que já começou (ou em atraso): mantém o início e só se procura o novo fim ("estender"); tarefa por começar:
+  // mantém a duração e procura o novo início ("deslocar"). A folga é só uma aproximação: cada candidato é confirmado com
+  // avaliarJanela (a tarefa já não fica em nenhum conflito). Devolve { modo, novoInicioISO, novoFimISO, problemasOutros } ou null
+  // (nada em ~6 meses, ou tarefa longa demais para fazer sentido deslocá-la).
+  proximaJanela(projeto, tarefa, recurso, folga) {
+    const hojeISO = DateUtil.todayISO();
+    const restantes = this.horasRestantesTarefa(projeto, tarefa, recurso.id);
+    if (restantes <= 0) return null;
+    const hoje = DateUtil.parseISO(hojeISO);
+    const dias = [];
+    for (let i = 0; i <= 180; i++) {
+      const d = DateUtil.addDays(hoje, i);
+      dias.push({ iso: DateUtil.toISO(d), d, livre: folga.livreSem(projeto, tarefa, d) });
     }
-    return { resolve, problemasOutros };
+    const proximoUtil = (iso, n) => DateUtil.toISO(this.deslocarDiasUteis(iso, n));
+    if (tarefa.inicio <= hojeISO) {
+      // Estender: acumula a folga dos dias a partir de hoje até cobrir o que falta.
+      let acum = 0, i = 0;
+      for (; i < dias.length; i++) { acum += dias[i].livre; if (acum + 1e-9 >= restantes) break; }
+      if (i >= dias.length) return null;
+      let fimISO = dias[i].iso;
+      if (fimISO <= tarefa.fim) fimISO = proximoUtil(tarefa.fim, 1); // ainda cabe no prazo atual mas o conflito persiste: pelo menos um dia mais
+      for (let k = 0; k < 4; k++) {
+        const av = this.avaliarJanela(projeto, tarefa, recurso, tarefa.inicio, fimISO);
+        if (av.semConflito) return { modo: 'estender', novoInicioISO: tarefa.inicio, novoFimISO: fimISO, problemasOutros: av.problemasOutros };
+        fimISO = proximoUtil(fimISO, 5);
+      }
+      return null;
+    }
+    // Deslocar: mesma duração, procura o primeiro início (depois do atual) com folga suficiente na janela.
+    const durCal = DateUtil.diffDays(DateUtil.parseISO(tarefa.inicio), DateUtil.parseISO(tarefa.fim));
+    if (durCal > 90) return null;
+    const pref = [0];
+    dias.forEach(x => pref.push(pref[pref.length - 1] + x.livre));
+    let tentativas = 0;
+    for (let i = 0; i + durCal < dias.length; i++) {
+      if (dias[i].iso <= tarefa.inicio || this.ehFimDeSemana(dias[i].d)) continue;
+      if (pref[i + durCal + 1] - pref[i] + 1e-9 < restantes) continue;
+      const av = this.avaliarJanela(projeto, tarefa, recurso, dias[i].iso, dias[i + durCal].iso);
+      if (av.semConflito) return { modo: 'deslocar', novoInicioISO: dias[i].iso, novoFimISO: dias[i + durCal].iso, problemasOutros: av.problemasOutros };
+      if (++tentativas >= 4) break;
+    }
+    return null;
   },
 
   // Resume capacidade/alocação de um recurso num intervalo de dias (dias úteis apenas). Distingue

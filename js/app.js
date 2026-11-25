@@ -55,6 +55,7 @@ const App = {
   LIMITE_HISTORICO: 5,
   abaAtiva: 'dashboard',
   filtroGestorGantt: '',
+  filtroConsultorGantt: '',   // id do consultor escolhido no Gantt ('' = todos) — só mostra as tarefas dele
   filtroEquipasCap: new Set(),   // ids das equipas escolhidas na Capacidade (vazio = todas)
   tipoCap: 'total',              // 'total' | 'servicos' | 'id' | 'servicos+id'
   vistaCap: 'pct',               // 'pct' | 'horas' | 'ambos'
@@ -270,6 +271,7 @@ const App = {
       selVistaCap: document.getElementById('selVistaCap'),
       btnCapExportar: document.getElementById('btnCapExportar'),
       selGestorFiltroGantt: document.getElementById('selGestorFiltroGantt'),
+      selConsultorFiltroGantt: document.getElementById('selConsultorFiltroGantt'),
       fProjGestor: document.getElementById('fProjGestor'),
       fProjCliente: document.getElementById('fProjCliente'),
       fProjEstado: document.getElementById('fProjEstado'),
@@ -1691,6 +1693,7 @@ const App = {
     });
   },
   selecionarProjeto(id) {
+    this.esconderFocoGantt();
     this.state.projetoAtivoId = id;
     this.selecionadaId = null;
     this.selecionadasIds = new Set();
@@ -4462,6 +4465,43 @@ const App = {
     };
     visitar(null, 0);
     return out;
+  },
+  // O que se vê no Gantt (tabela e barras): igual a flatten, mas com o filtro "Consultor" aplicado — ficam as tarefas em que
+  // essa pessoa está, mais as tarefas-pai que as contêm (para a estrutura continuar legível). As operações que mexem na ordem
+  // ou na estrutura usam flatten (a lista toda) e os botões respetivos ficam escondidos enquanto o filtro está ativo.
+  flattenVisivel(p) {
+    const lista = this.flatten(p);
+    if (!this.filtroConsultorGantt) return lista;
+    const ids = this.idsTarefasDoConsultor(p, this.filtroConsultorGantt);
+    return lista.filter(x => ids.has(x.tarefa.id));
+  },
+  idsTarefasDoConsultor(p, recursoId) {
+    const ids = new Set();
+    const porId = new Map(p.tarefas.map(t => [t.id, t]));
+    const paisIds = new Set(p.tarefas.map(t => t.parentId).filter(Boolean));
+    p.tarefas.forEach(t => {
+      if (paisIds.has(t.id) || !(t.recursoIds || []).includes(recursoId)) return;
+      for (let x = t; x && !ids.has(x.id); x = x.parentId ? porId.get(x.parentId) : null) ids.add(x.id);
+    });
+    return ids;
+  },
+  // Caixa "Consultor" do Gantt: só quem está em alguma tarefa do projeto aberto; guarda a escolha enquanto fizer sentido.
+  renderFiltroConsultorGantt(p) {
+    const sel = this.els.selConsultorFiltroGantt;
+    if (!sel) return;
+    const contagem = new Map();
+    if (p) {
+      const paisIds = new Set(p.tarefas.map(t => t.parentId).filter(Boolean));
+      p.tarefas.forEach(t => { if (!paisIds.has(t.id)) (t.recursoIds || []).forEach(rid => contagem.set(rid, (contagem.get(rid) || 0) + 1)); });
+    }
+    const pessoas = [...contagem.keys()].map(id => this.state.recursos.find(r => r.id === id)).filter(Boolean)
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    if (this.filtroConsultorGantt && !contagem.has(this.filtroConsultorGantt)) this.filtroConsultorGantt = '';
+    sel.innerHTML = '<option value="">Todos os consultores</option>' +
+      pessoas.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.nome)} (${contagem.get(r.id)})</option>`).join('');
+    sel.value = this.filtroConsultorGantt;
+    sel.style.display = pessoas.length ? '' : 'none';
+    sel.classList.toggle('filtro-ativo', !!this.filtroConsultorGantt);
   },
 
   renderProjetoSelect() {
@@ -9574,6 +9614,8 @@ const App = {
     const p = this.projetoAtivo();
     const tbody = this.els.corpoTabelaTarefas;
     tbody.innerHTML = '';
+    this.renderFiltroConsultorGantt(p);
+    const filtrado = !!this.filtroConsultorGantt;
     // Limpa os caches de curta duração do motor de capacidade (ver Capacidade.limparCaches) — este
     // render pede avaliarAtribuicao uma vez por (tarefa, consultor), e cada uma delas pode repetir
     // o mesmo trabalho de "quantos dias tem esta janela disponíveis" várias vezes; limpar aqui
@@ -9582,9 +9624,11 @@ const App = {
     Capacidade.limparCaches();
     this.limparCacheDiasUteisEntre();
     const podeEditar = !!p && this.possoEditarProjeto(p.id);
+    // Com o filtro por consultor ativo escondem-se as ferramentas que mexem na estrutura (criar, subir/descer, indentar): a lista
+    // está incompleta e a ordem/hierarquia só se altera com todas as tarefas à vista.
     ['btnAddTarefa', 'btnAddSubtarefa', 'btnAddRecorrente', 'btnSubir', 'btnDescer', 'btnOrdenarData', 'btnIndent', 'btnOutdent', 'btnAssociarLote', 'btnDelTarefa'].forEach(id => {
       const btn = document.getElementById(id);
-      if (btn) btn.style.display = podeEditar ? '' : 'none';
+      if (btn) btn.style.display = (podeEditar && !filtrado) ? '' : 'none';
     });
     if (!p) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Sem projeto carregado — cria um novo projeto para começar.</td></tr>';
@@ -9593,9 +9637,12 @@ const App = {
     }
     this.recomputarResumos(p); // as % das tarefas-resumo seguem sempre a regra atual (pesadas pelas horas previstas), mesmo em projetos gravados antes
     this.aplicarProgressoAuto(p);
-    const lista = this.flatten(p);
+    const lista = this.flattenVisivel(p);
     const hojeISO = DateUtil.todayISO();
     const pendentesCap = [];
+    if (filtrado && !lista.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8" style="text-align:center;color:var(--cinza-500);padding:24px">Este consultor não tem tarefas neste projeto.</td></tr>';
+    }
     lista.forEach(({ tarefa: t, nivel }) => {
       const filhos = this.temFilhos(p, t.id);
       const atrasada = t.fim < hojeISO && t.progresso < 100;
@@ -9630,7 +9677,7 @@ const App = {
       const celulas = {
         nome: `<td class="col-nome">
           <div class="nome-cell" style="padding-left:${nivel * 16}px">
-            ${podeEditar ? `<span class="linha-handle" title="Arrastar para mover (e indentar/promover, conforme a posição)">⠿</span>` : ''}
+            ${(podeEditar && !filtrado) ? `<span class="linha-handle" title="Arrastar para mover (e indentar/promover, conforme a posição)">⠿</span>` : ''}
             <span class="toggle-filhos">${filhos ? (this.colapsadas.has(t.id) ? '▶' : '▼') : ''}</span>
             <input type="text" value="${escapeAttr(t.nome)}" data-campo="nome" ${podeEditar ? '' : 'disabled'}
               style="${t.negrito ? 'font-weight:700;' : ''}${t.italico ? 'font-style:italic;' : ''}${t.cor ? 'color:' + escapeAttr(t.cor) + ';' : ''}">
@@ -9736,7 +9783,7 @@ const App = {
     const multi = e && (e.ctrlKey || e.metaKey);
     const intervalo = e && e.shiftKey;
     if (intervalo && this._ancoraSelecao && p) {
-      const ordemIds = this.flatten(p).map(x => x.tarefa.id);
+      const ordemIds = this.flattenVisivel(p).map(x => x.tarefa.id);
       const i1 = ordemIds.indexOf(this._ancoraSelecao), i2 = ordemIds.indexOf(id);
       if (i1 !== -1 && i2 !== -1) {
         const [a, b] = i1 < i2 ? [i1, i2] : [i2, i1];
@@ -9764,7 +9811,7 @@ const App = {
   renderGanttAtual() {
     const p = this.projetoAtivo();
     if (!p || !this.ganttVisivel) { this.els.ganttContainer.innerHTML = ''; return; }
-    const lista = this.flatten(p);
+    const lista = this.flattenVisivel(p);
     Gantt.render(this.els.ganttContainer, p, lista, {
       zoom: this.zoom,
       selecionadaId: this.selecionadaId,
@@ -10872,6 +10919,7 @@ const App = {
     if (this.modalTemAlteracoes() && !confirm('Tens alterações por guardar na janela aberta. Sair mesmo assim?')) { this.retornos.push(r); this.atualizarBotaoVoltar(); return; }
     this.irParaAba(r.aba);
     if (r.reabrir && typeof Crm !== 'undefined') Crm.restaurar(r);
+    if (typeof r.acao === 'function') r.acao();
   },
   modalTemAlteracoes() {
     return this._modalAlteracoes ? !!this._modalAlteracoes() : !!this._modalSujo;
@@ -11119,40 +11167,130 @@ const App = {
     }
     return sugestoes;
   },
-  // Secção "conflitos" no topo da janela de Alocações de uma pessoa: só o que está em conflito, com
-  // as tarefas envolvidas e, para cada uma, as formas de o resolver deslocando-a (botão "Aplicar"
-  // quando se pode editar o projeto). Devolve '' se não houver nada em conflito.
+  // Recomendações para aliviar UMA tarefa de UM consultor em conflito (janela de Alocações e aviso no Gantt). Cada item:
+  // { tipo: 'mover' | 'horas', texto, aviso, destaque, dados } — "dados" alimenta o botão Aplicar.
+  //  - tarefa em atraso (prazo passado e ainda com horas por fazer): o que falta conta todo em hoje, por isso o que ajuda é
+  //    prolongar o prazo até haver folga;
+  //  - tarefa por fazer: deslocamentos pequenos que resolvem o conflito; se nenhum resolve, a próxima disponibilidade;
+  //  - havendo excesso: reduzir a alocação do consultor nesta tarefa.
+  // "contexto": { conflitosAntes (nº de violações do consultor), folga (Capacidade.criarFolga), moverCache (Map) }.
+  recomendacoesAlocacao(p, t, r, violacao, contexto) {
+    const hojeISO = DateUtil.todayISO();
+    const fmt = (iso) => DateUtil.formatShort(DateUtil.parseISO(iso));
+    const periodo = (ini, fim) => ini === fim ? fmt(ini) : `${fmt(ini)}–${fmt(fim)}`;
+    const arred = (n) => Math.round(n * 100) / 100;
+    const avisoOutros = (nomes) => nomes.length ? `⚠ criaria conflito a ${nomes.join(', ')}` : '';
+    const restantes = Capacidade.horasRestantesTarefa(p, t, r.id);
+    const emAtraso = t.fim < hojeISO && (t.progresso || 0) < 100 && restantes > 0;
+    const chave = p.id + '|' + t.id;
+    if (!contexto.moverCache.has(chave)) {
+      const mover = [];
+      const pequenos = emAtraso ? [] : this.sugestoesDeslocamento(p, t, r, contexto.conflitosAntes);
+      pequenos.forEach(s => {
+        const dias = Math.abs(s.delta);
+        mover.push({ tipo: 'mover', texto: `Mover ${dias} ${dias > 1 ? 'dias úteis' : 'dia útil'} para ${s.delta > 0 ? 'a frente' : 'trás'} (${periodo(s.novoInicioISO, s.novoFimISO)})`, aviso: avisoOutros(s.problemasOutros), dados: [p.id, t.id, s.novoInicioISO, s.novoFimISO] });
+      });
+      if (!pequenos.length) {
+        const j = Capacidade.proximaJanela(p, t, r, contexto.folga);
+        if (j) {
+          mover.push({
+            tipo: 'mover', destaque: true,
+            texto: j.modo === 'estender'
+              ? `Prolongar o prazo até ${fmt(j.novoFimISO)} (primeira folga de ${r.nome} para as ${arred(restantes)}h que faltam)`
+              : `Mover para a próxima disponibilidade (${periodo(j.novoInicioISO, j.novoFimISO)})`,
+            aviso: avisoOutros(j.problemasOutros), dados: [p.id, t.id, j.novoInicioISO, j.novoFimISO]
+          });
+        }
+      }
+      contexto.moverCache.set(chave, mover);
+    }
+    const itens = contexto.moverCache.get(chave).slice();
+    if (violacao && violacao.excesso > 0.05 && restantes > 0) {
+      const previstas = this.horasAlocadas(t, r.id);
+      const feitas = this.horasJaRegistadasTarefa(p, t, r.id);
+      // Corta o que falta para cobrir o excesso, mas nunca mais de metade (um corte maior que isso já é decidir que a tarefa
+      // quase não se faz — não é uma recomendação automática); se não chegar, o aviso diz quanto alivia.
+      const corte = Math.min(violacao.excesso, restantes * 0.5);
+      const novas = Math.max(Math.ceil((previstas - corte) * 4) / 4, feitas, 0.25);
+      if (novas < previstas - 0.01) {
+        const alivio = arred(previstas - novas);
+        itens.push({
+          tipo: 'horas',
+          texto: `Reduzir a alocação de ${r.nome} nesta tarefa de ${arred(previstas)}h para ${arred(novas)}h` + (alivio < violacao.excesso - 0.01 ? ` (alivia ${alivio}h das ${arred(violacao.excesso)}h em excesso)` : ''),
+          aviso: '', dados: [p.id, t.id, r.id, arred(novas)]
+        });
+      }
+    }
+    return { emAtraso, restantes, itens };
+  },
+  htmlRecomendacoes(p, itens) {
+    if (!itens.length) return '<div class="hint" style="margin-top:3px;">Sem recomendação automática que resolva isto — considera passar a tarefa a outro consultor.</div>';
+    const pode = this.possoEditarProjeto(p.id);
+    return itens.map(it => {
+      const texto = (it.destaque ? '💡 ' : '') + it.texto;
+      const aviso = it.aviso ? ` <span style="color:#b45309;">${escapeHtml(it.aviso)}</span>` : '';
+      const attr = `${it.tipo === 'mover' ? 'data-aplicar-desloc' : 'data-aplicar-horas'}="${escapeAttr(it.dados.join('|'))}"`;
+      return pode
+        ? `<div style="margin-top:3px;"><button type="button" class="btn btn-sm" ${attr}>${escapeHtml(texto)}</button>${aviso}</div>`
+        : `<div class="hint" style="margin-top:3px;">${escapeHtml(texto)} (só o gestor do projeto pode aplicar)${aviso}</div>`;
+    }).join('');
+  },
+  // Liga os botões de uma janela/aviso com recomendações: Aplicar (mover datas / reduzir horas) e Ver no Gantt. "aposAplicar"
+  // volta a desenhar o que estiver à vista (a janela de Alocações ou o aviso do Gantt) já com os conflitos recalculados.
+  ligarAcoesAlocacao(raiz, aposAplicar, recursoId) {
+    raiz.querySelectorAll('[data-aplicar-desloc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [projetoId, taskId, novoInicio, novoFim] = btn.dataset.aplicarDesloc.split('|');
+        const projeto = this.state.projetos[projetoId];
+        if (!projeto || !this.possoEditarProjeto(projetoId)) { this.toast('Não tens permissão para alterar este projeto.'); return; }
+        this.comSinalDeProcessamento('A aplicar e a recalcular conflitos…', () => {
+          this.moverTarefa(taskId, novoInicio, novoFim, projeto);
+          aposAplicar();
+        });
+      });
+    });
+    raiz.querySelectorAll('[data-aplicar-horas]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [projetoId, taskId, rid, horas] = btn.dataset.aplicarHoras.split('|');
+        const projeto = this.state.projetos[projetoId];
+        if (!projeto || !this.possoEditarProjeto(projetoId)) { this.toast('Não tens permissão para alterar este projeto.'); return; }
+        this.comSinalDeProcessamento('A aplicar e a recalcular conflitos…', () => {
+          this.definirHorasRecursoTarefa(projeto, taskId, rid, horas);
+          aposAplicar();
+        });
+      });
+    });
+    raiz.querySelectorAll('[data-ver-gantt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [projetoId, taskId] = btn.dataset.verGantt.split('|');
+        this.irParaTarefaNoGantt(projetoId, taskId, recursoId);
+      });
+    });
+  },
+  // Secção "conflitos" no topo da janela de Alocações de uma pessoa: só o que está em conflito, com as tarefas envolvidas e,
+  // para cada uma, as recomendações (botão "Aplicar" quando se pode editar o projeto) e a ligação ao Gantt. Devolve '' se não
+  // houver nada em conflito.
   montarSecaoConflitosAlocacao(r, linhas) {
     const violacoes = Capacidade.intervalosCriticos(r);
     // Uma tarefa de fim de semana já listada como conflito (tem horas por fazer) não se repete abaixo.
     const idsEmConflito = new Set(violacoes.flatMap(v => (v.tarefasInfo || []).map(i => i.taskId)));
     const soFimDeSemana = linhas.filter(l => l.resultado.semDiasUteis && !idsEmConflito.has(l.tarefa.id));
     if (!violacoes.length && !soFimDeSemana.length) return '';
+    const contexto = { conflitosAntes: violacoes.length, folga: Capacidade.criarFolga(r), moverCache: new Map() };
     const fmt = (iso) => DateUtil.formatShort(DateUtil.parseISO(iso));
     const periodoTarefa = (t) => t.inicio === t.fim ? fmt(t.inicio) : `${fmt(t.inicio)}–${fmt(t.fim)}`;
-    const botao = (p, t, s, texto) => this.possoEditarProjeto(p.id)
-      ? `<button type="button" class="btn btn-sm" data-aplicar-desloc="${escapeAttr(`${p.id}|${t.id}|${s.novoInicioISO}|${s.novoFimISO}`)}">${texto}</button>`
-      : `<span class="hint">${texto} (sem permissão para alterar este projeto)</span>`;
-    const textoSug = (s) => {
-      const dias = Math.abs(s.delta);
-      const quando = s.novoInicioISO === s.novoFimISO ? fmt(s.novoInicioISO) : `${fmt(s.novoInicioISO)}–${fmt(s.novoFimISO)}`;
-      return `Mover ${dias} ${dias > 1 ? 'dias úteis' : 'dia útil'} para ${s.delta > 0 ? 'a frente' : 'trás'} (${quando})`;
-    };
-    const avisoOutros = (s) => s.problemasOutros.length
-      ? ` <span style="color:#b45309;">⚠ criaria conflito a ${escapeHtml(s.problemasOutros.join(', '))}</span>` : '';
+    const botaoGantt = (p, t) => `<button type="button" class="btn btn-sm" style="margin-left:6px;" data-ver-gantt="${escapeAttr(p.id + '|' + t.id)}" title="Abrir esta tarefa no Gantt do projeto">🎯 Ver no Gantt</button>`;
     const blocos = violacoes.map(v => {
       const periodo = +v.inicio === +v.fim ? DateUtil.formatShort(v.inicio) : `${DateUtil.formatShort(v.inicio)}–${DateUtil.formatShort(v.fim)}`;
       const itens = (v.tarefasInfo || []).map(info => {
         const p = this.state.projetos[info.projetoId];
         const t = p && this.tarefaPorId(p, info.taskId);
         if (!t) return '';
-        const sugs = this.sugestoesDeslocamento(p, t, r, violacoes.length);
-        const corpoSug = sugs.length
-          ? sugs.map(s => `<div style="margin-top:3px;">${botao(p, t, s, textoSug(s))}${avisoOutros(s)}</div>`).join('')
-          : '<div class="hint" style="margin-top:3px;">Nenhum deslocamento de até 5 dias úteis resolve isto — considera reduzir as horas ou passar a tarefa a outro consultor.</div>';
+        const rec = this.recomendacoesAlocacao(p, t, r, v, contexto);
+        const atraso = rec.emAtraso ? ` <span style="color:#b45309;" title="O que falta fazer desta tarefa conta todo em hoje, por isso pesa tanto no excesso.">⏰ em atraso desde ${fmt(t.fim)}</span>` : '';
         return `<div style="padding:6px 0;border-top:1px solid var(--cinza-100);">
-          <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} · ${Math.round(info.horas * 100) / 100}h por fazer
-          ${corpoSug}
+          <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} · ${Math.round(info.horas * 100) / 100}h por fazer${atraso}${botaoGantt(p, t)}
+          ${this.htmlRecomendacoes(p, rec.itens)}
         </div>`;
       }).join('');
       return `<div style="margin-bottom:10px;">
@@ -11164,10 +11302,11 @@ const App = {
       const t = l.tarefa, p = l.projeto;
       const novoInicio = Capacidade.deslocarDiasUteis(t.inicio, 1);
       const deltaCal = DateUtil.diffDays(DateUtil.parseISO(t.inicio), novoInicio);
-      const s = { delta: 1, novoInicioISO: DateUtil.toISO(novoInicio), novoFimISO: DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.fim), deltaCal)), problemasOutros: [] };
+      const s = { novoInicioISO: DateUtil.toISO(novoInicio), novoFimISO: DateUtil.toISO(DateUtil.addDays(DateUtil.parseISO(t.fim), deltaCal)) };
+      const item = { tipo: 'mover', texto: `Mover para o próximo dia útil (${fmt(s.novoInicioISO)})`, aviso: '', dados: [p.id, t.id, s.novoInicioISO, s.novoFimISO] };
       return `<div style="padding:6px 0;border-top:1px solid var(--cinza-100);">
-        <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} — cai só em fim de semana
-        <div style="margin-top:3px;">${botao(p, t, s, `Mover para o próximo dia útil (${fmt(s.novoInicioISO)})`)}</div>
+        <b>${escapeHtml(p.nome)}</b> · ${escapeHtml(t.nome)} · ${periodoTarefa(t)} — cai só em fim de semana${botaoGantt(p, t)}
+        ${this.htmlRecomendacoes(p, [item])}
       </div>`;
     }).join('');
     return `<div style="border:1px solid rgba(220,38,38,0.35);background:rgba(220,38,38,0.07);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
@@ -11175,6 +11314,80 @@ const App = {
       ${blocos}
       ${blocosFds ? `<div style="font-weight:600;color:#b91c1c;margin-top:4px;">Tarefas em fim de semana</div>${blocosFds}` : ''}
     </div>`;
+  },
+  // De uma tarefa na janela de Alocações para o Gantt do projeto: abre o projeto, expande o que estiver fechado, seleciona e
+  // pisca a tarefa e mostra, por cima do Gantt, o conflito com as recomendações. O "↩ Voltar" reabre as Alocações da pessoa.
+  irParaTarefaNoGantt(projetoId, taskId, recursoId) {
+    const p = this.state.projetos[projetoId];
+    if (!p || !this.tarefaPorId(p, taskId)) return;
+    if (!this.projetosQuePossoVer().some(x => x.id === projetoId)) { this.toast('Não tens acesso ao Gantt deste projeto.'); return; }
+    const r = this.state.recursos.find(x => x.id === recursoId);
+    const de = this.abaAtiva;
+    this.fecharModal();
+    if (r && de && de !== 'gantt') this.empurrarRetorno({ rotulo: 'Alocações de ' + r.nome, aba: de, acao: () => this.abrirModalAlocacoesRecurso(recursoId) });
+    this.abrirProjetoNoGantt(projetoId, { semRetorno: true });
+    // abrirProjetoNoGantt redesenha daqui a ~20 ms (ver selecionarProjeto): só depois se pode selecionar e centrar a linha.
+    const foco = { projetoId, taskId, recursoId };
+    setTimeout(() => this.aplicarFocoTarefa(foco), 60);
+  },
+  aplicarFocoTarefa(foco) {
+    const p = this.projetoAtivo();
+    if (!p || p.id !== foco.projetoId) return;
+    const t = this.tarefaPorId(p, foco.taskId);
+    if (!t) return;
+    for (let pid = t.parentId; pid; pid = (this.tarefaPorId(p, pid) || {}).parentId) this.colapsadas.delete(pid);
+    if (this.filtroConsultorGantt && !this.idsTarefasDoConsultor(p, this.filtroConsultorGantt).has(t.id)) this.filtroConsultorGantt = '';
+    this.selecionadaId = t.id;
+    this.selecionadasIds = new Set([t.id]);
+    this._ancoraSelecao = t.id;
+    this.renderTabelaTarefas();
+    this.renderGanttAtual();
+    const tr = this.els.corpoTabelaTarefas.querySelector(`tr[data-id="${(window.CSS && CSS.escape) ? CSS.escape(t.id) : t.id}"]`);
+    if (tr) {
+      tr.scrollIntoView({ block: 'center' });
+      tr.classList.add('tarefa-foco');
+      setTimeout(() => tr.classList.remove('tarefa-foco'), 2600);
+    }
+    this.mostrarFocoGantt(foco);
+  },
+  esconderFocoGantt() {
+    const el = document.getElementById('ganttFoco');
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  },
+  // Faixa por cima do Gantt: a tarefa a que se veio, o conflito do consultor e as recomendações (as mesmas da janela de Alocações).
+  mostrarFocoGantt(foco) {
+    const el = document.getElementById('ganttFoco');
+    if (!el) return;
+    const p = this.state.projetos[foco.projetoId];
+    const t = p && this.tarefaPorId(p, foco.taskId);
+    const r = this.state.recursos.find(x => x.id === foco.recursoId);
+    if (!p || !t || !r) { this.esconderFocoGantt(); return; }
+    Capacidade.limparCaches();
+    this.limparCacheDiasUteisEntre();
+    const todas = Capacidade.intervalosCriticos(r);
+    const violacoes = todas.filter(v => (v.tarefasInfo || []).some(i => i.taskId === t.id));
+    const contexto = { conflitosAntes: todas.length, folga: Capacidade.criarFolga(r), moverCache: new Map() };
+    const fmt = (iso) => DateUtil.formatShort(DateUtil.parseISO(iso));
+    let corpo;
+    if (!violacoes.length) {
+      corpo = `<div class="hint">${escapeHtml(r.nome)} já não tem conflito de alocação nesta tarefa. ✓</div>`;
+    } else {
+      corpo = violacoes.slice(0, 2).map(v => {
+        const periodo = +v.inicio === +v.fim ? DateUtil.formatShort(v.inicio) : `${DateUtil.formatShort(v.inicio)}–${DateUtil.formatShort(v.fim)}`;
+        const rec = this.recomendacoesAlocacao(p, t, r, v, contexto);
+        const atraso = rec.emAtraso ? ` <span style="color:#b45309;">⏰ em atraso desde ${fmt(t.fim)} — o que falta conta todo em hoje</span>` : '';
+        return `<div style="margin-top:4px;"><span style="font-weight:600;color:#b91c1c;">📅 ${periodo} — excesso de ${v.excesso.toFixed(1)}h</span>${atraso}${this.htmlRecomendacoes(p, rec.itens)}</div>`;
+      }).join('');
+    }
+    const ultimo = this.retornos[this.retornos.length - 1];
+    const voltar = ultimo && typeof ultimo.acao === 'function' ? `<button type="button" class="btn btn-sm" data-foco-voltar>↩ ${escapeHtml(Navegacao.curto(ultimo.rotulo, 40))}</button>` : '';
+    el.innerHTML = `<div class="gantt-foco-cab"><b>🎯 ${escapeHtml(t.nome)}</b> · ${escapeHtml(r.nome)} <span class="spacer"></span>${voltar}<button type="button" class="btn btn-sm" data-foco-fechar title="Fechar este aviso">✕</button></div>${corpo}`;
+    el.style.display = '';
+    this.ligarAcoesAlocacao(el, () => this.mostrarFocoGantt(foco), foco.recursoId);
+    const bFechar = el.querySelector('[data-foco-fechar]');
+    if (bFechar) bFechar.addEventListener('click', () => this.esconderFocoGantt());
+    const bVoltar = el.querySelector('[data-foco-voltar]');
+    if (bVoltar) bVoltar.addEventListener('click', () => { this.esconderFocoGantt(); this.voltarRetorno(); });
   },
   abrirModalAlocacoesRecurso(recursoId) {
     const r = this.state.recursos.find(x => x.id === recursoId);
@@ -11202,6 +11415,7 @@ const App = {
       l.resultado = Capacidade.avaliarAtribuicao(r, l.projeto.id, l.tarefa.id, l.tarefa.inicio, l.tarefa.fim, pct);
     });
 
+    const hojeISO = DateUtil.todayISO();
     const numConflito = linhas.filter(l => l.resultado.nivel === 'critico').length;
     const resumoTopo = linhas.length
       ? `<p class="hint" style="margin:0 0 10px;">${linhas.length} alocação(ões) em ${new Set(linhas.map(l => l.projeto.id)).size} projeto(s).${numConflito ? ` <b style="color:#dc2626;">⚠ ${numConflito} com conflito de alocação.</b>` : ' Sem conflitos de alocação.'} Ajusta as horas de alocação diretamente aqui para resolver.</p>`
@@ -11214,7 +11428,7 @@ const App = {
       ${secaoConflitos ? '<h4 style="margin:4px 0 6px;font-size:13px;color:var(--cinza-700);">Todas as alocações</h4>' : ''}
       <div class="table-scroll" style="max-height:50vh;">
         <table class="tabela-crud">
-          <thead><tr><th></th><th>Projeto</th><th>Cliente</th><th>Tarefa</th><th>Início</th><th>Fim</th><th>Dias</th><th>Horas</th></tr></thead>
+          <thead><tr><th></th><th>Projeto</th><th>Cliente</th><th>Tarefa</th><th>Início</th><th>Fim</th><th>Dias</th><th>Horas</th><th></th></tr></thead>
           <tbody>
             ${linhas.map(l => {
               const disp = this.rotuloDisponibilidade(l.resultado);
@@ -11227,26 +11441,17 @@ const App = {
                 <td>${escapeHtml(l.projeto.cliente || '—')}</td>
                 <td>${escapeHtml(l.tarefa.nome)}</td>
                 <td>${DateUtil.formatShort(DateUtil.parseISO(l.tarefa.inicio))}</td>
-                <td>${DateUtil.formatShort(DateUtil.parseISO(l.tarefa.fim))}</td>
+                <td>${DateUtil.formatShort(DateUtil.parseISO(l.tarefa.fim))}${l.tarefa.fim < hojeISO && (l.tarefa.progresso || 0) < 100 && Capacidade.horasRestantesTarefa(l.projeto, l.tarefa, recursoId) > 0 ? ' <span style="color:#b45309;" title="Em atraso: ainda tem horas por fazer">⏰</span>' : ''}</td>
                 <td>${dias}</td>
                 <td><input type="number" class="rec-horas" min="0" step="0.25" value="${l.horas}" data-horas-alocacao-tarefa="${l.tarefa.id}" data-projeto-alocacao="${l.projeto.id}"></td>
+                <td><button type="button" class="btn btn-sm" data-ver-gantt="${escapeAttr(l.projeto.id + '|' + l.tarefa.id)}" title="Abrir esta tarefa no Gantt do projeto">🎯 Gantt</button></td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>` : '<p style="color:var(--cinza-500)">Sem alocações em nenhum projeto carregado.</p>';
     this.abrirModal(`Alocações — ${r.nome}`, html, { largo: true });
-    this.els.modalCorpo.querySelectorAll('[data-aplicar-desloc]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const [projetoId, taskId, novoInicio, novoFim] = btn.dataset.aplicarDesloc.split('|');
-        const projeto = this.state.projetos[projetoId];
-        if (!projeto || !this.possoEditarProjeto(projetoId)) { this.toast('Não tens permissão para alterar este projeto.'); return; }
-        this.comSinalDeProcessamento('A aplicar e a recalcular conflitos…', () => {
-          this.moverTarefa(taskId, novoInicio, novoFim, projeto);
-          this.abrirModalAlocacoesRecurso(recursoId);
-        });
-      });
-    });
+    this.ligarAcoesAlocacao(this.els.modalCorpo, () => this.abrirModalAlocacoesRecurso(recursoId), recursoId);
     this.els.modalCorpo.querySelectorAll('[data-horas-alocacao-tarefa]').forEach(inp => {
       inp.addEventListener('change', () => {
         const projeto = this.state.projetos[inp.dataset.projetoAlocacao];
@@ -11637,6 +11842,18 @@ const App = {
 
     e.selProjeto.addEventListener('change', () => this.selecionarProjeto(e.selProjeto.value));
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.addEventListener('change', () => this.renderProjetoSelect());
+    if (e.selConsultorFiltroGantt) e.selConsultorFiltroGantt.addEventListener('change', () => {
+      this.filtroConsultorGantt = e.selConsultorFiltroGantt.value;
+      // Uma seleção que ficou escondida pelo filtro não deve continuar a ser alvo das ações em lote.
+      const p = this.projetoAtivo();
+      if (p && this.filtroConsultorGantt) {
+        const visiveis = this.idsTarefasDoConsultor(p, this.filtroConsultorGantt);
+        this.selecionadasIds = new Set([...this.selecionadasIds].filter(id => visiveis.has(id)));
+        if (this.selecionadaId && !visiveis.has(this.selecionadaId)) this.selecionadaId = null;
+      }
+      this.renderTabelaTarefas();
+      this.renderGanttAtual();
+    });
     document.getElementById('btnNovoProjeto').addEventListener('click', () => this.criarProjeto());
     document.getElementById('btnNovoProjeto2').addEventListener('click', () => this.criarProjeto());
     document.getElementById('btnDuplicarProjeto').addEventListener('click', () => this.duplicarProjeto());

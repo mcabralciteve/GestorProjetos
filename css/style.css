@@ -805,6 +805,15 @@ table.prev-mapa{min-width:900px;}table.prev-det{min-width:980px;}
   100%{background:transparent;}
 }
 
+/* Tarefa a que se chegou vindo das Alocações: a linha pisca (nas células, que têm fundo próprio quando a linha está selecionada). */
+.tabela-tarefas tr.tarefa-foco td{animation:realce-linha-nova 2.6s ease-out;}
+:root[data-tema="escuro"] .tabela-tarefas tr.tarefa-foco td{animation-name:realce-linha-nova-escuro;}
+/* Faixa por cima do Gantt com o conflito da tarefa e as recomendações. */
+.gantt-foco{flex-shrink:0;padding:8px 14px;background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.45);font-size:13px;max-height:34vh;overflow-y:auto;}
+.gantt-foco-cab{display:flex;align-items:center;gap:8px;}
+.gantt-foco-cab .spacer{flex:1;}
+#selConsultorFiltroGantt.filtro-ativo{border-color:var(--azul, #2563eb);box-shadow:0 0 0 2px rgba(37,99,235,.25);}
+
 .toast{
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
   background:var(--azul-esc);color:#fff;padding:9px 18px;border-radius:var(--radius-pill);font-size:12px;font-weight:600;

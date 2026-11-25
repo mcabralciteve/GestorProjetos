@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261118a">
+<link rel="stylesheet" href="css/style.css?v=20261124a">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -153,6 +153,9 @@
       <option value="">Todos os gestores</option>
     </select>
     <select id="selProjeto" title="Escolher projeto"></select>
+    <select id="selConsultorFiltroGantt" title="Mostrar só as tarefas em que este consultor está envolvido (com o filtro ativo, as ferramentas que mexem na estrutura ficam escondidas)" style="display:none;">
+      <option value="">Todos os consultores</option>
+    </select>
     <button id="btnNovoProjeto" class="ib ib-sep" data-icone="folder-plus" data-tip="Novo projeto" aria-label="Novo projeto"></button>
     <button id="btnDuplicarProjeto" class="ib" data-icone="copy" data-tip="Duplicar o projeto atual" aria-label="Duplicar o projeto atual"></button>
     <button id="btnEliminarProjeto" class="ib ib-danger" data-icone="trash" data-tip="Eliminar o projeto atual" aria-label="Eliminar o projeto atual"></button>
@@ -161,6 +164,7 @@
     <button id="btnExportImagem" class="ib" data-icone="photo" data-tip="Exportar o Gantt como imagem PNG" aria-label="Exportar como imagem"></button>
     <button id="btnExportPdf" class="ib ib-tip-r" data-icone="file-type-pdf" data-tip="Abrir a vista de impressão do Gantt para guardar como PDF" aria-label="Exportar para PDF"></button>
   </div>
+  <div id="ganttFoco" class="gantt-foco" style="display:none;"></div>
 
   <div class="layout" id="layoutGantt">
     <aside class="sidebar" id="sidebarGantt">
@@ -1448,7 +1452,7 @@
 <script src="js/reunioes-ata.js?v=20261111a"></script>
 <script src="js/sync.js?v=20261120b"></script>
 <script src="js/gantt.js?v=20261103a"></script>
-<script src="js/capacidade.js?v=20261106a"></script>
+<script src="js/capacidade.js?v=20261124a"></script>
 <script src="js/portfolio-gantt.js?v=20261101a"></script>
 <script src="js/reserva-viatura.js?v=20260928c"></script>
 <script src="js/backup.js?v=20261120b"></script>
@@ -1482,6 +1486,6 @@
 <script src="js/reunioes.js?v=20261103b"></script>
 <script src="js/licencas-logica.js?v=20261116a"></script>
 <script src="js/licencas.js?v=20261116b"></script>
-<script src="js/app.js?v=20261123a"></script>
+<script src="js/app.js?v=20261124a"></script>
 </body>
 </html>
