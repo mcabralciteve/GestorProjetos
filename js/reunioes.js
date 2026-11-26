@@ -10,8 +10,8 @@ const Reunioes = {
   carregado: false,
   semTabela: false,
   erro: null,
-  filtros: { texto: '', estado: '', projeto: '', periodo: '' },
-  atual: null,      // reunião em edição (null = a mostrar a lista)
+  filtros: { texto: '', estado: '', projeto: '', oportunidade: '', periodo: '' },
+  atual: null,     // reunião em edição (null = a mostrar a lista)
   original: '',     // JSON da reunião como foi aberta/gravada, para saber se há alterações por guardar
   _aGuardar: false,
 
@@ -38,7 +38,7 @@ const Reunioes = {
   limpar() {
     this.lista = []; this.carregado = false; this.semTabela = false; this.erro = null;
     this.atual = null; this.original = ''; this._aCarregar = null;
-    this.filtros = { texto: '', estado: '', projeto: '', periodo: '' };
+    this.filtros = { texto: '', estado: '', projeto: '', oportunidade: '', periodo: '' };
     const c = this.corpo(); if (c) c.innerHTML = '';
   },
   async carregar(forcar) {
@@ -69,6 +69,8 @@ const Reunioes = {
     if (!this.carregado && !this.atual) c.innerHTML = '<p class="hint">A carregar as reuniões…</p>';
     await this.carregar();
     this.renderTudo();
+    // As oportunidades do CRM (para sugerir/ligar) carregam-se à vez, sem bloquear a lista.
+    if (Crm.podeVer() && !Crm.carregado) { try { await Crm.carregar(); if (!this.atual) this.renderTudo(); } catch (e) { /* a lista funciona sem CRM */ } }
   },
   renderTudo() {
     if (!this.corpo()) return;
@@ -84,6 +86,7 @@ const Reunioes = {
     const lista = this.L.filtrar(todas, f);
     const projetos = App.projetosQuePossoVer().slice().sort((a, b) => App.rotuloProjetoCompleto(a).localeCompare(App.rotuloProjetoCompleto(b), 'pt'));
     const opt = (v, t, sel) => `<option value="${escapeAttr(v)}"${sel === v ? ' selected' : ''}>${escapeHtml(t)}</option>`;
+    const oportunidades = this.L.oportunidadesDasReunioes(todas);
     const linhas = lista.map(r => {
       const res = this.L.resumoPontos(r);
       const ligacao = [r.projeto_nome, r.oportunidade_titulo].filter(Boolean);
@@ -102,6 +105,7 @@ const Reunioes = {
         <label class="zoom-label">Quando <select data-reu-filtro="periodo">${opt('', 'Todas', f.periodo)}${opt('proximas', 'Próximas', f.periodo)}${opt('passadas', 'Já realizadas / passadas', f.periodo)}</select></label>
         <label class="zoom-label">Estado <select data-reu-filtro="estado">${opt('', 'Todos', f.estado)}${Object.entries(this.L.ESTADOS).map(([k, v]) => opt(k, v, f.estado)).join('')}</select></label>
         <label class="zoom-label">Projeto <select data-reu-filtro="projeto">${opt('', 'Todos', f.projeto)}${projetos.map(p => opt(p.id, App.rotuloProjetoCompleto(p), f.projeto)).join('')}</select></label>
+        ${oportunidades.length || f.oportunidade ? `<label class="zoom-label">Oportunidade <select data-reu-filtro="oportunidade">${opt('', 'Todas', f.oportunidade)}${oportunidades.map(o => opt(o.id, o.titulo, f.oportunidade)).join('')}</select></label>` : ''}
         <span class="crm-barra-fim"><span class="hint">${lista.length} de ${todas.length} reuniões</span>
           <button type="button" class="ib ib-pri" data-reu-acao="nova" data-tip="Registar uma reunião" aria-label="Nova reunião">${Icones.svg('plus')}<span>Nova reunião</span></button></span>
       </div>
@@ -138,6 +142,10 @@ const Reunioes = {
     this.atual = null; this.original = '';
     return true;
   },
+  // Oportunidades do CRM que deram origem a este projeto (vazio se a pessoa não tem CRM ou ainda não carregou).
+  oportunidadesDoProjeto(projetoId) {
+    return Crm.carregado ? (Crm.d.oportunidades || []).filter(o => o.projeto_id === projetoId) : [];
+  },
   // Cartão "Reuniões" da barra lateral do Gantt (projeto ativo): as mais recentes, "Ver todas" e "+ Reunião" já ligada ao projeto.
   renderCardProjeto(p) {
     const card = document.getElementById('cardReunioes'), corpo = document.getElementById('reunioesProjetoCorpo');
@@ -153,10 +161,15 @@ const Reunioes = {
         ev.preventDefault();
         const acao = el.dataset.reuProj;
         if (acao === 'abrir') this.abrirDeFora(el.dataset.id);
-        else if (acao === 'nova') this.abrirDeFora(null, { projetoId: proj.id });
+        else if (acao === 'nova') {
+          // Se o projeto nasceu de uma oportunidade, a reunião já vem ligada a ela (mantém a história comercial junta).
+          const ops = this.oportunidadesDoProjeto(proj.id);
+          this.abrirDeFora(null, ops.length === 1 ? { projetoId: proj.id, oportunidadeId: ops[0].id } : { projetoId: proj.id });
+        }
         else if (acao === 'todas') {
           if (!this._sairDoEditor()) return;
-          this.filtros = { texto: '', estado: '', projeto: proj.id, periodo: '' };
+          // opsDoProjeto: o filtro de projeto inclui também as reuniões das oportunidades que lhe deram origem (como no cartão).
+          this.filtros = { texto: '', estado: '', projeto: proj.id, oportunidade: '', periodo: '', opsDoProjeto: this.oportunidadesDoProjeto(proj.id).map(o => o.id) };
           App.irParaAba('reunioes');
         }
       });
@@ -167,7 +180,13 @@ const Reunioes = {
       this.carregar().then(() => this.renderCardProjeto(App.projetoAtivo()));
       return;
     }
-    const lista = this.visiveis().filter(r => r.projeto_id === p.id).sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora));
+    // As oportunidades do CRM só existem para quem tem acesso ao CRM: carregam-se uma vez, em segundo plano, e o cartão atualiza-se.
+    if (Crm.podeVer() && !Crm.carregado && !this._crmPedido) {
+      this._crmPedido = true;
+      Crm.carregar().then(() => { const ativo = App.projetoAtivo(); if (ativo) this.renderCardProjeto(ativo); }).catch(() => { /* o cartão funciona sem CRM */ });
+    }
+    const opIds = this.oportunidadesDoProjeto(p.id).map(o => o.id);
+    const lista = this.L.doProjeto(this.visiveis(), p.id, opIds).sort((a, b) => new Date(b.data_hora) - new Date(a.data_hora));
     const mostra = lista.slice(0, 4);
     corpo.innerHTML = `${mostra.length ? mostra.map(r => `<div class="reu-mini"><a href="#" data-reu-proj="abrir" data-id="${escapeAttr(r.id)}" title="${escapeAttr(r.titulo)}"><b>${escapeHtml(this.L.formatarData(r.data_hora))}</b> ${escapeHtml(r.titulo)}</a>
         <span class="reu-estado reu-estado-${escapeAttr(r.estado)}">${escapeHtml(this.L.ESTADOS[r.estado] || r.estado)}</span></div>`).join('')
@@ -184,7 +203,7 @@ const Reunioes = {
     if (this.semTabela) { raiz.innerHTML = '<p class="hint">O módulo de reuniões ainda não está instalado (falta correr supabase/reunioes.sql).</p>'; return; }
     if (!this.carregado) { raiz.innerHTML = `<p class="hint">Não foi possível carregar as reuniões: ${escapeHtml(this.erro || '')}</p>`; return; }
     let todas = this.visiveis();
-    if (ctx.opId) todas = this.L.daOportunidade(todas, ctx.opId);
+    if (ctx.opId) { const op = Crm.idx.op && Crm.idx.op.get(ctx.opId); todas = this.L.daOportunidade(todas, ctx.opId, op && op.projeto_id); }
     else {
       const conta = Crm.idx.conta && Crm.idx.conta.get(ctx.contaId);
       const opIds = (Crm.d.oportunidades || []).filter(o => o.conta_id === ctx.contaId).map(o => o.id);
@@ -276,10 +295,16 @@ const Reunioes = {
     const livre = (tipo, id, nome) => !ja.has(`${tipo}:${id}`) && !jaNomes.has(this.L.norm(nome));
     const proj = r.projeto_id ? App.state.projetos[r.projeto_id] : null;
     const equipa = proj ? App.consultoresDoProjeto(proj).filter(x => livre('recurso', x.id, x.nome)) : [];
-    const idsEquipa = new Set(equipa.map(x => x.id));
+    // Responsáveis comerciais (da oportunidade e da conta) — sugeridos como equipa quando a reunião é comercial, sem repetir quem já é da equipa do projeto.
+    const op = r.oportunidade_id && Crm.idx.op ? Crm.idx.op.get(r.oportunidade_id) : null;
+    const conta = r.conta_id && Crm.idx.conta ? Crm.idx.conta.get(r.conta_id) : null;
+    const idsComerciais = [...new Set([op && op.responsavel_id, conta && conta.responsavel_id].filter(Boolean))];
+    const comercial = idsComerciais.map(id => App.state.recursos.find(x => x.id === id))
+      .filter(x => x && x.ativo !== false && !equipa.some(e => e.id === x.id) && livre('recurso', x.id, x.nome));
+    const idsEquipa = new Set([...equipa, ...comercial].map(x => x.id));
     const contactos = r.conta_id && Crm.carregado ? (Crm.d.contactos || []).filter(c => c.conta_id === r.conta_id && livre('contacto', c.id, c.nome)) : [];
     const colegas = App.recursosAtivos().filter(x => !idsEquipa.has(x.id) && livre('recurso', x.id, x.nome)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
-    return { equipa, contactos, colegas };
+    return { equipa, comercial, contactos, colegas };
   },
   secParticipantes() {
     const r = this.atual, ed = this.podeEditarAtual();
@@ -295,6 +320,7 @@ const Reunioes = {
       adicionar = `<div class="reu-add">
         <select id="reuPartSel"><option value="">Adicionar pessoa que a app já conhece…</option>
           ${og('Equipa do projeto', c.equipa, x => `<option value="recurso:${escapeAttr(x.id)}">${escapeHtml(x.nome)}</option>`)}
+          ${og('Responsável comercial (oportunidade/conta)', c.comercial, x => `<option value="recurso:${escapeAttr(x.id)}">${escapeHtml(x.nome)}</option>`)}
           ${og(`Contactos do cliente${r.cliente ? ' — ' + r.cliente : ''}`, c.contactos, x => `<option value="contacto:${escapeAttr(x.id)}">${escapeHtml(x.nome)}${x.cargo ? ' (' + escapeHtml(x.cargo) + ')' : ''}</option>`)}
           ${og('Colegas', c.colegas, x => `<option value="recurso:${escapeAttr(x.id)}">${escapeHtml(x.nome)}</option>`)}
         </select>
@@ -460,6 +486,7 @@ const Reunioes = {
     if (t.dataset.reuFiltro !== undefined) {
       if (t.tagName === 'INPUT' && ev.type === 'change') return; // o texto filtra a escrever
       this.filtros[t.dataset.reuFiltro] = t.value;
+      if (t.dataset.reuFiltro === 'projeto') this.filtros.opsDoProjeto = null; // escolher outro projeto à mão: volta a valer só o projeto
       const pos = t.selectionStart;
       this.renderLista();
       const novo = this.corpo().querySelector(`[data-reu-filtro="${t.dataset.reuFiltro}"]`);
@@ -543,6 +570,11 @@ const Reunioes = {
     r.projeto_id = p ? p.id : null;
     r.projeto_nome = p ? App.rotuloProjetoCompleto(p) : '';
     if (p) this._clienteAutomatico(p.cliente, anterior);
+    // Projeto que nasceu de uma oportunidade (e só uma): sugere essa oportunidade e a sua conta, se ainda não há nenhuma.
+    if (p && !r.oportunidade_id) {
+      const ops = this.oportunidadesDoProjeto(p.id);
+      if (ops.length === 1) { r.oportunidade_id = ops[0].id; r.oportunidade_titulo = ops[0].titulo; if (!r.conta_id) r.conta_id = ops[0].conta_id || null; }
+    }
     this.ajustarAcoesAoProjeto();
     this.renderSecao('reuSecId', this.secIdentificacao);
     this.renderSecao('reuSecPart', this.secParticipantes);
@@ -578,7 +610,12 @@ const Reunioes = {
     const r = this.atual;
     const i = Number(el.dataset.i);
     switch (nome) {
-      case 'nova': return this.nova(this.filtros.projeto ? { projetoId: this.filtros.projeto } : undefined); // com o filtro de projeto ligado, nasce nesse projeto
+      case 'nova': { // com o filtro de projeto/oportunidade ligado, nasce ligada a eles
+        const ini = {};
+        if (this.filtros.projeto) ini.projetoId = this.filtros.projeto;
+        if (this.filtros.oportunidade) ini.oportunidadeId = this.filtros.oportunidade;
+        return this.nova(Object.keys(ini).length ? ini : undefined);
+      }
       case 'abrir': return this.abrir(el.dataset.id);
       case 'recarregar': return this.carregar(true).then(() => this.renderTudo());
       case 'voltar': return this.voltar();

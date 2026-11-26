@@ -83,16 +83,30 @@ const ReunioesLogica = {
     const ops = new Set(opIds || []), projs = new Set(projetoIds || []);
     return (lista || []).filter(r => r.conta_id === contaId || (r.oportunidade_id && ops.has(r.oportunidade_id)) || (r.projeto_id && projs.has(r.projeto_id)));
   },
-  daOportunidade(lista, opId) { return (lista || []).filter(r => r.oportunidade_id === opId); },
+  // Reuniões de uma oportunidade: as ligadas a ela e, se já virou projeto (projetoId), as desse projeto — é a mesma história comercial.
+  daOportunidade(lista, opId, projetoId) { return (lista || []).filter(r => r.oportunidade_id === opId || (!!projetoId && r.projeto_id === projetoId)); },
+  // Reuniões de um projeto: as ligadas a ele e as das oportunidades que lhe deram origem (opIds), mesmo as anteriores à adjudicação.
+  doProjeto(lista, projetoId, opIds) {
+    const ops = new Set(opIds || []);
+    return (lista || []).filter(r => r.projeto_id === projetoId || (!!r.oportunidade_id && ops.has(r.oportunidade_id)));
+  },
+  // Oportunidades que aparecem nas reuniões dadas (para o filtro da lista): [{ id, titulo }], por título.
+  oportunidadesDasReunioes(lista) {
+    const m = new Map();
+    (lista || []).forEach(r => { if (r.oportunidade_id && !m.has(r.oportunidade_id)) m.set(r.oportunidade_id, r.oportunidade_titulo || 'Oportunidade'); });
+    return [...m].map(([id, titulo]) => ({ id, titulo })).sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt'));
+  },
 
   // ---------- Lista: filtros e ordem ----------
-  // f: { texto, estado ('' = todos), projeto (id ou ''), periodo ('' | 'proximas' | 'passadas') }
+  // f: { texto, estado ('' = todos), projeto (id ou ''), oportunidade (id ou ''), periodo ('' | 'proximas' | 'passadas') }
   filtrar(lista, f, agoraMs) {
     const agora = agoraMs == null ? Date.now() : agoraMs;
     const q = this.norm(f && f.texto);
     const sai = (lista || []).filter(r => {
       if (f && f.estado && r.estado !== f.estado) return false;
-      if (f && f.projeto && r.projeto_id !== f.projeto) return false;
+      // opsDoProjeto (opcional): oportunidades que deram origem ao projeto filtrado — as suas reuniões também contam
+      if (f && f.projeto && r.projeto_id !== f.projeto && !(r.oportunidade_id && (f.opsDoProjeto || []).includes(r.oportunidade_id))) return false;
+      if (f && f.oportunidade && r.oportunidade_id !== f.oportunidade) return false;
       const t = new Date(r.data_hora).getTime();
       if (f && f.periodo === 'proximas' && !(t >= agora)) return false;
       if (f && f.periodo === 'passadas' && !(t < agora)) return false;
