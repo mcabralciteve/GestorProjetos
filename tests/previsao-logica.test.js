@@ -268,3 +268,52 @@ test('rentabilidade: custo das horas planeadas segue a repartição das horas; m
   assert.equal(L.margemPct(-10, 0), null);
 });
 
+
+// ---------- backlog sem horas no Gantt: distribuído pelo tempo até ao fim do projeto ----------
+const semHorasBase = { valorVendido: 10000, horasVendidas: 100, horasRegistadas: 0, hojeISO: HOJE, meses };
+
+test('sem horas no Gantt: reparte-se pelos dias úteis até ao fim do projeto, proporcionalmente', () => {
+  // de 26/10 a 6/11: 5 dias úteis em outubro e 5 em novembro
+  const r = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [], prazo: { inicio: '2026-01-01', fim: '2026-11-06' } });
+  assert.equal(r.situacaoPrazo, 'prazo');
+  assert.equal(arred(r.porMes['2026-10']), 5000);
+  assert.equal(arred(r.porMes['2026-11']), 5000);
+  assert.deepEqual(r.porMesSemHoras, r.porMes);
+  assert.equal(r.naoCalendarizado, 10000); assert.equal(r.cobertura, 0);    // continua a ser backlog sem horas
+});
+
+test('sem horas no Gantt: soma-se ao que está planeado, sem passar o valor por reconhecer', () => {
+  const r = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [{ inicio: '2026-10-26', fim: '2026-10-30', horasPorFazer: 40 }], prazo: { inicio: null, fim: '2026-11-06' } });
+  assert.equal(arred(r.porMes['2026-10']), 4000 + 3000);
+  assert.equal(arred(r.porMes['2026-11']), 3000);
+  assert.equal(arred(r.porMesSemHoras['2026-10']), 3000);
+  assert.equal(arred(P.total(r.porMes, meses)), 10000);
+});
+
+test('sem horas no Gantt: prazo para além do horizonte só traz a parte que cabe; início futuro começa no início', () => {
+  const longo = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [], prazo: { inicio: null, fim: '2028-12-29' } });
+  assert.ok(P.total(longo.porMes, meses) > 0 && P.total(longo.porMes, meses) < 2000);
+  assert.equal(arred(longo.dentroDoHorizonte), arred(P.total(longo.porMes, meses)));
+  const futuro = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [], prazo: { inicio: '2026-12-01', fim: '2026-12-31' } });
+  assert.equal(arred(futuro.porMes['2026-12']), 10000); assert.equal(futuro.porMes['2026-10'], 0);
+});
+
+test('sem horas no Gantt: prazo ultrapassado conta no mês atual; sem data de fim fica fora do mapa', () => {
+  const atraso = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [], prazo: { inicio: '2026-01-01', fim: '2026-09-30' } });
+  assert.equal(atraso.situacaoPrazo, 'atraso'); assert.equal(atraso.porMes['2026-10'], 10000);
+  for (const prazo of [null, { inicio: '2026-01-01', fim: null }, undefined]) {
+    const r = P.reconhecimentoBacklog({ ...semHorasBase, tarefas: [], prazo });
+    assert.equal(r.situacaoPrazo, 'sem'); assert.equal(P.total(r.porMes, meses), 0); assert.equal(r.naoCalendarizado, 10000);
+  }
+});
+
+test('por equipa: o distribuído pelo prazo fica na equipa do projeto e a soma é o projeto inteiro', () => {
+  const tarefas = [{ inicio: '2026-10-26', fim: '2026-10-30', horasPorFazer: 40, horasPorEquipa: { RPA: 40 } }];
+  const rec = P.reconhecimentoBacklog({ ...semHorasBase, tarefas, prazo: { inicio: null, fim: '2026-11-06' } });
+  const r = P.repartirPorEquipa({ rec, tarefas, equipaProjeto: 'DCS', hojeISO: HOJE, meses });
+  assert.equal(arred(r.RPA.porMes['2026-10']), 4000); assert.equal(r.RPA.porMes['2026-11'], 0);
+  assert.equal(arred(r.DCS.porMes['2026-10']), 3000); assert.equal(arred(r.DCS.porMes['2026-11']), 3000);
+  assert.equal(arred(r.DCS.porMesSemHoras['2026-11']), 3000); assert.equal(r.RPA.porMesSemHoras['2026-10'], 0);
+  const todas = P.recDasPartes(rec, Object.values(r), meses);
+  meses.forEach(m => { assert.equal(arred(todas.porMes[m]), arred(rec.porMes[m])); assert.equal(arred(todas.porMesSemHoras[m]), arred(rec.porMesSemHoras[m])); });
+});

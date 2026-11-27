@@ -3,7 +3,8 @@
 // Fase A: só o que já está CONTRATADO (projetos):
 //   Reconhecimento = o valor por reconhecer (valor vendido − o que as horas já feitas reconheceram, pelo mesmo método do
 //                    Acompanhamento Financeiro: valorVendido × horas registadas ÷ horas vendidas) repartido pelos meses conforme
-//                    as horas que faltam no plano (Gantt), a €/h = valor vendido ÷ horas vendidas;
+//                    as horas que faltam no plano (Gantt), a €/h = valor vendido ÷ horas vendidas; o que não tem horas no
+//                    plano reparte-se pelos dias úteis que faltam até ao fim do projeto;
 //   Faturação      = as faturas por emitir, no mês previsto (as em atraso passam para o mês atual).
 // A mesma estrutura serve, na Fase B, para as oportunidades ponderadas.
 const PrevisaoLogica = {
@@ -53,8 +54,11 @@ const PrevisaoLogica = {
   },
 
   // Reconhecimento do backlog de UM projeto. tarefas: [{ inicio, fim, horasPorFazer }] (já descontado o que foi registado).
+  // O backlog SEM horas no plano reparte-se pelos dias úteis que faltam no "prazo" do projeto ({ inicio, fim }), em partes iguais (a partir
+  // de hoje, ou do início se for futuro); com o fim já ultrapassado conta no mês atual. Sem prazo (null ou sem fim) fica fora dos meses.
+  //   porMes = tudo; porMesSemHoras = a parte (incluída em porMes) distribuída pelo prazo; situacaoPrazo: 'prazo' | 'atraso' | 'sem'.
   // Devolve null se o projeto não tem valor e horas vendidas (sem isso não há nada para reconhecer).
-  reconhecimentoBacklog({ valorVendido, horasVendidas, horasRegistadas, tarefas, hojeISO, meses }) {
+  reconhecimentoBacklog({ valorVendido, horasVendidas, horasRegistadas, tarefas, prazo, hojeISO, meses }) {
     if (!(valorVendido > 0) || !(horasVendidas > 0)) return null;
     const euroHora = valorVendido / horasVendidas;
     const reconhecidoHoje = valorVendido * Math.min(1, (horasRegistadas || 0) / horasVendidas);
@@ -74,10 +78,18 @@ const PrevisaoLogica = {
       if (m in porMes) { porMes[m] += v; dentro += v; }
     });
     const calendarizado = Math.min(valorPlano, porReconhecer);
+    const naoCalendarizado = Math.max(0, porReconhecer - calendarizado);            // backlog sem horas previstas no plano
+    const fimPrazo = (prazo && prazo.fim) || '';
+    const situacaoPrazo = !fimPrazo ? 'sem' : (fimPrazo < hojeISO ? 'atraso' : 'prazo');
+    const porMesSemHoras = this.vazio(meses);
+    if (fimPrazo) {
+      Object.entries(this.distribuirHorasPorMes(prazo.inicio, fimPrazo, naoCalendarizado, hojeISO)).forEach(([m, v]) => {
+        if (m in porMes) { porMesSemHoras[m] += v; porMes[m] += v; dentro += v; }
+      });
+    }
     return {
-      euroHora, reconhecidoHoje, porReconhecer, porMes,
-      dentroDoHorizonte: dentro, calendarizado,
-      naoCalendarizado: Math.max(0, porReconhecer - calendarizado),                 // backlog sem horas previstas no plano
+      euroHora, reconhecidoHoje, porReconhecer, porMes, porMesSemHoras, situacaoPrazo, fimPrazo,
+      dentroDoHorizonte: dentro, calendarizado, naoCalendarizado,
       cobertura: porReconhecer > 0 ? calendarizado / porReconhecer : 1
     };
   },
@@ -86,7 +98,7 @@ const PrevisaoLogica = {
   // cada equipa vê no mapa a sua parte). "rec" é o resultado de reconhecimentoBacklog; tarefas: [{ inicio, fim, horasPorEquipa:
   // { equipaId: horasPorFazer } }]. Em cada mês, o valor reconhecido reparte-se pelas horas por fazer de cada equipa nesse mês; a parte
   // do backlog com horas previstas reparte-se pelo total de horas por fazer de cada equipa; o que NÃO tem horas previstas (sem
-  // consultor) fica na equipa do projeto. Consultor sem equipa conta como da equipa do projeto (quem chama já o resolve em horasPorEquipa).
+  // consultor) fica na equipa do projeto, nos meses por onde foi distribuído (porMesSemHoras). Consultor sem equipa conta como da equipa do projeto (quem chama já o resolve em horasPorEquipa).
   // A soma das partes é sempre igual ao projeto inteiro. Devolve { equipaId: { porMes, dentroDoHorizonte, calendarizado, naoCalendarizado, porReconhecer } }.
   repartirPorEquipa({ rec, tarefas, equipaProjeto, hojeISO, meses }) {
     if (!rec) return {};
@@ -103,21 +115,26 @@ const PrevisaoLogica = {
       totalMes[m] = (totalMes[m] || 0) + x; totalEq[eq] = (totalEq[eq] || 0) + x; totalH += x;
     }));
     const out = {};
-    const parte = eq => out[eq] || (out[eq] = { porMes: this.vazio(meses), dentroDoHorizonte: 0, calendarizado: 0, naoCalendarizado: 0, porReconhecer: 0 });
+    const parte = eq => out[eq] || (out[eq] = { porMes: this.vazio(meses), porMesSemHoras: this.vazio(meses), dentroDoHorizonte: 0, calendarizado: 0, naoCalendarizado: 0, porReconhecer: 0 });
     if (!(totalH > 0)) {                                  // nenhuma hora prevista por consultor: tudo na equipa do projeto
-      Object.assign(parte(eqP), { porMes: Object.assign({}, rec.porMes), dentroDoHorizonte: rec.dentroDoHorizonte, calendarizado: rec.calendarizado, naoCalendarizado: rec.naoCalendarizado, porReconhecer: rec.porReconhecer });
+      Object.assign(parte(eqP), { porMes: Object.assign({}, rec.porMes), porMesSemHoras: Object.assign({}, rec.porMesSemHoras), dentroDoHorizonte: rec.dentroDoHorizonte, calendarizado: rec.calendarizado, naoCalendarizado: rec.naoCalendarizado, porReconhecer: rec.porReconhecer });
       return out;
     }
     Object.keys(totalEq).forEach(eq => {
       const p = parte(eq);
       meses.forEach(m => {
         if (!(totalMes[m] > 0)) return;
-        const v = rec.porMes[m] * ((horasEq[eq][m] || 0) / totalMes[m]);
+        const v = (rec.porMes[m] - rec.porMesSemHoras[m]) * ((horasEq[eq][m] || 0) / totalMes[m]);
         p.porMes[m] = v; p.dentroDoHorizonte += v;
       });
       p.calendarizado = rec.calendarizado * totalEq[eq] / totalH;
     });
-    parte(eqP).naoCalendarizado = rec.naoCalendarizado;
+    const doProjeto = parte(eqP);
+    doProjeto.naoCalendarizado = rec.naoCalendarizado;
+    meses.forEach(m => {
+      const v = rec.porMesSemHoras[m];
+      doProjeto.porMesSemHoras[m] = v; doProjeto.porMes[m] += v; doProjeto.dentroDoHorizonte += v;
+    });
     Object.keys(out).forEach(eq => {
       out[eq].porReconhecer = out[eq].calendarizado + out[eq].naoCalendarizado;
       if (out[eq].porReconhecer < 0.005 && out[eq].dentroDoHorizonte < 0.005) delete out[eq];   // equipa sem nada neste projeto
@@ -129,7 +146,7 @@ const PrevisaoLogica = {
   recDasPartes(rec, partes, meses) {
     const s = f => partes.reduce((t, p) => t + f(p), 0);
     const r = Object.assign({}, rec, {
-      porMes: this.somar(partes.map(p => p.porMes), meses), dentroDoHorizonte: s(p => p.dentroDoHorizonte),
+      porMes: this.somar(partes.map(p => p.porMes), meses), porMesSemHoras: this.somar(partes.map(p => p.porMesSemHoras), meses), dentroDoHorizonte: s(p => p.dentroDoHorizonte),
       calendarizado: s(p => p.calendarizado), naoCalendarizado: s(p => p.naoCalendarizado), porReconhecer: s(p => p.porReconhecer)
     });
     r.cobertura = r.porReconhecer > 0 ? r.calendarizado / r.porReconhecer : 1;

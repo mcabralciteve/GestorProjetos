@@ -8,6 +8,7 @@ const Previsao = {
   filtros: { tipo: '', dept: '', equipa: '', horizonte: 12, serie: 'rec', cenario: 'pond' },
   expandidas: new Set(),
   classificarAberto: false,
+  avisosAbertos: (() => { try { return localStorage.getItem('prevAvisosAbertos') !== '0'; } catch (e) { return true; } })(),
   ligado: false,
 
   podeVer() { return App.souAdmin(); },
@@ -62,7 +63,9 @@ const Previsao = {
         });
         return { inicio: t.inicio, fim: t.fim, horasPorFazer: Object.values(horasPorEquipa).reduce((s, h) => s + h, 0), horasPorEquipa };
       });
-      const rec = PrevisaoLogica.reconhecimentoBacklog({ valorVendido: p.valorVendido, horasVendidas: p.horasVendidas, horasRegistadas, tarefas, hojeISO, meses });
+      // Um projeto concluído não tem prazo por onde distribuir o que não está no plano: fica fora do mapa (e é assinalado).
+      const prazo = p.estado === 'Concluído' ? null : { inicio: p.dataInicio, fim: p.dataFim };
+      const rec = PrevisaoLogica.reconhecimentoBacklog({ valorVendido: p.valorVendido, horasVendidas: p.horasVendidas, horasRegistadas, tarefas, prazo, hojeISO, meses });
       // Projeto sem faturação ao cliente (ex.: I&D financiado): conta para o reconhecimento, não para a faturação prevista.
       const fat = p.semFaturacao
         ? { porMes: PrevisaoLogica.vazio(meses), emAtraso: 0, nEmAtraso: 0, foraDoHorizonte: 0, semData: 0, total: 0 }
@@ -112,10 +115,14 @@ const Previsao = {
       return Object.assign({}, c, { porMes, equipas, total: PrevisaoLogica.total(porMes, meses) });
     }).filter(c => c.total > 0.5);
   },
+  // Receita das horas planeadas de um reconhecimento: sem a parte distribuída pelo prazo (essa não tem horas, logo não tem custo).
+  recPlaneada(rec, meses) { return PrevisaoLogica.diferenca(rec.porMes, rec.porMesSemHoras || {}, meses); },
   // Custos e margens do que está no ecrã. recC / recT: reconhecimento contratado / total (conforme o cenário), já filtrado.
+  // semHoras: a parte de recC distribuída pelo prazo (entra na margem da equipa, não na margem dos projetos).
   // O custo da equipa não se separa por tipo de projeto: com esse filtro ligado fica null.
-  rentabilidade(hojeISO, meses, custos, recC, recT) {
+  rentabilidade(hojeISO, meses, custos, recC, recT, semHoras) {
     const L = PrevisaoLogica, S = App.state;
+    const recProj = L.diferenca(recC, semHoras || {}, meses);
     const planeado = this.filtrarCustos(custos, meses);
     const planCom = L.somar(planeado.filter(c => c.comReceita).map(c => c.porMes), meses);
     const planSem = L.somar(planeado.filter(c => !c.comReceita).map(c => c.porMes), meses);
@@ -124,9 +131,9 @@ const Previsao = {
       feriados: new Set((S.feriados || []).map(x => x.data)), horasDia: Capacidade.HORAS_DIA
     });
     return {
-      planeado, planCom, planSem, equipa,
+      planeado, planCom, planSem, equipa, recProj,
       margemEquipa: equipa ? L.diferenca(recT, equipa.porMes, meses) : null,
-      margemProj: L.diferenca(recC, planCom, meses),
+      margemProj: L.diferenca(recProj, planCom, meses),
       semTrabalho: equipa ? L.diferenca(equipa.porMes, L.somar([planCom, planSem], meses), meses) : null
     };
   },
@@ -135,7 +142,7 @@ const Previsao = {
     return p === null ? '–' : (p < -100 ? '< −100%' : Math.round(p) + '%');
   },
   // Linhas "RENTABILIDADE" do mapa mensal.
-  htmlMapaRentabilidade(R, meses, recC, recT) {
+  htmlMapaRentabilidade(R, meses, recT) {
     const nm = meses.length, tot = s => PrevisaoLogica.total(s, meses), atual = i => i === 0 ? 'atual ' : '';
     const linha = (rot, s, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${rot}</td>${meses.map((m, i) => `<td class="${atual(i)}">${this.k(s[m])}</td>`).join('')}<td><b>${this.k(tot(s))}</b></td></tr>`;
     const sinal = v => v < -49 ? 'neg' : (v > 49 ? 'pos' : '');
@@ -150,7 +157,7 @@ const Previsao = {
         `<tr class="acum"><td>Margem acumulada</td>${meses.map((m, i) => `<td class="${atual(i)}${sinal(ac[m])}">${this.k(ac[m])}</td>`).join('')}<td></td></tr>`;
     }
     h += secao('RENTABILIDADE DOS PROJETOS CONTRATADOS (só as horas planeadas)') +
-      linha('Receita contratada (reconhecimento)', recC) + linha('Custo das horas planeadas', R.planCom) + margem('Margem dos projetos', R.margemProj) + pct(R.margemProj, recC) +
+      linha('<span title="Reconhecimento das horas planeadas no Gantt. O backlog sem horas, distribuído pelo prazo, não entra aqui porque não tem custo associado">Receita das horas planeadas</span>', R.recProj) + linha('Custo das horas planeadas', R.planCom) + margem('Margem dos projetos', R.margemProj) + pct(R.margemProj, R.recProj) +
       linha('<span title="Projetos internos ou sem valor/horas vendidas: têm custo mas não têm receita prevista">Custo planeado em projetos sem receita</span>', R.planSem);
     if (R.semTrabalho) h += `<tr class="delta"><td title="Custo da equipa menos o custo de todas as horas planeadas. Negativo = há mais horas planeadas do que capacidade">Custo sem trabalho planeado</td>${meses.map((m, i) => `<td class="${atual(i)}${R.semTrabalho[m] < -49 ? 'neg' : ''}">${this.k(R.semTrabalho[m])}</td>`).join('')}<td>${this.k(tot(R.semTrabalho))}</td></tr>`;
     return h;
@@ -159,7 +166,7 @@ const Previsao = {
   htmlDetalheMargem(R, meses, linhasC) {
     const L = PrevisaoLogica, tot = s => L.total(s, meses), zero = () => L.vazio(meses);
     const porId = new Map();
-    linhasC.filter(l => l.rec).forEach(l => porId.set(l.id, { id: l.id, nome: l.nome, tipo: l.tipo, equipa: l.equipa, rec: l.rec.porMes, custo: zero(), comReceita: true, suspenso: l.suspenso }));
+    linhasC.filter(l => l.rec).forEach(l => porId.set(l.id, { id: l.id, nome: l.nome, tipo: l.tipo, equipa: l.equipa, rec: this.recPlaneada(l.rec, meses), custo: zero(), comReceita: true, suspenso: l.suspenso }));
     R.planeado.forEach(c => {
       const x = porId.get(c.id) || { id: c.id, nome: c.nome, tipo: c.tipo, equipa: c.equipas.map(eq => (App.state.equipas.find(e => e.id === eq) || {}).nome || 'Por atribuir').join(' + '), rec: zero(), comReceita: c.comReceita, suspenso: c.suspenso };
       x.custo = c.porMes; porId.set(c.id, x);
@@ -168,13 +175,13 @@ const Previsao = {
       .filter(x => tot(x.rec) > 49 || tot(x.custo) > 49)
       .sort((a, b) => tot(a.m) - tot(b.m) || a.nome.localeCompare(b.nome, 'pt'));
     const max = Math.max(1, ...itens.flatMap(x => meses.map(m => Math.abs(x.m[m]))));
-    const cab = `<thead><tr><th>Projeto</th><th>Tipo</th><th>Área</th><th title="Reconhecimento previsto no horizonte">Receita</th><th title="Horas por fazer no Gantt × custo/hora">Custo</th><th>Margem %</th>${meses.map(m => `<th>${this.rotuloMes(m)}</th>`).join('')}<th>Margem</th></tr></thead>`;
+    const cab = `<thead><tr><th>Projeto</th><th>Tipo</th><th>Área</th><th title="Reconhecimento das horas planeadas no horizonte (sem o backlog distribuído pelo prazo)">Receita</th><th title="Horas por fazer no Gantt × custo/hora">Custo</th><th>Margem %</th>${meses.map(m => `<th>${this.rotuloMes(m)}</th>`).join('')}<th>Margem</th></tr></thead>`;
     const corpo = itens.map(x => {
       const r = tot(x.rec), c = tot(x.custo), mg = tot(x.m), ab = this.expandidas.has(x.id);
       const cel = meses.map(m => { const v = x.m[m]; const a = (0.08 + Math.abs(v) / max * 0.34).toFixed(2); return `<td class="${v < -49 ? 'neg' : ''}"${Math.abs(v) > 49 ? ` style="background:rgba(${v < 0 ? '214,69,69' : '58,157,107'},${a})"` : ''}>${this.k(v)}</td>`; }).join('');
       const marca = (x.suspenso ? ' <span class="prev-tag">suspenso</span>' : '') + (x.comReceita ? '' : ' <span class="prev-tag">sem receita</span>');
       return `<tr class="item" data-prev-linha="${escapeAttr(x.id)}"><td>${escapeHtml(x.nome)}${marca}</td><td>${escapeHtml(x.tipo)}</td><td>${escapeHtml(x.equipa)}</td><td>${this.k(r)}</td><td>${this.k(c)}</td><td class="${mg < -49 ? 'neg' : ''}">${this.pctTexto(mg, r)}</td>${cel}<td class="${mg < -49 ? 'neg' : ''}"><b>${this.k(mg)}</b></td></tr>
-        <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${meses.length + 7}">Receita prevista no horizonte ${this.eur(r)} · custo das horas planeadas ${this.eur(c)} · margem ${this.eur(mg)}. O custo é o das horas por fazer no Gantt ao custo/hora de cada consultor; horas atrasadas contam no mês atual.${x.comReceita ? '' : ' Projeto sem valor ou horas vendidas: não tem receita prevista.'}</td></tr>`;
+        <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${meses.length + 7}">Receita das horas planeadas no horizonte ${this.eur(r)} · custo das horas planeadas ${this.eur(c)} · margem ${this.eur(mg)}. O custo é o das horas por fazer no Gantt ao custo/hora de cada consultor; horas atrasadas contam no mês atual.${x.comReceita ? '' : ' Projeto sem valor ou horas vendidas: não tem receita prevista.'}</td></tr>`;
     }).join('');
     return cab + `<tbody>${corpo || `<tr><td colspan="${meses.length + 7}">Sem projetos com receita ou horas planeadas neste filtro.</td></tr>`}</tbody>`;
   },
@@ -304,6 +311,7 @@ const Previsao = {
     const recC = sc(linhasC.map(l => l.rec && l.rec.porMes), meses), fatC = sc(linhasC.map(l => l.fat.porMes), meses);
     const recP = sc(linhasO.map(l => l.rec.porMes), meses), fatP = sc(linhasO.map(l => l.fat.porMes), meses);
     const recT = sc([recC, recP], meses), fatT = sc([fatC, fatP], meses);
+    const semHoras = sc(linhasC.map(l => l.rec && l.rec.porMesSemHoras), meses);
     const tot = s => PrevisaoLogica.total(s, meses);
     const sum = (f) => linhasC.reduce((s, l) => s + f(l), 0);
     const backlog = sum(l => l.rec ? l.rec.porReconhecer : 0), semCal = sum(l => l.rec ? l.rec.naoCalendarizado : 0);
@@ -312,7 +320,7 @@ const Previsao = {
     const L2 = (a, b, ms) => PrevisaoLogica.somar([a, b], ms);
     document.querySelectorAll('#prevCenario [data-prev-cenario]').forEach(b => b.setAttribute('aria-pressed', b.dataset.prevCenario === cen ? 'true' : 'false'));
     const rotuloOps = cen === 'total' ? '100%' : 'ponderado';
-    const R = this.rentabilidade(hoje, meses, custos, recC, recT);
+    const R = this.rentabilidade(hoje, meses, custos, recC, recT, semHoras);
 
     // KPIs
     const kpi = (valor, rot, sub) => `<div class="an-kpi"><b>${valor}</b><span>${rot}</span>${sub ? `<small class="prev-sub">${sub}</small>` : ''}</div>`;
@@ -321,10 +329,10 @@ const Previsao = {
       (comOps ? kpi(this.kk(tot(recP)), cen === 'total' ? 'Pipeline (100%)' : 'Pipeline ponderado', `a reconhecer nos próximos ${nm} meses`) : '') +
       kpi(this.kk(tot(recT)), 'Reconhecimento previsto', `${comOps ? 'contratado + oportunidades, ' : ''}próximos ${nm} meses`) +
       kpi(this.kk(tot(fatT)), 'Faturação prevista', `${comOps ? 'contratada ' + this.kk(tot(fatC)) + ' + oportunidades ' + this.kk(tot(fatP)) : 'faturas por emitir'}`) +
-      kpi(this.kk(semCal), 'Backlog sem calendário', 'sem horas previstas no Gantt') +
+      kpi(this.kk(semCal), 'Backlog sem horas no Gantt', 'distribuído até ao fim de cada projeto') +
       kpi(R.equipa ? this.kk(tot(R.equipa.porMes)) : '–', `Custo da equipa (${nm} meses)`, R.equipa ? `${R.equipa.nPessoas} pessoas · mês atual a partir de hoje` : 'não se separa por tipo') +
       kpi(R.equipa ? this.kk(tot(R.margemEquipa)) : '–', 'Margem da equipa', R.equipa ? `${this.pctTexto(tot(R.margemEquipa), tot(recT))} do reconhecimento previsto` : 'não se separa por tipo') +
-      kpi(this.kk(tot(R.margemProj)), 'Margem dos projetos', `contratado − horas planeadas · ${this.pctTexto(tot(R.margemProj), tot(recC))}`);
+      kpi(this.kk(tot(R.margemProj)), 'Margem dos projetos', `só horas planeadas: receita − custo · ${this.pctTexto(tot(R.margemProj), tot(R.recProj))}`);
 
     // avisos
     const avisos = [];
@@ -339,13 +347,13 @@ const Previsao = {
     if (comOps && opsTodas.semValor.length) avisos.push(`${opsTodas.semValor.length} oportunidade(s) abertas sem valor (nem proposta com orçamento) não entram: ${nomes(opsTodas.semValor, 4)}.`);
     if (comOps && opsTodas.planoIncompleto.length) avisos.push(`${opsTodas.planoIncompleto.length} oportunidade(s) com plano de faturação que não soma 100%: ${nomes(opsTodas.planoIncompleto, 4)}.`);
     if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${semDados.slice(0, 4).map(l => escapeHtml(l.nome)).join('; ')}${semDados.length > 4 ? '…' : ''}. Num I&amp;D financiado, preenche o Valor vendido com o valor do financiamento (e as Horas vendidas) e marca "Sem faturação ao cliente".`);
-    if (semCal > 49) avisos.push(`${this.kk(semCal)} de backlog não têm horas previstas no Gantt (ver "Cobertura" no detalhe) — por isso não aparecem em nenhum mês.`);
+    avisos.push(...this.avisosSemHoras(linhasC));
     const semCusto = R.equipa ? R.equipa.semCusto.map(id => (App.state.recursos.find(r => r.id === id) || {}).nome || '?') : [];
     if (semCusto.length) avisos.push(`${semCusto.length} pessoa(s) <b>sem preço de custo</b> não contam nos custos: ${semCusto.slice(0, 5).map(escapeHtml).join('; ')}${semCusto.length > 5 ? '…' : ''}. Preenche-o em Configurações → Recursos.`);
     if (nAtraso) avisos.push(`${nAtraso} fatura(s) por emitir (${this.kk(emAtraso)}) já passaram da data prevista — estão contadas no mês atual.`);
     if (semData > 0) avisos.push(`${this.kk(semData)} em faturas por emitir sem data prevista não entram no mapa.`);
     if (fora > 0) avisos.push(`${this.kk(fora)} em faturas estão previstas depois do horizonte escolhido.`);
-    document.getElementById('prevAvisos').innerHTML = avisos.map(a => `<div class="prev-aviso">⚠ ${a}</div>`).join('') + this.htmlClassificar(porClassificar);
+    document.getElementById('prevAvisos').innerHTML = this.htmlAvisos(avisos) + this.htmlClassificar(porClassificar);
 
     // gráficos + legenda
     document.getElementById('prevGrafRec').innerHTML = this.barras(recC, recP, meses, P[0], 'Reconhecimento previsto por mês');
@@ -372,13 +380,14 @@ const Previsao = {
     document.getElementById('prevMapa').innerHTML = `<thead>${cab1}${cab2}</thead><tbody>
       <tr class="secao"><td colspan="${nm + 2}">RECONHECIMENTO (trabalho feito)</td></tr>
       ${linhaSerie('Contratado (backlog) <span class="prev-tag">100%</span>', recC, '42,110,166', false)}
+      ${tot(semHoras) > 49 ? `<tr class="acum"><td title="Já incluído na linha do contratado: backlog sem horas previstas no Gantt, repartido pelos dias úteis que faltam até ao fim de cada projeto">↳ do qual sem horas no Gantt</td>${meses.map((m, i) => `<td class="${i === 0 ? 'atual' : ''}">${this.k(semHoras[m])}</td>`).join('')}<td>${this.k(tot(semHoras))}</td></tr>` : ''}
       ${comOps ? linhaSerie(`Oportunidades <span class="prev-tag p">${rotuloOps}</span>`, recP, '224,123,57', true) + linhaTotal('Total reconhecimento', recT) : ''}
       ${linhaAcum(acRec)}
       <tr class="secao"><td colspan="${nm + 2}">FATURAÇÃO</td></tr>
       ${linhaSerie('Contratada (faturas por emitir) <span class="prev-tag">100%</span>', fatC, '58,157,107', false)}
       ${comOps ? linhaSerie(`Oportunidades <span class="prev-tag p">${rotuloOps}</span>`, fatP, '224,123,57', true) + linhaTotal('Total faturação', fatT) : ''}
       ${linhaAcum(acFat)}
-      <tr class="delta"><td title="Faturação acumulada menos reconhecimento acumulado: positivo = a faturar à frente do trabalho; negativo = trabalho feito por faturar (a partir de hoje)">Faturação − reconhecimento (acum.)</td>${meses.map((m, i) => { const v = dif[i]; return `<td class="${i === 0 ? 'atual ' : ''}${v < -49 ? 'neg' : (v > 49 ? 'pos' : '')}">${Math.abs(v) < 50 ? '–' : (v > 0 ? '+' : '') + this.k(v)}</td>`; }).join('')}<td></td></tr>${this.htmlMapaRentabilidade(R, meses, recC, recT)}</tbody>`;
+      <tr class="delta"><td title="Faturação acumulada menos reconhecimento acumulado: positivo = a faturar à frente do trabalho; negativo = trabalho feito por faturar (a partir de hoje)">Faturação − reconhecimento (acum.)</td>${meses.map((m, i) => { const v = dif[i]; return `<td class="${i === 0 ? 'atual ' : ''}${v < -49 ? 'neg' : (v > 49 ? 'pos' : '')}">${Math.abs(v) < 50 ? '–' : (v > 0 ? '+' : '') + this.k(v)}</td>`; }).join('')}<td></td></tr>${this.htmlMapaRentabilidade(R, meses, recT)}</tbody>`;
 
     // detalhe (contratados e, se ligado, oportunidades)
     const rec = this.filtros.serie === 'rec';
@@ -408,6 +417,27 @@ const Previsao = {
     document.getElementById('prevDet').innerHTML = cabDet + `<tbody>${corpoDet || `<tr><td colspan="${nm + 5}">Sem projetos nem oportunidades com algo a prever neste filtro.</td></tr>`}</tbody>`;
   },
 
+  // Avisos sobre o backlog sem horas no Gantt: o que foi distribuído pelo prazo, o que caiu no mês atual (prazo ultrapassado) e o que
+  // ficou fora do mapa (projeto concluído ou sem data de fim). Os dois últimos pedem ação, por isso nomeiam os projetos.
+  avisosSemHoras(linhasC) {
+    const com = sit => linhasC.filter(l => l.rec && l.rec.situacaoPrazo === sit && l.rec.naoCalendarizado > 0.5)
+      .sort((a, b) => b.rec.naoCalendarizado - a.rec.naoCalendarizado);
+    const soma = lista => lista.reduce((s, l) => s + l.rec.naoCalendarizado, 0);
+    const nomes = lista => lista.slice(0, 5).map(l => `${escapeHtml(l.nome)} ${this.eur(l.rec.naoCalendarizado)}`).join('; ') + (lista.length > 5 ? '…' : '');
+    const prazo = com('prazo'), atraso = com('atraso'), sem = com('sem'), out = [];
+    if (soma(prazo) > 49) out.push(`${this.kk(soma(prazo))} de backlog sem horas previstas no Gantt foram distribuídos pelos dias úteis que faltam até ao fim de cada projeto (ver "Cobertura" no detalhe).`);
+    if (soma(atraso) > 49) out.push(`${this.kk(soma(atraso))} de backlog sem horas são de projetos com o <b>prazo já ultrapassado</b> e contam no mês atual — atualiza a data de fim: ${nomes(atraso)}.`);
+    if (soma(sem) > 49) out.push(`${this.kk(soma(sem))} de backlog sem horas <b>não aparecem em nenhum mês</b> (projeto concluído ou sem data de fim): ${nomes(sem)}.`);
+    return out;
+  },
+  // O destino do backlog sem horas de um projeto, em texto (para os pressupostos).
+  destinoSemHoras(rec) {
+    if (rec.naoCalendarizado <= 0.5) return '';
+    if (rec.situacaoPrazo === 'prazo') return `, distribuídos até ${rec.fimPrazo.split('-').reverse().join('/')}`;
+    if (rec.situacaoPrazo === 'atraso') return ', contados no mês atual (prazo ultrapassado)';
+    return ', fora do mapa (concluído ou sem data de fim)';
+  },
+
   // Texto (HTML) dos pressupostos de uma linha: contratado ou oportunidade. cob = cobertura do plano (contratados).
   pressupostos(l, cob) {
     const op = l.kind === 'op';
@@ -422,7 +452,7 @@ const Previsao = {
           ? ` · <b>por equipa</b> (horas por fazer de cada consultor; o que não tem horas previstas fica na equipa do projeto): ${l.partes.map(x => `${escapeHtml(x.equipa)} ${Math.round(x.rec.porReconhecer / tot * 100)}%`).join(' · ')}${l.parcial ? ` — a mostrar só ${l.parcial.equipas.map(escapeHtml).join(' + ') || 'as faturas'}${l.parcial.doProjeto ? '' : ' (as faturas ficam na equipa do projeto)'}` : ''}`
           : '';
         pressup = (l.rec
-          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}`
+          ? `Vendido ${this.eur(l.valorVendido)} · reconhecido até hoje ${this.eur(l.rec.reconhecidoHoje)} (${l.horasRegistadas.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} h registadas) · por reconhecer ${this.eur(l.rec.porReconhecer)} · €/h do projeto ${l.rec.euroHora.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} · o plano do Gantt cobre ${cob}% do backlog (${this.eur(l.rec.naoCalendarizado)} sem horas previstas${this.destinoSemHoras(l.rec)}) · ${l.semFaturacao ? 'sem faturação ao cliente (financiado)' : `faturas por emitir ${this.eur(l.fat.total)}${l.fat.nEmAtraso ? `, ${l.fat.nEmAtraso} em atraso` : ''}`}`
           : `Sem valor ou horas vendidas — o reconhecimento não se calcula · faturas por emitir ${this.eur(l.fat.total)}.`) + (l.rec ? reparto + '.' : '');
       }
     return pressup;
@@ -444,6 +474,7 @@ const Previsao = {
       const recC = sc(linhasC.map(l => l.rec && l.rec.porMes), meses), fatC = sc(linhasC.map(l => l.fat.porMes), meses);
       const recP = sc(linhasO.map(l => l.rec.porMes), meses), fatP = sc(linhasO.map(l => l.fat.porMes), meses);
       const recT = sc([recC, recP], meses), fatT = sc([fatC, fatP], meses);
+      const semHoras = sc(linhasC.map(l => l.rec && l.rec.porMesSemHoras), meses);
       const comOps = f.cenario !== 'contratado';
       const rot = m => `${this.rotuloMes(m)}/${m.slice(2, 4)}`;
       const nomeDe = (lista, id) => (lista.find(x => x.id === id) || {}).nome || '';
@@ -456,6 +487,7 @@ const Previsao = {
         [`Gerado em ${hoje}`], [],
         ['€', ...meses.map(rot), `Total ${meses.length} meses`],
         ['RECONHECIMENTO (trabalho feito)'], linhaSerie('Contratado (backlog)', recC),
+        linhaSerie('  do qual sem horas no Gantt (distribuído até ao fim de cada projeto)', semHoras),
         ...(comOps ? [linhaSerie(f.cenario === 'total' ? 'Oportunidades (100%)' : 'Oportunidades (ponderadas)', recP), linhaSerie('Total reconhecimento', recT)] : []),
         acum(recT),
         ['FATURAÇÃO'], linhaSerie('Contratada (faturas por emitir)', fatC),
@@ -463,18 +495,18 @@ const Previsao = {
         acum(fatT),
         ['Faturação − reconhecimento (acumulado)', ...(() => { const a = PrevisaoLogica.acumular(fatT, meses), b = PrevisaoLogica.acumular(recT, meses); return meses.map(m => e0(a[m] - b[m])); })(), '']
       ];
-      const R = this.rentabilidade(hoje, meses, calc.custos, recC, recT);
+      const R = this.rentabilidade(hoje, meses, calc.custos, recC, recT, semHoras);
       mapa.push([], ['RENTABILIDADE (sobre o reconhecimento) — custo mensal por pessoa: dias úteis × 8 h × custo/hora; mês atual a partir de hoje'],
         ...(R.equipa ? [linhaSerie('Receita prevista (reconhecimento)', recT), linhaSerie('Custo da equipa', R.equipa.porMes), linhaSerie('Margem da equipa', R.margemEquipa)] : [['Custo da equipa: não se separa por tipo de projeto (filtro Tipo ligado)']]),
-        linhaSerie('Receita contratada (reconhecimento)', recC), linhaSerie('Custo das horas planeadas', R.planCom), linhaSerie('Margem dos projetos', R.margemProj),
+        linhaSerie('Receita das horas planeadas', R.recProj), linhaSerie('Custo das horas planeadas', R.planCom), linhaSerie('Margem dos projetos', R.margemProj),
         linhaSerie('Custo planeado em projetos sem receita', R.planSem), ...(R.semTrabalho ? [linhaSerie('Custo sem trabalho planeado', R.semTrabalho)] : []));
       const recPorId = new Map(linhasC.filter(l => l.rec).map(l => [l.id, l]));
       const custoPorId = new Map(R.planeado.map(c => [c.id, c]));
       const margemItens = [['Projeto', 'Indicador', ...meses.map(rot), 'Total'],
         ...[...new Set([...recPorId.keys(), ...custoPorId.keys()])].flatMap(id => {
           const l = recPorId.get(id), c = custoPorId.get(id), nome = (l || c).nome;
-          const r = l ? l.rec.porMes : PrevisaoLogica.vazio(meses), k = c ? c.porMes : PrevisaoLogica.vazio(meses);
-          return [['Receita', r], ['Custo', k], ['Margem', PrevisaoLogica.diferenca(r, k, meses)]].map(([ind, s]) => [nome, ind, ...meses.map(m => e0(s[m])), e0(tot(s))]);
+          const r = l ? this.recPlaneada(l.rec, meses) : PrevisaoLogica.vazio(meses), k = c ? c.porMes : PrevisaoLogica.vazio(meses);
+          return [['Receita das horas planeadas', r], ['Custo', k], ['Margem', PrevisaoLogica.diferenca(r, k, meses)]].map(([ind, s]) => [nome, ind, ...meses.map(m => e0(s[m])), e0(tot(s))]);
         })];
       const itens = linhasC.map(l => Object.assign({ kind: 'c' }, l)).concat(linhasO);
       const porItem = (serie) => [['Origem', 'Item', 'Tipo', 'Área', 'Peso', ...meses.map(rot), 'Total'],
@@ -486,7 +518,7 @@ const Previsao = {
       folha('Mapa', mapa, [36, ...meses.map(() => 9), 14]);
       folha('Reconhecimento por item', porItem(l => l.rec ? l.rec.porMes : PrevisaoLogica.vazio(meses)), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
       folha('Faturação por item', porItem(l => l.fat.porMes), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
-      folha('Margem por projeto', margemItens, [46, 10, ...meses.map(() => 9), 11]);
+      folha('Margem por projeto', margemItens, [46, 28, ...meses.map(() => 9), 11]);
       folha('Pressupostos', pressup, [14, 46, 140]);
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       App.descarregarBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Previsao_${hoje}.xlsx`);
@@ -500,6 +532,17 @@ const Previsao = {
   },
 
   // Projetos cujo tipo não está definido no próprio projeto (vem do CRM ou falta): permite classificá-los aqui mesmo.
+  // Os avisos ficam num só bloco que se pode recolher; a escolha fica guardada neste browser (por omissão, aberto).
+  htmlAvisos(avisos) {
+    if (!avisos.length) return '';
+    return `<details class="prev-avisos"${this.avisosAbertos ? ' open' : ''}><summary>⚠ <b>${avisos.length}</b> aviso${avisos.length > 1 ? 's' : ''}</summary>
+      ${avisos.map(a => `<div class="prev-aviso">⚠ ${a}</div>`).join('')}</details>`;
+  },
+  guardarAvisosAbertos(abertos) {
+    this.avisosAbertos = abertos;
+    try { localStorage.setItem('prevAvisosAbertos', abertos ? '1' : '0'); } catch (e) { /* sem armazenamento: vale só nesta sessão */ }
+  },
+
   htmlClassificar(lista) {
     if (!lista.length) return '';
     const semSql = typeof Sync !== 'undefined' && Sync.temTipoProjeto === false;
@@ -533,8 +576,14 @@ const Previsao = {
     if (!raiz) return;
     this.ligado = true;
     const f = this.filtros;
-    // Mantém aberta a lista de projetos por classificar enquanto se vai classificando (cada alteração volta a desenhar o ecrã).
-    raiz.addEventListener('toggle', ev => { if (ev.target.classList && ev.target.classList.contains('prev-classificar')) this.classificarAberto = ev.target.open; }, true);
+    // Mantém aberta a lista de projetos por classificar enquanto se vai classificando (cada alteração volta a desenhar o ecrã),
+    // e lembra se os avisos estão abertos ou recolhidos.
+    raiz.addEventListener('toggle', ev => {
+      const c = ev.target.classList;
+      if (!c) return;
+      if (c.contains('prev-classificar')) this.classificarAberto = ev.target.open;
+      else if (c.contains('prev-avisos')) this.guardarAvisosAbertos(ev.target.open);
+    }, true);
     raiz.addEventListener('change', ev => {
       const selTipo = ev.target.closest && ev.target.closest('[data-prev-tipo]');
       const chkSem = ev.target.closest && ev.target.closest('[data-prev-semfat]');

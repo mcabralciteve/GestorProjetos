@@ -123,3 +123,30 @@ test('rentabilidade: o custo das horas segue o filtro Área, como o reconhecimen
   assert.equal(R.margemEquipa, null);
 });
 
+test('com data de fim: o backlog sem horas entra no reconhecimento, mas não na margem dos projetos; concluído fica de fora', () => {
+  const { Previsao, PL, ctx } = montar();
+  ctx.Capacidade = { HORAS_DIA: 8 };
+  const S = ctx.App.state;
+  S.feriados = [];
+  S.recursos.forEach(r => { r.precoCusto = 20; });
+  S.projetos.p1.dataFim = '2026-12-31';
+  const meses = PL.mesesHorizonte(HOJE, 4);
+  let { linhas, custos } = Previsao.calcular(HOJE, meses);
+  const recC = PL.somar(linhas.map(l => l.rec.porMes), meses), semH = PL.somar(linhas.map(l => l.rec.porMesSemHoras), meses);
+  assert.equal(arred(PL.total(recC, meses)), 10000);
+  assert.equal(arred(PL.total(semH, meses)), 3000);
+  const R = Previsao.rentabilidade(HOJE, meses, custos, recC, recC, semH);
+  assert.equal(arred(PL.total(R.recProj, meses)), 7000);
+  assert.equal(arred(PL.total(R.margemProj, meses)), 7000 - 70 * 20);
+  assert.match(Previsao.avisosSemHoras(linhas)[0], /distribuídos/);
+  assert.match(Previsao.pressupostos(linhas[0], 70), /distribuídos até 31\/12\/2026/);
+  // Área RPA: não leva nada do distribuído (fica na equipa do projeto)
+  Previsao.filtros.equipa = 'RPA';
+  assert.equal(arred(PL.total(Previsao.filtrar(linhas)[0].rec.porMes, meses)), 2000);
+  Previsao.filtros.equipa = '';
+  S.projetos.p1.estado = 'Concluído';
+  ({ linhas } = Previsao.calcular(HOJE, meses));
+  assert.equal(arred(PL.total(linhas[0].rec.porMes, meses)), 7000);
+  assert.match(Previsao.avisosSemHoras(linhas)[0], /não aparecem em nenhum mês/);
+});
+

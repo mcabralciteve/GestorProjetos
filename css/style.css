@@ -686,6 +686,11 @@ table.prev-class{width:100%;border-collapse:collapse;}
 .an-kpi .prev-sub{display:block;margin-top:2px;}
 .prev-aviso{background:#fef3c7;color:#78350f;border:1px solid #fcd34d;border-radius:8px;padding:7px 12px;margin:0 0 8px;font-size:12.5px;}
 :root[data-tema="escuro"] .prev-aviso{background:#3a2f10;color:#f3d98b;border-color:#6b5518;}
+.prev-avisos{margin:0 0 8px;font-size:12.5px;}
+.prev-avisos>summary{cursor:pointer;background:#fef3c7;color:#78350f;border:1px solid #fcd34d;border-radius:8px;padding:7px 12px;margin:0 0 8px;}
+.prev-avisos>summary::after{content:' — mostrar';opacity:.75;}
+.prev-avisos[open]>summary::after{content:' — recolher';}
+:root[data-tema="escuro"] .prev-avisos>summary{background:#3a2f10;color:#f3d98b;border-color:#6b5518;}
 .prev-grafico{width:100%;height:auto;max-height:240px;}
 .prev-grelha{stroke:var(--cinza-200);}
 .prev-eixo{fill:var(--cinza-500);font-size:10px;}

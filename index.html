@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261127c">
+<link rel="stylesheet" href="css/style.css?v=20261127d">
 <script>
   // Aplica o tema guardado antes da primeira pintura da página, para não haver um "flash" do
   // tema claro antes do resto da app carregar.
@@ -1272,7 +1272,7 @@
       <h2>🔮 Previsão: reconhecimento, faturação e rentabilidade</h2>
       <button type="button" id="btnPrevExportar" class="ib ib-pri" data-icone="upload" data-tip="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel" aria-label="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel"><span>Exportar</span></button>
     </div>
-    <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b> e, conforme o cenário, das <b>oportunidades</b> do CRM ponderadas pela probabilidade da etapa. O reconhecimento do contratado reparte o valor que falta reconhecer pelas horas que faltam no plano de cada projeto; o das oportunidades, o valor ponderado pela duração prevista. Só leitura; só o Administrador.</p>
+    <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b> e, conforme o cenário, das <b>oportunidades</b> do CRM ponderadas pela probabilidade da etapa. O reconhecimento do contratado reparte o valor que falta reconhecer pelas horas que faltam no plano de cada projeto (e o que não tem horas, pelo tempo até ao fim do projeto); o das oportunidades, o valor ponderado pela duração prevista. Só leitura; só o Administrador.</p>
     <div id="previsaoCorpo">
       <div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
         <label class="zoom-label">Cenário
@@ -1300,7 +1300,7 @@
       <div class="card" style="margin-bottom:14px;">
         <h3 style="margin-top:0;">Mapa mensal (k€) <span class="prev-sub">· o mês atual está assinalado</span></h3>
         <div class="table-scroll"><table class="prev-mapa" id="prevMapa"></table></div>
-        <p class="prev-sub" style="margin:8px 0 0;">Reconhecimento = valor por reconhecer repartido pelas horas que faltam no Gantt (€/h = valor vendido ÷ horas vendidas), nunca acima do que falta. Faturação = faturas por emitir; as já atrasadas contam no mês atual.<br>Custo da equipa = dias úteis (sem feriados) × 8 h × preço de custo de cada pessoa, férias incluídas; o mês atual conta a partir de hoje. Custo das horas planeadas = horas por fazer no Gantt × preço de custo. Só custos com pessoas (sem subcontratação, materiais ou custos indiretos).</p>
+        <p class="prev-sub" style="margin:8px 0 0;">Reconhecimento = valor por reconhecer repartido pelas horas que faltam no Gantt (€/h = valor vendido ÷ horas vendidas), nunca acima do que falta; o que não tem horas no Gantt reparte-se pelos dias úteis até ao fim do projeto (prazo ultrapassado: mês atual; concluído ou sem data de fim: fica de fora). Faturação = faturas por emitir; as já atrasadas contam no mês atual.<br>Custo da equipa = dias úteis (sem feriados) × 8 h × preço de custo de cada pessoa, férias incluídas; o mês atual conta a partir de hoje. Custo das horas planeadas = horas por fazer no Gantt × preço de custo; a margem dos projetos compara-o só com a receita dessas horas. Só custos com pessoas (sem subcontratação, materiais ou custos indiretos).</p>
       </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -1482,8 +1482,8 @@
 <script src="js/agendamento-logica.js?v=20261101a"></script>
 <script src="js/progresso-logica.js?v=20261108a"></script>
 <script src="js/xlsx-estilo.js?v=20261106a"></script>
-<script src="js/previsao-logica.js?v=20261127a"></script>
-<script src="js/previsao.js?v=20261127a"></script>
+<script src="js/previsao-logica.js?v=20261127b"></script>
+<script src="js/previsao.js?v=20261127c"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/navegacao.js?v=20261112a"></script>
