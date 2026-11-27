@@ -4618,13 +4618,19 @@ const App = {
     if (projetos.length && !projetos.some(p => p.id === this.state.projetoAtivoId)) {
       this.selecionarProjeto(projetos[0].id);
     }
+    // O cliente já se escolhe na caixa ao lado: aqui o projeto aparece só pelo nome e referência. Com "Todos os clientes" as opções vêm
+    // agrupadas por cliente (título do grupo), para distinguir projetos com o mesmo nome.
     sel.innerHTML = '';
+    let grupo = null;
     projetos.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = this.rotuloProjetoCompleto(p) + (p.ativo === false ? ' ⏸ Suspenso' : '');
+      opt.textContent = this.montarRotuloProjeto('', p.nome, p.idInterno) + (p.ativo === false ? ' ⏸ Suspenso' : '');
       if (p.id === this.state.projetoAtivoId) opt.selected = true;
-      sel.appendChild(opt);
+      if (this.filtroClienteGantt) { sel.appendChild(opt); return; }
+      const cliente = String(p.cliente || '').trim() || '(sem cliente)';
+      if (!grupo || grupo.label !== cliente) { grupo = document.createElement('optgroup'); grupo.label = cliente; sel.appendChild(grupo); }
+      grupo.appendChild(opt);
     });
   },
 
