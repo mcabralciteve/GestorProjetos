@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- orcprev — registo do que já foi carregado (Fase 1)
 --
@@ -31,7 +32,7 @@ create index if not exists orcprev_envios_confirmado_idx on public.orcprev_envio
 
 alter table public.orcprev_envios enable row level security;
 drop policy if exists "orcprev_envios_ler" on public.orcprev_envios;
-create policy "orcprev_envios_ler" on public.orcprev_envios for select using (auth.role() = 'authenticated');
+create policy "orcprev_envios_ler" on public.orcprev_envios for select using ((select public.app_conta_ativa()));
 -- Sem insert/update/delete diretos: só pelas funções abaixo (e pelo service_role).
 
 -- O token nunca sai pela leitura normal: só a função orcprev_novo_envio o devolve, a quem o criou.

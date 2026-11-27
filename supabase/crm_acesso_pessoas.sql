@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- Acesso ao CRM por pessoa
 --
@@ -14,7 +15,7 @@ create or replace function public.crm_tem_acesso()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (
+  select public.app_conta_ativa() and exists (
     select 1 from public.recursos r
     where r.auth_user_id = auth.uid()
       and (

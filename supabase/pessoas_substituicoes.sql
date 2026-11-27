@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- Pessoas inativas — Fase 2: registo das substituições (histórico)
 --
@@ -28,9 +29,9 @@ create index if not exists pessoas_substituicoes_projeto_idx on public.pessoas_s
 
 alter table public.pessoas_substituicoes enable row level security;
 drop policy if exists "substituicoes_ler" on public.pessoas_substituicoes;
-create policy "substituicoes_ler" on public.pessoas_substituicoes for select using (auth.role() = 'authenticated');
+create policy "substituicoes_ler" on public.pessoas_substituicoes for select using ((select public.app_conta_ativa()));
 drop policy if exists "substituicoes_inserir" on public.pessoas_substituicoes;
-create policy "substituicoes_inserir" on public.pessoas_substituicoes for insert with check (auth.role() = 'authenticated');
+create policy "substituicoes_inserir" on public.pessoas_substituicoes for insert with check ((select public.app_conta_ativa()));
 
 grant select, insert on public.pessoas_substituicoes to authenticated;
 grant select, insert, update, delete on public.pessoas_substituicoes to service_role;

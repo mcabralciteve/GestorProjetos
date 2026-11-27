@@ -22,7 +22,7 @@ create or replace function public.gravar_filhos_projeto(
   p_proximos_passos jsonb    -- [{id,tarefa_id,ponto_situacao_id,responsavel_id,data_prevista,data_real,descricao,estado,notas,fechado,fechado_em,criado_por,criado_em,atualizado_em}]
 ) returns void
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 declare
@@ -96,6 +96,7 @@ begin
     and exists (select 1 from tarefas t where t.id = (l->>'tarefa_id')::uuid);
 end;
 $$;
+revoke execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) from public, anon;
 grant execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated;
 
 notify pgrst, 'reload schema';

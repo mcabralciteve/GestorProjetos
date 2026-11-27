@@ -1591,3 +1591,188 @@ notify pgrst, 'reload schema';
 
 -- Cliente do projeto ligado à conta do CRM (supabase/projeto_conta.sql). Sem chave estrangeira (o CRM não entra no backup).
 alter table public.projetos add column if not exists conta_id uuid;
+
+-- ============================================================================
+-- Segurança das contas (2026-11-27, ver seguranca_contas.sql). Tem de ficar NO FIM deste ficheiro.
+-- Tabelas novas: usar  using ((select public.app_conta_ativa()))  e nunca só a sessão iniciada.
+-- No Supabase, o registo público de contas tem de estar desligado (Authentication > Sign In / Providers).
+-- ============================================================================
+-- ---------- 1. Quem tem acesso ----------
+create or replace function public.app_conta_ativa() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.recursos r
+    where r.auth_user_id = auth.uid()
+      and coalesce(r.ativo, true)
+      and (r.data_saida is null or r.data_saida >= current_date)
+  );
+$$;
+
+create or replace function public.app_e_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.app_conta_ativa()
+     and exists (select 1 from public.recursos r where r.auth_user_id = auth.uid() and r.acesso = 'admin');
+$$;
+
+-- As regras do CRM e das Licenças passam a exigir também que a pessoa esteja ativa.
+create or replace function public.crm_e_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.app_e_admin();
+$$;
+
+create or replace function public.crm_tem_acesso() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.app_conta_ativa() and exists (
+    select 1 from public.recursos r
+    where r.auth_user_id = auth.uid()
+      and (
+        r.acesso = 'admin'
+        or r.crm_acesso
+        or exists (select 1 from public.departamentos d where d.diretor_id = r.id)
+        or exists (select 1 from public.equipas e where e.lider_id = r.id)
+      )
+  );
+$$;
+
+create or replace function public.licencas_pode(p_departamento uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.app_conta_ativa() and exists (
+    select 1 from public.recursos r
+    where r.auth_user_id = auth.uid()
+      and (
+        r.acesso = 'admin'
+        or (p_departamento is not null and exists (
+              select 1 from public.departamentos d where d.id = p_departamento and d.diretor_id = r.id))
+      )
+  );
+$$;
+
+create or replace function public.licencas_tem_acesso() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.app_conta_ativa() and exists (
+    select 1 from public.recursos r
+    where r.auth_user_id = auth.uid()
+      and (r.acesso = 'admin' or exists (select 1 from public.departamentos d where d.diretor_id = r.id))
+  );
+$$;
+
+-- Todas as regras que hoje só pedem "sessão iniciada" passam a pedir "pessoa ativa".
+do $$
+declare
+  antiga constant text := '(auth.role() = ''authenticated''::text)';
+  p record;
+begin
+  for p in
+    select tablename, policyname, qual, with_check from pg_policies
+    where schemaname = 'public' and (qual = antiga or with_check = antiga)
+  loop
+    execute format('alter policy %I on public.%I %s %s', p.policyname, p.tablename,
+      case when p.qual is not null then 'using ((select public.app_conta_ativa()))' else '' end,
+      case when p.with_check is not null then 'with check ((select public.app_conta_ativa()))' else '' end);
+  end loop;
+end $$;
+
+-- ---------- 2. Contas novas ----------
+-- Antes: qualquer conta nova criava uma pessoa. Agora só se liga a uma pessoa já registada com o mesmo email.
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.recursos set auth_user_id = new.id
+  where id = (select r.id from public.recursos r where lower(r.email) = lower(new.email) and r.auth_user_id is null limit 1);
+  return new;
+end;
+$$;
+
+-- Se a conta for criada antes da pessoa, a ligação faz-se quando o Administrador gravar a pessoa com esse email.
+create or replace function public.recursos_ligar_conta() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.auth_user_id is null and coalesce(new.email, '') <> '' then
+    new.auth_user_id := (
+      select u.id from auth.users u
+      where lower(u.email) = lower(new.email)
+        and not exists (select 1 from public.recursos r where r.auth_user_id = u.id)
+      limit 1);
+  end if;
+  return new;
+end;
+$$;
+
+-- ---------- 3. Pessoas, equipas e departamentos: só o Administrador ----------
+-- Só se aplica a pedidos da app (com ou sem sessão). Funções do servidor, SQL Editor e criação de contas não são afetados.
+create or replace function public.recursos_proteger() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  r public.recursos;
+begin
+  if coalesce(auth.role(), '') not in ('authenticated', 'anon') or public.app_e_admin() then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+  if tg_op = 'DELETE' then raise exception 'Só o Administrador pode eliminar pessoas.'; end if;
+  if tg_op = 'INSERT' then
+    -- a app grava com "inserir ou atualizar": se a pessoa já existe, é a regra de atualização que decide
+    if exists (select 1 from public.recursos x where x.id = new.id) then return new; end if;
+    raise exception 'Só o Administrador pode criar pessoas.';
+  end if;
+  r := old;  -- tudo fica como estava (incluindo colunas que venham a ser criadas)
+  if old.auth_user_id = auth.uid() then
+    r.nome := new.nome;
+    r.lembretes_email := new.lembretes_email;
+    r.resumo_secoes := new.resumo_secoes;
+  end if;
+  return r;
+end;
+$$;
+
+create or replace function public.organica_proteger() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  existe boolean;
+begin
+  if coalesce(auth.role(), '') not in ('authenticated', 'anon') or public.app_e_admin() then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+  if tg_op = 'DELETE' then raise exception 'Só o Administrador pode eliminar equipas ou departamentos.'; end if;
+  if tg_op = 'INSERT' then
+    execute format('select exists (select 1 from public.%I where id = $1)', tg_table_name) into existe using new.id;
+    if existe then return new; end if;
+    raise exception 'Só o Administrador pode criar equipas ou departamentos.';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists a_proteger on public.recursos;
+create trigger a_proteger before insert or update or delete on public.recursos
+  for each row execute function public.recursos_proteger();
+
+drop trigger if exists b_ligar_conta on public.recursos;
+create trigger b_ligar_conta before insert or update on public.recursos
+  for each row execute function public.recursos_ligar_conta();
+
+drop trigger if exists a_proteger on public.equipas;
+create trigger a_proteger before insert or update or delete on public.equipas
+  for each row execute function public.organica_proteger();
+
+drop trigger if exists a_proteger on public.departamentos;
+create trigger a_proteger before insert or update or delete on public.departamentos
+  for each row execute function public.organica_proteger();
+
+-- ---------- 4. Funções ----------
+-- Gravar um projeto passa a correr com as permissões de quem grava (as regras acima), e exige sessão.
+alter function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) security invoker;
+revoke execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) from public, anon;
+grant execute on function public.gravar_filhos_projeto(uuid, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated, service_role;
+
+-- Só usadas internamente pela base de dados: ninguém as chama de fora.
+revoke execute on function public.projeto_sincronizar_proposta(uuid) from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.projeto_proposta_apos_oportunidade() from public, anon, authenticated;
+revoke execute on function public.projeto_proposta_apos_proposta() from public, anon, authenticated;
+revoke execute on function public.recursos_ligar_conta() from public, anon, authenticated;
+revoke execute on function public.recursos_proteger() from public, anon, authenticated;
+revoke execute on function public.organica_proteger() from public, anon, authenticated;
+
+notify pgrst, 'reload schema';

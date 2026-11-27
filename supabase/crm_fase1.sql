@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- CRM Fase 1 — corre ESTE ficheiro no SQL Editor do Supabase (é o mesmo bloco que está em schema.sql).
 -- Seguro de repetir: só cria o que não existe e não repõe parâmetros que já tenhas alterado.
 
@@ -18,7 +19,7 @@ create or replace function public.crm_tem_acesso()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (
+  select public.app_conta_ativa() and exists (
     select 1 from public.recursos r
     where r.auth_user_id = auth.uid()
       and (
@@ -34,7 +35,7 @@ create or replace function public.crm_e_admin()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (select 1 from public.recursos r where r.auth_user_id = auth.uid() and r.acesso = 'admin');
+  select public.app_conta_ativa() and exists (select 1 from public.recursos r where r.auth_user_id = auth.uid() and r.acesso = 'admin');
 $$;
 
 -- ---------- Parâmetros do funil (editáveis só pelo Administrador) ----------

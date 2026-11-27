@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- Comentários nas tarefas dos projetos
 --
@@ -30,7 +31,7 @@ create index if not exists tarefa_comentarios_projeto_idx on public.tarefa_comen
 alter table public.tarefa_comentarios enable row level security;
 drop policy if exists "autenticados_acesso_total" on public.tarefa_comentarios;
 create policy "autenticados_acesso_total" on public.tarefa_comentarios for all
-  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+  using ((select public.app_conta_ativa())) with check ((select public.app_conta_ativa()));
 grant select, insert, update, delete on public.tarefa_comentarios to authenticated;
 grant select, insert, update, delete on public.tarefa_comentarios to service_role;
 

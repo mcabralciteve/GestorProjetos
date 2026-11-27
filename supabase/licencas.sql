@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- Licenças de software (módulo "Ativos → Licenças"): valor, responsável, departamento, renovação, projeto e financiamento
 --
@@ -58,7 +59,7 @@ create or replace function public.licencas_pode(p_departamento uuid)
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (
+  select public.app_conta_ativa() and exists (
     select 1 from public.recursos r
     where r.auth_user_id = auth.uid()
       and (
@@ -75,7 +76,7 @@ create or replace function public.licencas_tem_acesso()
 returns boolean
 language sql stable security definer set search_path = public
 as $$
-  select exists (
+  select public.app_conta_ativa() and exists (
     select 1 from public.recursos r
     where r.auth_user_id = auth.uid()
       and (r.acesso = 'admin' or exists (select 1 from public.departamentos d where d.diretor_id = r.id))

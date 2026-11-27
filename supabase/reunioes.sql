@@ -1,3 +1,4 @@
+-- Precisa de supabase/seguranca_contas.sql (função app_conta_ativa).
 -- ============================================================================
 -- Reuniões (módulo "Reuniões"): identificação, participantes, notas, ficheiros (ligações), decisões/ações e ata
 --
@@ -52,7 +53,7 @@ create index if not exists reunioes_projeto_idx on public.reunioes(projeto_id);
 alter table public.reunioes enable row level security;
 drop policy if exists "autenticados_acesso_total" on public.reunioes;
 create policy "autenticados_acesso_total" on public.reunioes for all
-  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+  using ((select public.app_conta_ativa())) with check ((select public.app_conta_ativa()));
 grant select, insert, update, delete on public.reunioes to authenticated;
 grant select, insert, update, delete on public.reunioes to service_role;
 
