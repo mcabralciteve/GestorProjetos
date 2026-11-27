@@ -336,23 +336,27 @@ const Previsao = {
 
     // avisos
     const avisos = [];
-    const nomes = (lista, n) => lista.slice(0, n).map(l => `<a href="#" data-prev-op="${escapeAttr(l.id)}">${escapeHtml(l.nome)}</a>`).join('; ') + (lista.length > n ? '…' : '');
+    const nomes = lista => this.listaAviso(lista.map(l => `<a href="#" data-prev-op="${escapeAttr(l.id)}">${escapeHtml(l.nome)}</a>`));
+    // Projetos com faturas por emitir no campo pedido (em atraso, sem data, fora do horizonte), com o valor de cada um.
+    const comFaturas = campo => this.listaAviso(linhasC.filter(l => l.fat[campo] > 0).sort((a, b) => b.fat[campo] - a.fat[campo])
+      .map(l => `${this.ligacao('fatura', l.id, escapeHtml(l.nome))} ${this.eur(l.fat[campo])}`));
     if (opsTodas.estado === 'a-carregar') avisos.push('A carregar as oportunidades do CRM…');
-    if (opsTodas.estado === 'erro') avisos.push('Não consegui ler o CRM — o mapa mostra só o contratado.');
+    if (opsTodas.estado === 'erro') avisos.push(`Não consegui ler o CRM — o mapa mostra só o contratado. ${this.ligacao('crm', '', 'Tentar de novo')}.`);
     if (opsTodas.estado === 'sem-acesso') avisos.push('Sem acesso ao CRM — o mapa mostra só o contratado.');
     if (Crm.carregado && Crm.temPrevisao === false) avisos.push('Os campos de previsão das oportunidades ainda não existem na base de dados (corre <b>supabase/previsao_oportunidades.sql</b>): as oportunidades usam só os defeitos por tipo.');
-    if (comOps && opsTodas.defeitos.length) avisos.push(`${opsTodas.defeitos.length} oportunidade(s) sem <b>duração</b> definida usam a duração por defeito do tipo — abre-as e preenche "Previsão de execução" para o mapa ficar mais fiel: ${nomes(opsTodas.defeitos, 5)}.`);
-    if (comOps && opsTodas.semFecho.length) avisos.push(`${opsTodas.semFecho.length} oportunidade(s) sem <b>data prevista de fecho</b> (nem início previsto) contam a partir do mês seguinte: ${nomes(opsTodas.semFecho, 5)}.`);
-    if (comOps && opsTodas.ganhasSemProjeto.length) avisos.push(`${opsTodas.ganhasSemProjeto.length} oportunidade(s) <b>ganhas ainda sem projeto</b> contam a 100%: ${nomes(opsTodas.ganhasSemProjeto, 4)}.`);
-    if (comOps && opsTodas.semValor.length) avisos.push(`${opsTodas.semValor.length} oportunidade(s) abertas sem valor (nem proposta com orçamento) não entram: ${nomes(opsTodas.semValor, 4)}.`);
-    if (comOps && opsTodas.planoIncompleto.length) avisos.push(`${opsTodas.planoIncompleto.length} oportunidade(s) com plano de faturação que não soma 100%: ${nomes(opsTodas.planoIncompleto, 4)}.`);
-    if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${semDados.slice(0, 4).map(l => escapeHtml(l.nome)).join('; ')}${semDados.length > 4 ? '…' : ''}. Num I&amp;D financiado, preenche o Valor vendido com o valor do financiamento (e as Horas vendidas) e marca "Sem faturação ao cliente".`);
+    if (comOps && opsTodas.defeitos.length) avisos.push(`${opsTodas.defeitos.length} oportunidade(s) sem <b>duração</b> definida usam a duração por defeito do tipo — abre-as e preenche "Previsão de execução" para o mapa ficar mais fiel: ${nomes(opsTodas.defeitos)}.`);
+    if (comOps && opsTodas.semFecho.length) avisos.push(`${opsTodas.semFecho.length} oportunidade(s) sem <b>data prevista de fecho</b> (nem início previsto) contam a partir do mês seguinte: ${nomes(opsTodas.semFecho)}.`);
+    if (comOps && opsTodas.ganhasSemProjeto.length) avisos.push(`${opsTodas.ganhasSemProjeto.length} oportunidade(s) <b>ganhas ainda sem projeto</b> contam a 100%: ${nomes(opsTodas.ganhasSemProjeto)}.`);
+    if (comOps && opsTodas.semValor.length) avisos.push(`${opsTodas.semValor.length} oportunidade(s) abertas sem valor (nem proposta com orçamento) não entram: ${nomes(opsTodas.semValor)}.`);
+    if (comOps && opsTodas.planoIncompleto.length) avisos.push(`${opsTodas.planoIncompleto.length} oportunidade(s) com plano de faturação que não soma 100%: ${nomes(opsTodas.planoIncompleto)}.`);
+    if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${this.listaAviso(semDados.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(l => this.ligacao('valores', l.id, escapeHtml(l.nome))))}. Num I&amp;D financiado, preenche o Valor vendido com o valor do financiamento (e as Horas vendidas) e marca "Sem faturação ao cliente".`);
     avisos.push(...this.avisosSemHoras(linhasC));
-    const semCusto = R.equipa ? R.equipa.semCusto.map(id => (App.state.recursos.find(r => r.id === id) || {}).nome || '?') : [];
-    if (semCusto.length) avisos.push(`${semCusto.length} pessoa(s) <b>sem preço de custo</b> não contam nos custos: ${semCusto.slice(0, 5).map(escapeHtml).join('; ')}${semCusto.length > 5 ? '…' : ''}. Preenche-o em Configurações → Recursos.`);
-    if (nAtraso) avisos.push(`${nAtraso} fatura(s) por emitir (${this.kk(emAtraso)}) já passaram da data prevista — estão contadas no mês atual.`);
-    if (semData > 0) avisos.push(`${this.kk(semData)} em faturas por emitir sem data prevista não entram no mapa.`);
-    if (fora > 0) avisos.push(`${this.kk(fora)} em faturas estão previstas depois do horizonte escolhido.`);
+    const semCusto = R.equipa ? R.equipa.semCusto : [];
+    if (semCusto.length) avisos.push(`${semCusto.length} pessoa(s) <b>sem preço de custo</b> não contam nos custos: ${this.listaAviso(semCusto.map(id => this.ligacao('pessoa', id, escapeHtml((App.state.recursos.find(r => r.id === id) || {}).nome || '?'))))}. Preenche-o na ficha da pessoa (Configurações → Recursos).`);
+    if (nAtraso) avisos.push(`${nAtraso} fatura(s) por emitir (${this.kk(emAtraso)}) já passaram da data prevista — estão contadas no mês atual: ${comFaturas('emAtraso')}.`);
+    if (semData > 0) avisos.push(`${this.kk(semData)} em faturas por emitir sem data prevista não entram no mapa: ${comFaturas('semData')}.`);
+    const maior = this.HORIZONTES.find(h => h > this.filtros.horizonte);
+    if (fora > 0) avisos.push(`${this.kk(fora)} em faturas estão previstas depois do horizonte escolhido: ${comFaturas('foraDoHorizonte')}.${maior ? ` ${this.ligacao('horizonte', String(maior), `Ver a ${maior} meses`)}.` : ''}`);
     document.getElementById('prevAvisos').innerHTML = this.htmlAvisos(avisos) + this.htmlClassificar(porClassificar);
 
     // gráficos + legenda
@@ -417,17 +421,49 @@ const Previsao = {
     document.getElementById('prevDet').innerHTML = cabDet + `<tbody>${corpoDet || `<tr><td colspan="${nm + 5}">Sem projetos nem oportunidades com algo a prever neste filtro.</td></tr>`}</tbody>`;
   },
 
+  // ---------- ligações dos avisos ----------
+  // Cada nome de um aviso leva ao sítio onde o assunto se resolve (ver irPara). As oportunidades usam data-prev-op.
+  ligacao(destino, id, html) { return `<a href="#" data-prev-ir="${destino}" data-prev-id="${escapeAttr(id)}">${html}</a>`; },
+  // Os primeiros "n" ficam à vista; os restantes aparecem ao carregar em "mais N".
+  listaAviso(itens, n) {
+    const lim = n || 5, visiveis = itens.slice(0, lim).join('; ');
+    return itens.length <= lim ? visiveis : `${visiveis}; <a href="#" data-prev-mais>mais ${itens.length - lim}…</a><span hidden>${itens.slice(lim).join('; ')}</span>`;
+  },
+  // Quem sai da Previsão por uma ligação fica com o botão "Voltar a Previsão" na barra de cima.
+  irPara(destino, id) {
+    if (destino === 'detalhe') { this.filtros.serie = 'rec'; this.render(); document.getElementById('prevDet').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    if (destino === 'horizonte') { this.filtros.horizonte = Number(id); this.render(); return; }
+    if (destino === 'crm') { Crm.erroCarga = null; this.aoAbrir(); return; }
+    if (destino === 'gantt') { App.abrirProjetoNoGantt(id); return; }
+    const p = App.state.projetos[id];
+    if (destino === 'valores') { App.abrirDadosDoProjeto(id, 'valores', p && p.horasVendidas > 0 ? 'projValorVendido' : 'projHorasVendidas'); return; }
+    if (destino === 'prazo') { App.abrirDadosDoProjeto(id, 'prazos', 'projFim'); return; }
+    if (destino === 'estado') { App.abrirDadosDoProjeto(id, 'identificacao', 'projEstado'); return; }
+    if (destino !== 'fatura' && destino !== 'pessoa') return;
+    App.empurrarRetorno({ rotulo: 'Previsão', aba: 'previsao' });
+    if (destino === 'fatura') {
+      // Sem os filtros de datas ou de registo que lá estivessem, para a fatura do aviso não ficar escondida.
+      ['fFatDe', 'fFatAte', 'fFatNumRegisto'].forEach(k => { App.els[k].value = ''; });
+      App.irParaFaturacaoDoProjeto(id);
+      return;
+    }
+    App.irParaAba('recursos');
+    App.abrirModalPessoa(id);
+    const custo = document.getElementById('pessoaCusto');
+    if (custo) custo.focus();
+  },
+
   // Avisos sobre o backlog sem horas no Gantt: o que foi distribuído pelo prazo, o que caiu no mês atual (prazo ultrapassado) e o que
-  // ficou fora do mapa (projeto concluído ou sem data de fim). Os dois últimos pedem ação, por isso nomeiam os projetos.
+  // ficou fora do mapa (projeto concluído ou sem data de fim).
   avisosSemHoras(linhasC) {
     const com = sit => linhasC.filter(l => l.rec && l.rec.situacaoPrazo === sit && l.rec.naoCalendarizado > 0.5)
       .sort((a, b) => b.rec.naoCalendarizado - a.rec.naoCalendarizado);
     const soma = lista => lista.reduce((s, l) => s + l.rec.naoCalendarizado, 0);
-    const nomes = lista => lista.slice(0, 5).map(l => `${escapeHtml(l.nome)} ${this.eur(l.rec.naoCalendarizado)}`).join('; ') + (lista.length > 5 ? '…' : '');
+    const nomes = (lista, destino) => this.listaAviso(lista.map(l => `${this.ligacao(destino(l), l.id, escapeHtml(l.nome))} ${this.eur(l.rec.naoCalendarizado)}`));
     const prazo = com('prazo'), atraso = com('atraso'), sem = com('sem'), out = [];
-    if (soma(prazo) > 49) out.push(`${this.kk(soma(prazo))} de backlog sem horas previstas no Gantt foram distribuídos pelos dias úteis que faltam até ao fim de cada projeto (ver "Cobertura" no detalhe).`);
-    if (soma(atraso) > 49) out.push(`${this.kk(soma(atraso))} de backlog sem horas são de projetos com o <b>prazo já ultrapassado</b> e contam no mês atual — atualiza a data de fim: ${nomes(atraso)}.`);
-    if (soma(sem) > 49) out.push(`${this.kk(soma(sem))} de backlog sem horas <b>não aparecem em nenhum mês</b> (projeto concluído ou sem data de fim): ${nomes(sem)}.`);
+    if (soma(prazo) > 49) out.push(`${this.kk(soma(prazo))} de backlog sem horas previstas no Gantt foram distribuídos pelos dias úteis que faltam até ao fim de cada projeto (${this.ligacao('detalhe', '', 'ver "Cobertura" no detalhe')}): ${nomes(prazo, () => 'gantt')}.`);
+    if (soma(atraso) > 49) out.push(`${this.kk(soma(atraso))} de backlog sem horas são de projetos com o <b>prazo já ultrapassado</b> e contam no mês atual — atualiza a data de fim: ${nomes(atraso, () => 'prazo')}.`);
+    if (soma(sem) > 49) out.push(`${this.kk(soma(sem))} de backlog sem horas <b>não aparecem em nenhum mês</b> (projeto concluído ou sem data de fim): ${nomes(sem, l => l.estado === 'Concluído' ? 'estado' : 'prazo')}.`);
     return out;
   },
   // O destino do backlog sem horas de um projeto, em texto (para os pressupostos).
@@ -605,7 +641,11 @@ const Previsao = {
     });
     raiz.addEventListener('click', ev => {
       const abrirOp = ev.target.closest('[data-prev-op]');
-      if (abrirOp) { ev.preventDefault(); Crm.irPara('op', abrirOp.dataset.prevOp); return; }
+      if (abrirOp) { ev.preventDefault(); App.empurrarRetorno({ rotulo: 'Previsão', aba: 'previsao' }); Crm.irPara('op', abrirOp.dataset.prevOp); return; }
+      const mais = ev.target.closest('[data-prev-mais]');
+      if (mais) { ev.preventDefault(); mais.nextElementSibling.hidden = false; mais.remove(); return; }
+      const ir = ev.target.closest('[data-prev-ir]');
+      if (ir) { ev.preventDefault(); this.irPara(ir.dataset.prevIr, ir.dataset.prevId); return; }
       const cenario = ev.target.closest('[data-prev-cenario]');
       if (cenario) { f.cenario = cenario.dataset.prevCenario; this.render(); return; }
       const serie = ev.target.closest('[data-prev-serie]');

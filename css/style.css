@@ -706,6 +706,7 @@ table.prev-class{width:100%;border-collapse:collapse;}
 .prev-tag.p{background:#fdebdd;color:#b45a1f;}
 :root[data-tema="escuro"] .prev-tag.p{background:#3b2a1e;color:#f0955a;}
 .prev-aviso a{color:inherit;text-decoration:underline;}
+.campo-destacado{outline:2px solid #e07b39;outline-offset:3px;border-radius:6px;}
 .prev-mapa tr.total td{font-weight:700;border-top:1px solid var(--cinza-300);}
 .prev-tag{font-size:10px;padding:1px 6px;border-radius:999px;background:var(--cinza-100);color:var(--cinza-700);font-weight:700;margin-left:4px;}
 table.prev-mapa,table.prev-det{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums;}

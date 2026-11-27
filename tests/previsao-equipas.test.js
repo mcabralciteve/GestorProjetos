@@ -139,6 +139,7 @@ test('com data de fim: o backlog sem horas entra no reconhecimento, mas não na 
   assert.equal(arred(PL.total(R.recProj, meses)), 7000);
   assert.equal(arred(PL.total(R.margemProj, meses)), 7000 - 70 * 20);
   assert.match(Previsao.avisosSemHoras(linhas)[0], /distribuídos/);
+  assert.match(Previsao.avisosSemHoras(linhas)[0], /data-prev-ir="detalhe"[\s\S]*data-prev-ir="gantt" data-prev-id="p1"/);
   assert.match(Previsao.pressupostos(linhas[0], 70), /distribuídos até 31\/12\/2026/);
   // Área RPA: não leva nada do distribuído (fica na equipa do projeto)
   Previsao.filtros.equipa = 'RPA';
@@ -148,5 +149,13 @@ test('com data de fim: o backlog sem horas entra no reconhecimento, mas não na 
   ({ linhas } = Previsao.calcular(HOJE, meses));
   assert.equal(arred(PL.total(linhas[0].rec.porMes, meses)), 7000);
   assert.match(Previsao.avisosSemHoras(linhas)[0], /não aparecem em nenhum mês/);
+  assert.match(Previsao.avisosSemHoras(linhas)[0], /data-prev-ir="estado" data-prev-id="p1"/);
+});
+
+test('avisos: os primeiros nomes à vista e os restantes atrás de "mais N", todos presentes', () => {
+  const { Previsao } = montar();
+  assert.equal(Previsao.listaAviso(['a', 'b']), 'a; b');
+  const longa = Previsao.listaAviso(['a', 'b', 'c', 'd'], 2);
+  assert.match(longa, /^a; b; <a href="#" data-prev-mais>mais 2…<\/a><span hidden>c; d<\/span>$/);
 });
 

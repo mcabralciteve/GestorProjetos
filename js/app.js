@@ -1769,6 +1769,25 @@ const App = {
     this.renderProjetoSelect();
     this.irParaAba('gantt');
   },
+  // Abre o projeto no Gantt com o cartão "Dados do Projeto" no tópico pedido e o campo a tratar em destaque
+  // (usado pelas ligações dos avisos da Previsão).
+  abrirDadosDoProjeto(id, topico, campoId) {
+    if (!this.state.projetos[id]) return;
+    this.abrirProjetoNoGantt(id);
+    if (this.els.sidebarGantt.classList.contains('colapsada')) this.alternarSidebar(false);
+    const sec = document.querySelector(`#sidebarGantt details[data-dp="${topico}"]`);
+    if (sec) sec.open = true;
+    // Depois do desenho do projeto (selecionarProjeto adia-o para o spinner aparecer).
+    setTimeout(() => {
+      const campo = document.getElementById(campoId);
+      if (!campo) return;
+      campo.scrollIntoView({ block: 'center' });
+      campo.focus({ preventScroll: true });
+      const alvo = campo.closest('label') || campo;
+      alvo.classList.add('campo-destacado');
+      setTimeout(() => alvo.classList.remove('campo-destacado'), 4000);
+    }, 120);
+  },
   // ---------- Tarefas ----------
   tarefaPorId(p, id) { return p.tarefas.find(t => t.id === id); },
   filhosDe(p, id) { return p.tarefas.filter(t => t.parentId === id); },
