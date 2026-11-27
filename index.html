@@ -1269,7 +1269,7 @@
 <section class="tab-panel" id="tab-previsao">
   <div class="pagina">
     <div class="pagina-head">
-      <h2>🔮 Previsão: reconhecimento e faturação</h2>
+      <h2>🔮 Previsão: reconhecimento, faturação e rentabilidade</h2>
       <button type="button" id="btnPrevExportar" class="ib ib-pri" data-icone="upload" data-tip="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel" aria-label="Exportar o que está no ecrã (cenário, filtros e horizonte) para Excel"><span>Exportar</span></button>
     </div>
     <p class="pagina-sub">Por mês, o trabalho a reconhecer e a faturação prevista dos projetos <b>já contratados</b> e, conforme o cenário, das <b>oportunidades</b> do CRM ponderadas pela probabilidade da etapa. O reconhecimento do contratado reparte o valor que falta reconhecer pelas horas que faltam no plano de cada projeto; o das oportunidades, o valor ponderado pela duração prevista. Só leitura; só o Administrador.</p>
@@ -1294,14 +1294,18 @@
         <div class="card"><h3 style="margin-top:0;">Faturação prevista por mês (k€)</h3><div id="prevGrafFat"></div><div class="an-legenda" id="prevLegFat"></div></div>
       </div>
       <div class="card" style="margin-bottom:14px;">
+        <h3 style="margin-top:0;">Receita prevista e custo das pessoas por mês (k€)</h3>
+        <div id="prevGrafMargem"></div><div class="an-legenda" id="prevLegMargem"></div>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
         <h3 style="margin-top:0;">Mapa mensal (k€) <span class="prev-sub">· o mês atual está assinalado</span></h3>
         <div class="table-scroll"><table class="prev-mapa" id="prevMapa"></table></div>
-        <p class="prev-sub" style="margin:8px 0 0;">Reconhecimento = valor por reconhecer repartido pelas horas que faltam no Gantt (€/h = valor vendido ÷ horas vendidas), nunca acima do que falta. Faturação = faturas por emitir; as já atrasadas contam no mês atual.</p>
+        <p class="prev-sub" style="margin:8px 0 0;">Reconhecimento = valor por reconhecer repartido pelas horas que faltam no Gantt (€/h = valor vendido ÷ horas vendidas), nunca acima do que falta. Faturação = faturas por emitir; as já atrasadas contam no mês atual.<br>Custo da equipa = dias úteis (sem feriados) × 8 h × preço de custo de cada pessoa, férias incluídas; o mês atual conta a partir de hoje. Custo das horas planeadas = horas por fazer no Gantt × preço de custo. Só custos com pessoas (sem subcontratação, materiais ou custos indiretos).</p>
       </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <h3 style="margin:0;">Detalhe por projeto (k€)</h3>
-          <span class="prev-seg"><button type="button" id="prevSerieRec" data-prev-serie="rec" aria-pressed="true">Reconhecimento</button><button type="button" id="prevSerieFat" data-prev-serie="fat" aria-pressed="false">Faturação</button></span>
+          <span class="prev-seg"><button type="button" id="prevSerieRec" data-prev-serie="rec" aria-pressed="true">Reconhecimento</button><button type="button" id="prevSerieFat" data-prev-serie="fat" aria-pressed="false">Faturação</button><button type="button" id="prevSerieMarg" data-prev-serie="marg" aria-pressed="false">Margem</button></span>
         </div>
         <div class="table-scroll" style="margin-top:8px;"><table class="prev-det" id="prevDet"></table></div>
         <p class="prev-sub" style="margin:8px 0 0;">Clica numa linha para ver os pressupostos usados.</p>
@@ -1478,8 +1482,8 @@
 <script src="js/agendamento-logica.js?v=20261101a"></script>
 <script src="js/progresso-logica.js?v=20261108a"></script>
 <script src="js/xlsx-estilo.js?v=20261106a"></script>
-<script src="js/previsao-logica.js?v=20261123a"></script>
-<script src="js/previsao.js?v=20261123a"></script>
+<script src="js/previsao-logica.js?v=20261127a"></script>
+<script src="js/previsao.js?v=20261127a"></script>
 <script src="js/registo-comercial.js?v=20261019a"></script>
 <script src="js/dashboard-ordem.js?v=20261023a"></script>
 <script src="js/navegacao.js?v=20261112a"></script>

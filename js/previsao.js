@@ -41,13 +41,15 @@ const Previsao = {
   // Uma linha por projeto com algo a prever (backlog ou faturas por emitir).
   calcular(hojeISO, meses) {
     const S = App.state;
-    const linhas = [], semDados = [], porClassificar = new Map();
+    const linhas = [], semDados = [], porClassificar = new Map(), custos = [];
     Object.values(S.projetos).forEach(p => {
       if (p.estado === 'Cancelado') return;
       const equipa = p.equipaId ? S.equipas.find(e => e.id === p.equipaId) : null;
       const dept = equipa && equipa.departamentoId ? S.departamentos.find(d => d.id === equipa.departamentoId) : null;
       const horasRegistadas = S.registos.filter(r => App.registoPertenceAoProjeto(r, p)).reduce((s, r) => s + (parseFloat(r.horas) || 0), 0);
       // Horas por fazer de cada tarefa, também por EQUIPA do consultor (consultor sem equipa, ou que já não existe, conta na equipa do projeto).
+      // Ao mesmo tempo, o custo dessas horas por mês e por equipa (custo/hora de cada consultor) — para a rentabilidade.
+      const custoEq = {};
       const tarefas = (p.tarefas || []).filter(t => !App.temFilhos(p, t.id) && (t.progresso || 0) < 100).map(t => {
         const horasPorEquipa = {};
         (t.recursoIds || []).forEach(rid => {
@@ -56,6 +58,7 @@ const Previsao = {
           const rec = S.recursos.find(r => r.id === rid);
           const eq = (rec && rec.equipaId) || p.equipaId || '';
           horasPorEquipa[eq] = (horasPorEquipa[eq] || 0) + h;
+          if (rec && rec.precoCusto > 0) PrevisaoLogica.acumularCusto(custoEq[eq] || (custoEq[eq] = PrevisaoLogica.vazio(meses)), t.inicio, t.fim, h, rec.precoCusto, hojeISO);
         });
         return { inicio: t.inicio, fim: t.fim, horasPorFazer: Object.values(horasPorEquipa).reduce((s, h) => s + h, 0), horasPorEquipa };
       });
@@ -67,6 +70,7 @@ const Previsao = {
           faturas: (p.faturas || []).map(f => ({ dataPrevista: f.dataPrevista, valor: App.valorFatura(f, p), emitida: !!f.emitida })), hojeISO, meses
         });
       const tipoEf = this.tipoDoProjeto(p);
+      if (Object.keys(custoEq).length) custos.push({ id: p.id, nome: App.rotuloProjeto(p), tipo: tipoEf.rotulo, comReceita: !!rec, suspenso: p.ativo === false, custoEq });
       const base = {
         id: p.id, nome: App.rotuloProjeto(p), tipo: tipoEf.rotulo, tipoOrigem: tipoEf.origem, semFaturacao: !!p.semFaturacao, equipaId: p.equipaId || '', equipa: equipa ? equipa.nome : 'Por atribuir',
         deptId: dept ? dept.id : '', dept: dept ? dept.nome : '', suspenso: p.ativo === false, estado: p.estado, valorVendido: p.valorVendido || 0,
@@ -88,7 +92,91 @@ const Previsao = {
       }
       if (rec.porReconhecer > 0 || fat.total > 0) { linhas.push(base); if (tipoEf.origem !== 'projeto') porClassificar.set(p.id, base); }
     });
-    return { linhas, semDados, porClassificar: [...porClassificar.values()] };
+    return { linhas, semDados, porClassificar: [...porClassificar.values()], custos };
+  },
+
+  // ---------- rentabilidade ----------
+  // Uma equipa (id; '' = sem equipa) passa nos filtros de Direção e Área?
+  casaEquipa(equipaId) {
+    const f = this.filtros;
+    if (f.equipa && equipaId !== f.equipa) return false;
+    if (!f.dept) return true;
+    const e = App.state.equipas.find(x => x.id === equipaId);
+    return !!e && e.departamentoId === f.dept;
+  },
+  // Custo das horas planeadas de cada projeto, só das pessoas que passam nos filtros (e do tipo escolhido).
+  filtrarCustos(custos, meses) {
+    return custos.filter(c => !this.filtros.tipo || c.tipo === this.filtros.tipo).map(c => {
+      const equipas = Object.keys(c.custoEq).filter(eq => this.casaEquipa(eq));
+      const porMes = PrevisaoLogica.somar(equipas.map(eq => c.custoEq[eq]), meses);
+      return Object.assign({}, c, { porMes, equipas, total: PrevisaoLogica.total(porMes, meses) });
+    }).filter(c => c.total > 0.5);
+  },
+  // Custos e margens do que está no ecrã. recC / recT: reconhecimento contratado / total (conforme o cenário), já filtrado.
+  // O custo da equipa não se separa por tipo de projeto: com esse filtro ligado fica null.
+  rentabilidade(hojeISO, meses, custos, recC, recT) {
+    const L = PrevisaoLogica, S = App.state;
+    const planeado = this.filtrarCustos(custos, meses);
+    const planCom = L.somar(planeado.filter(c => c.comReceita).map(c => c.porMes), meses);
+    const planSem = L.somar(planeado.filter(c => !c.comReceita).map(c => c.porMes), meses);
+    const equipa = this.filtros.tipo ? null : L.custoEquipa({
+      pessoas: S.recursos.filter(r => this.casaEquipa(r.equipaId || '')), meses, hojeISO,
+      feriados: new Set((S.feriados || []).map(x => x.data)), horasDia: Capacidade.HORAS_DIA
+    });
+    return {
+      planeado, planCom, planSem, equipa,
+      margemEquipa: equipa ? L.diferenca(recT, equipa.porMes, meses) : null,
+      margemProj: L.diferenca(recC, planCom, meses),
+      semTrabalho: equipa ? L.diferenca(equipa.porMes, L.somar([planCom, planSem], meses), meses) : null
+    };
+  },
+  pctTexto(margem, receita) {
+    const p = PrevisaoLogica.margemPct(margem, receita);
+    return p === null ? '–' : (p < -100 ? '< −100%' : Math.round(p) + '%');
+  },
+  // Linhas "RENTABILIDADE" do mapa mensal.
+  htmlMapaRentabilidade(R, meses, recC, recT) {
+    const nm = meses.length, tot = s => PrevisaoLogica.total(s, meses), atual = i => i === 0 ? 'atual ' : '';
+    const linha = (rot, s, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${rot}</td>${meses.map((m, i) => `<td class="${atual(i)}">${this.k(s[m])}</td>`).join('')}<td><b>${this.k(tot(s))}</b></td></tr>`;
+    const sinal = v => v < -49 ? 'neg' : (v > 49 ? 'pos' : '');
+    const margem = (rot, s) => `<tr class="total"><td>${rot}</td>${meses.map((m, i) => `<td class="${atual(i)}${sinal(s[m])}">${this.k(s[m])}</td>`).join('')}<td class="${sinal(tot(s))}"><b>${this.k(tot(s))}</b></td></tr>`;
+    const pct = (s, r) => `<tr class="acum"><td>Margem %</td>${meses.map((m, i) => `<td class="${atual(i)}">${this.pctTexto(s[m], r[m])}</td>`).join('')}<td>${this.pctTexto(tot(s), tot(r))}</td></tr>`;
+    const secao = t => `<tr class="secao"><td colspan="${nm + 2}">${t}</td></tr>`;
+    let h = secao('RENTABILIDADE DA EQUIPA (reconhecimento − custo de todas as pessoas)');
+    if (!R.equipa) h += `<tr class="acum"><td colspan="${nm + 2}" style="text-align:left;">O custo da equipa não se separa por tipo de projeto — limpa o filtro "Tipo" para o ver.</td></tr>`;
+    else {
+      const ac = PrevisaoLogica.acumular(R.margemEquipa, meses);
+      h += linha('Receita prevista (reconhecimento)', recT) + linha('Custo da equipa', R.equipa.porMes) + margem('Margem da equipa', R.margemEquipa) + pct(R.margemEquipa, recT) +
+        `<tr class="acum"><td>Margem acumulada</td>${meses.map((m, i) => `<td class="${atual(i)}${sinal(ac[m])}">${this.k(ac[m])}</td>`).join('')}<td></td></tr>`;
+    }
+    h += secao('RENTABILIDADE DOS PROJETOS CONTRATADOS (só as horas planeadas)') +
+      linha('Receita contratada (reconhecimento)', recC) + linha('Custo das horas planeadas', R.planCom) + margem('Margem dos projetos', R.margemProj) + pct(R.margemProj, recC) +
+      linha('<span title="Projetos internos ou sem valor/horas vendidas: têm custo mas não têm receita prevista">Custo planeado em projetos sem receita</span>', R.planSem);
+    if (R.semTrabalho) h += `<tr class="delta"><td title="Custo da equipa menos o custo de todas as horas planeadas. Negativo = há mais horas planeadas do que capacidade">Custo sem trabalho planeado</td>${meses.map((m, i) => `<td class="${atual(i)}${R.semTrabalho[m] < -49 ? 'neg' : ''}">${this.k(R.semTrabalho[m])}</td>`).join('')}<td>${this.k(tot(R.semTrabalho))}</td></tr>`;
+    return h;
+  },
+  // Detalhe "Margem": uma linha por projeto com receita ou custo planeado, da pior margem para a melhor.
+  htmlDetalheMargem(R, meses, linhasC) {
+    const L = PrevisaoLogica, tot = s => L.total(s, meses), zero = () => L.vazio(meses);
+    const porId = new Map();
+    linhasC.filter(l => l.rec).forEach(l => porId.set(l.id, { id: l.id, nome: l.nome, tipo: l.tipo, equipa: l.equipa, rec: l.rec.porMes, custo: zero(), comReceita: true, suspenso: l.suspenso }));
+    R.planeado.forEach(c => {
+      const x = porId.get(c.id) || { id: c.id, nome: c.nome, tipo: c.tipo, equipa: c.equipas.map(eq => (App.state.equipas.find(e => e.id === eq) || {}).nome || 'Por atribuir').join(' + '), rec: zero(), comReceita: c.comReceita, suspenso: c.suspenso };
+      x.custo = c.porMes; porId.set(c.id, x);
+    });
+    const itens = [...porId.values()].map(x => Object.assign(x, { m: L.diferenca(x.rec, x.custo, meses) }))
+      .filter(x => tot(x.rec) > 49 || tot(x.custo) > 49)
+      .sort((a, b) => tot(a.m) - tot(b.m) || a.nome.localeCompare(b.nome, 'pt'));
+    const max = Math.max(1, ...itens.flatMap(x => meses.map(m => Math.abs(x.m[m]))));
+    const cab = `<thead><tr><th>Projeto</th><th>Tipo</th><th>Área</th><th title="Reconhecimento previsto no horizonte">Receita</th><th title="Horas por fazer no Gantt × custo/hora">Custo</th><th>Margem %</th>${meses.map(m => `<th>${this.rotuloMes(m)}</th>`).join('')}<th>Margem</th></tr></thead>`;
+    const corpo = itens.map(x => {
+      const r = tot(x.rec), c = tot(x.custo), mg = tot(x.m), ab = this.expandidas.has(x.id);
+      const cel = meses.map(m => { const v = x.m[m]; const a = (0.08 + Math.abs(v) / max * 0.34).toFixed(2); return `<td class="${v < -49 ? 'neg' : ''}"${Math.abs(v) > 49 ? ` style="background:rgba(${v < 0 ? '214,69,69' : '58,157,107'},${a})"` : ''}>${this.k(v)}</td>`; }).join('');
+      const marca = (x.suspenso ? ' <span class="prev-tag">suspenso</span>' : '') + (x.comReceita ? '' : ' <span class="prev-tag">sem receita</span>');
+      return `<tr class="item" data-prev-linha="${escapeAttr(x.id)}"><td>${escapeHtml(x.nome)}${marca}</td><td>${escapeHtml(x.tipo)}</td><td>${escapeHtml(x.equipa)}</td><td>${this.k(r)}</td><td>${this.k(c)}</td><td class="${mg < -49 ? 'neg' : ''}">${this.pctTexto(mg, r)}</td>${cel}<td class="${mg < -49 ? 'neg' : ''}"><b>${this.k(mg)}</b></td></tr>
+        <tr class="nota"${ab ? '' : ' hidden'}><td colspan="${meses.length + 7}">Receita prevista no horizonte ${this.eur(r)} · custo das horas planeadas ${this.eur(c)} · margem ${this.eur(mg)}. O custo é o das horas por fazer no Gantt ao custo/hora de cada consultor; horas atrasadas contam no mês atual.${x.comReceita ? '' : ' Projeto sem valor ou horas vendidas: não tem receita prevista.'}</td></tr>`;
+    }).join('');
+    return cab + `<tbody>${corpo || `<tr><td colspan="${meses.length + 7}">Sem projetos com receita ou horas planeadas neste filtro.</td></tr>`}</tbody>`;
   },
 
   // Oportunidades do CRM no mapa (Fase B). Conta: abertas (valor × probabilidade da etapa, ou 100% no cenário "pipeline a 100%") e
@@ -167,11 +255,12 @@ const Previsao = {
 
   // ---------- desenho ----------
   // Colunas empilhadas: contratado (cheio) + oportunidades (tracejado).
-  barras(C, Pn, meses, corC, rotulo) {
+  barras(C, Pn, meses, corC, rotulo, linhas) {
     const H = 210, W = 620, pl = 34, pr = 6, pt = 14, pb = 22, n = meses.length;
     const corP = AnaliseHoras.PALETA[1], idPadrao = 'prevHach' + (rotulo.length % 7) + corC.replace(/\W/g, '');
     const tot = meses.map(m => (C[m] + Pn[m]) / 1000);
-    const teto = Math.max(10, Math.ceil(Math.max(...tot) / 10) * 10);
+    const extra = (linhas || []).flatMap(l => meses.map(m => l.serie[m] / 1000));
+    const teto = Math.max(10, Math.ceil(Math.max(...tot, ...extra) / 10) * 10);
     const bw = (W - pl - pr) / n, y = v => pt + (H - pt - pb) * (1 - v / teto), esc = v => (H - pt - pb) * v / teto;
     let s = `<svg viewBox="0 0 ${W} ${H}" class="prev-grafico" role="img" aria-label="${escapeAttr(rotulo)}"><defs><pattern id="${idPadrao}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--branco)"/><rect width="2.4" height="6" fill="${corP}"/></pattern></defs>`;
     [0, .5, 1].forEach(f => { const v = teto * f; s += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" class="prev-grelha"/><text x="${pl - 5}" y="${y(v) + 3}" text-anchor="end" class="prev-eixo">${Math.round(v)}</text>`; });
@@ -182,6 +271,11 @@ const Previsao = {
       if (hp > 0) s += `<rect x="${x}" y="${H - pb - hc - hp}" width="${w}" height="${hp}" fill="url(#${idPadrao})" stroke="${corP}" rx="2"><title>${this.rotuloMes(m)}/${m.slice(0, 4)} · oportunidades ${this.kk(Pn[m])}</title></rect>`;
       s += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle" class="prev-eixo">${this.rotuloMes(m)}</text>`;
       if (tot[i] >= .05) s += `<text x="${x + w / 2}" y="${H - pb - hc - hp - 3}" text-anchor="middle" class="prev-valor">${Math.round(tot[i])}</text>`;
+    });
+    (linhas || []).forEach(l => {
+      const pts = meses.map((m, i) => [pl + i * bw + bw / 2, y(l.serie[m] / 1000)]);
+      s += `<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${l.cor}" stroke-width="2"${l.tracejado ? ' stroke-dasharray="5 3"' : ''}/>`;
+      pts.forEach((p, i) => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="2.6" fill="${l.cor}"><title>${this.rotuloMes(meses[i])}/${meses[i].slice(0, 4)} · ${l.nome} ${this.kk(l.serie[meses[i]])}</title></circle>`; });
     });
     return s + '</svg>';
   },
@@ -201,7 +295,7 @@ const Previsao = {
     if (!el || !this.podeVer()) return;
     const hoje = DateUtil.todayISO();
     const meses = PrevisaoLogica.mesesHorizonte(hoje, this.filtros.horizonte);
-    const { linhas: todas, semDados, porClassificar } = this.calcular(hoje, meses);
+    const { linhas: todas, semDados, porClassificar, custos } = this.calcular(hoje, meses);
     const opsTodas = this.oportunidades(hoje, meses);
     this.desenharFiltros(todas.concat(opsTodas.linhas));
     const linhasC = this.filtrar(todas), linhasO = this.filtrar(opsTodas.linhas);
@@ -215,8 +309,10 @@ const Previsao = {
     const backlog = sum(l => l.rec ? l.rec.porReconhecer : 0), semCal = sum(l => l.rec ? l.rec.naoCalendarizado : 0);
     const emAtraso = sum(l => l.fat.emAtraso), nAtraso = sum(l => l.fat.nEmAtraso), semData = sum(l => l.fat.semData), fora = sum(l => l.fat.foraDoHorizonte);
     const nm = meses.length, cen = this.filtros.cenario, comOps = cen !== 'contratado';
+    const L2 = (a, b, ms) => PrevisaoLogica.somar([a, b], ms);
     document.querySelectorAll('#prevCenario [data-prev-cenario]').forEach(b => b.setAttribute('aria-pressed', b.dataset.prevCenario === cen ? 'true' : 'false'));
     const rotuloOps = cen === 'total' ? '100%' : 'ponderado';
+    const R = this.rentabilidade(hoje, meses, custos, recC, recT);
 
     // KPIs
     const kpi = (valor, rot, sub) => `<div class="an-kpi"><b>${valor}</b><span>${rot}</span>${sub ? `<small class="prev-sub">${sub}</small>` : ''}</div>`;
@@ -225,7 +321,10 @@ const Previsao = {
       (comOps ? kpi(this.kk(tot(recP)), cen === 'total' ? 'Pipeline (100%)' : 'Pipeline ponderado', `a reconhecer nos próximos ${nm} meses`) : '') +
       kpi(this.kk(tot(recT)), 'Reconhecimento previsto', `${comOps ? 'contratado + oportunidades, ' : ''}próximos ${nm} meses`) +
       kpi(this.kk(tot(fatT)), 'Faturação prevista', `${comOps ? 'contratada ' + this.kk(tot(fatC)) + ' + oportunidades ' + this.kk(tot(fatP)) : 'faturas por emitir'}`) +
-      kpi(this.kk(semCal), 'Backlog sem calendário', 'sem horas previstas no Gantt');
+      kpi(this.kk(semCal), 'Backlog sem calendário', 'sem horas previstas no Gantt') +
+      kpi(R.equipa ? this.kk(tot(R.equipa.porMes)) : '–', `Custo da equipa (${nm} meses)`, R.equipa ? `${R.equipa.nPessoas} pessoas · mês atual a partir de hoje` : 'não se separa por tipo') +
+      kpi(R.equipa ? this.kk(tot(R.margemEquipa)) : '–', 'Margem da equipa', R.equipa ? `${this.pctTexto(tot(R.margemEquipa), tot(recT))} do reconhecimento previsto` : 'não se separa por tipo') +
+      kpi(this.kk(tot(R.margemProj)), 'Margem dos projetos', `contratado − horas planeadas · ${this.pctTexto(tot(R.margemProj), tot(recC))}`);
 
     // avisos
     const avisos = [];
@@ -241,6 +340,8 @@ const Previsao = {
     if (comOps && opsTodas.planoIncompleto.length) avisos.push(`${opsTodas.planoIncompleto.length} oportunidade(s) com plano de faturação que não soma 100%: ${nomes(opsTodas.planoIncompleto, 4)}.`);
     if (semDados.length) avisos.push(`${semDados.length} projeto(s) sem <b>valor ou horas vendidas</b> não entram no reconhecimento: ${semDados.slice(0, 4).map(l => escapeHtml(l.nome)).join('; ')}${semDados.length > 4 ? '…' : ''}. Num I&amp;D financiado, preenche o Valor vendido com o valor do financiamento (e as Horas vendidas) e marca "Sem faturação ao cliente".`);
     if (semCal > 49) avisos.push(`${this.kk(semCal)} de backlog não têm horas previstas no Gantt (ver "Cobertura" no detalhe) — por isso não aparecem em nenhum mês.`);
+    const semCusto = R.equipa ? R.equipa.semCusto.map(id => (App.state.recursos.find(r => r.id === id) || {}).nome || '?') : [];
+    if (semCusto.length) avisos.push(`${semCusto.length} pessoa(s) <b>sem preço de custo</b> não contam nos custos: ${semCusto.slice(0, 5).map(escapeHtml).join('; ')}${semCusto.length > 5 ? '…' : ''}. Preenche-o em Configurações → Recursos.`);
     if (nAtraso) avisos.push(`${nAtraso} fatura(s) por emitir (${this.kk(emAtraso)}) já passaram da data prevista — estão contadas no mês atual.`);
     if (semData > 0) avisos.push(`${this.kk(semData)} em faturas por emitir sem data prevista não entram no mapa.`);
     if (fora > 0) avisos.push(`${this.kk(fora)} em faturas estão previstas depois do horizonte escolhido.`);
@@ -252,6 +353,12 @@ const Previsao = {
     const legenda = (cor) => `<span><i style="background:${cor}"></i>Contratado</span>${comOps ? `<span><i class="prev-hach"></i>Oportunidades (${cen === 'total' ? '100%' : 'ponderadas'})</span>` : ''}<span><i style="background:var(--cinza-100);border:1px solid var(--cinza-300)"></i>Mês atual</span>`;
     document.getElementById('prevLegRec').innerHTML = legenda(P[0]);
     document.getElementById('prevLegFat').innerHTML = legenda(P[2]);
+
+    // receita vs custo
+    const linhasGraf = [{ serie: L2(R.planCom, R.planSem, meses), cor: '#8b5cf6', nome: 'custo das horas planeadas', tracejado: true }];
+    if (R.equipa) linhasGraf.unshift({ serie: R.equipa.porMes, cor: '#d64545', nome: 'custo da equipa' });
+    document.getElementById('prevGrafMargem').innerHTML = this.barras(recC, recP, meses, P[0], 'Receita prevista e custo por mês', linhasGraf);
+    document.getElementById('prevLegMargem').innerHTML = `<span><i style="background:${P[0]}"></i>Receita contratada</span>${comOps ? '<span><i class="prev-hach"></i>Receita de oportunidades</span>' : ''}${R.equipa ? '<span><i style="background:#d64545"></i>Custo da equipa</span>' : ''}<span><i style="background:#8b5cf6"></i>Custo das horas planeadas</span>`;
 
     // mapa
     const anos = [...new Set(meses.map(m => m.slice(0, 4)))];
@@ -271,12 +378,15 @@ const Previsao = {
       ${linhaSerie('Contratada (faturas por emitir) <span class="prev-tag">100%</span>', fatC, '58,157,107', false)}
       ${comOps ? linhaSerie(`Oportunidades <span class="prev-tag p">${rotuloOps}</span>`, fatP, '224,123,57', true) + linhaTotal('Total faturação', fatT) : ''}
       ${linhaAcum(acFat)}
-      <tr class="delta"><td title="Faturação acumulada menos reconhecimento acumulado: positivo = a faturar à frente do trabalho; negativo = trabalho feito por faturar (a partir de hoje)">Faturação − reconhecimento (acum.)</td>${meses.map((m, i) => { const v = dif[i]; return `<td class="${i === 0 ? 'atual ' : ''}${v < -49 ? 'neg' : (v > 49 ? 'pos' : '')}">${Math.abs(v) < 50 ? '–' : (v > 0 ? '+' : '') + this.k(v)}</td>`; }).join('')}<td></td></tr></tbody>`;
+      <tr class="delta"><td title="Faturação acumulada menos reconhecimento acumulado: positivo = a faturar à frente do trabalho; negativo = trabalho feito por faturar (a partir de hoje)">Faturação − reconhecimento (acum.)</td>${meses.map((m, i) => { const v = dif[i]; return `<td class="${i === 0 ? 'atual ' : ''}${v < -49 ? 'neg' : (v > 49 ? 'pos' : '')}">${Math.abs(v) < 50 ? '–' : (v > 0 ? '+' : '') + this.k(v)}</td>`; }).join('')}<td></td></tr>${this.htmlMapaRentabilidade(R, meses, recC, recT)}</tbody>`;
 
     // detalhe (contratados e, se ligado, oportunidades)
     const rec = this.filtros.serie === 'rec';
+    const verMargem = this.filtros.serie === 'marg';
     document.getElementById('prevSerieRec').setAttribute('aria-pressed', rec ? 'true' : 'false');
-    document.getElementById('prevSerieFat').setAttribute('aria-pressed', rec ? 'false' : 'true');
+    document.getElementById('prevSerieFat').setAttribute('aria-pressed', this.filtros.serie === 'fat' ? 'true' : 'false');
+    document.getElementById('prevSerieMarg').setAttribute('aria-pressed', verMargem ? 'true' : 'false');
+    if (verMargem) { document.getElementById('prevDet').innerHTML = this.htmlDetalheMargem(R, meses, linhasC); return; }
     const itens = linhasC.map(l => Object.assign({ kind: 'c' }, l)).concat(linhasO);
     const serieDe = l => rec ? (l.rec ? l.rec.porMes : PrevisaoLogica.vazio(meses)) : l.fat.porMes;
     const max = Math.max(1, ...itens.flatMap(l => meses.map(m => serieDe(l)[m])));
@@ -327,7 +437,8 @@ const Previsao = {
       if (typeof XLSX === 'undefined') await App.carregarScript('lib/xlsx.full.min.js');
       const hoje = DateUtil.todayISO(), f = this.filtros, S = App.state;
       const meses = PrevisaoLogica.mesesHorizonte(hoje, f.horizonte);
-      const linhasC = this.filtrar(this.calcular(hoje, meses).linhas);
+      const calc = this.calcular(hoje, meses);
+      const linhasC = this.filtrar(calc.linhas);
       const ops = this.oportunidades(hoje, meses), linhasO = this.filtrar(ops.linhas);
       const sc = PrevisaoLogica.somar.bind(PrevisaoLogica), tot = s => PrevisaoLogica.total(s, meses), e0 = v => Math.round(v);
       const recC = sc(linhasC.map(l => l.rec && l.rec.porMes), meses), fatC = sc(linhasC.map(l => l.fat.porMes), meses);
@@ -352,6 +463,19 @@ const Previsao = {
         acum(fatT),
         ['Faturação − reconhecimento (acumulado)', ...(() => { const a = PrevisaoLogica.acumular(fatT, meses), b = PrevisaoLogica.acumular(recT, meses); return meses.map(m => e0(a[m] - b[m])); })(), '']
       ];
+      const R = this.rentabilidade(hoje, meses, calc.custos, recC, recT);
+      mapa.push([], ['RENTABILIDADE (sobre o reconhecimento) — custo mensal por pessoa: dias úteis × 8 h × custo/hora; mês atual a partir de hoje'],
+        ...(R.equipa ? [linhaSerie('Receita prevista (reconhecimento)', recT), linhaSerie('Custo da equipa', R.equipa.porMes), linhaSerie('Margem da equipa', R.margemEquipa)] : [['Custo da equipa: não se separa por tipo de projeto (filtro Tipo ligado)']]),
+        linhaSerie('Receita contratada (reconhecimento)', recC), linhaSerie('Custo das horas planeadas', R.planCom), linhaSerie('Margem dos projetos', R.margemProj),
+        linhaSerie('Custo planeado em projetos sem receita', R.planSem), ...(R.semTrabalho ? [linhaSerie('Custo sem trabalho planeado', R.semTrabalho)] : []));
+      const recPorId = new Map(linhasC.filter(l => l.rec).map(l => [l.id, l]));
+      const custoPorId = new Map(R.planeado.map(c => [c.id, c]));
+      const margemItens = [['Projeto', 'Indicador', ...meses.map(rot), 'Total'],
+        ...[...new Set([...recPorId.keys(), ...custoPorId.keys()])].flatMap(id => {
+          const l = recPorId.get(id), c = custoPorId.get(id), nome = (l || c).nome;
+          const r = l ? l.rec.porMes : PrevisaoLogica.vazio(meses), k = c ? c.porMes : PrevisaoLogica.vazio(meses);
+          return [['Receita', r], ['Custo', k], ['Margem', PrevisaoLogica.diferenca(r, k, meses)]].map(([ind, s]) => [nome, ind, ...meses.map(m => e0(s[m])), e0(tot(s))]);
+        })];
       const itens = linhasC.map(l => Object.assign({ kind: 'c' }, l)).concat(linhasO);
       const porItem = (serie) => [['Origem', 'Item', 'Tipo', 'Área', 'Peso', ...meses.map(rot), 'Total'],
         ...itens.map(l => { const s = serie(l); return [l.kind === 'op' ? 'Oportunidade' : 'Contratado', l.nome, l.tipo, l.equipa, l.kind === 'op' ? Math.round(l.peso * 100) + '%' : '100%', ...meses.map(m => e0(s[m])), e0(tot(s))]; })];
@@ -362,6 +486,7 @@ const Previsao = {
       folha('Mapa', mapa, [36, ...meses.map(() => 9), 14]);
       folha('Reconhecimento por item', porItem(l => l.rec ? l.rec.porMes : PrevisaoLogica.vazio(meses)), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
       folha('Faturação por item', porItem(l => l.fat.porMes), [14, 46, 14, 14, 8, ...meses.map(() => 9), 11]);
+      folha('Margem por projeto', margemItens, [46, 10, ...meses.map(() => 9), 11]);
       folha('Pressupostos', pressup, [14, 46, 140]);
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       App.descarregarBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Previsao_${hoje}.xlsx`);

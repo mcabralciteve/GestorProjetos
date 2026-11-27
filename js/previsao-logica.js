@@ -245,6 +245,48 @@ const PrevisaoLogica = {
     return { rec, fat, total, inicio: ini, meses: n, temPlano, planoSoma, recFora, fatFora };
   },
 
+  // ---------- Rentabilidade: custos das pessoas ----------
+  // Dias úteis (segunda a sexta, sem feriados) do mês "mes", entre desdeISO e ateISO (ambos opcionais e inclusive).
+  diasUteisDoMes(mes, feriados, desdeISO, ateISO) {
+    let ini = mes + '-01', fim = this.ultimoDiaDoMes(mes);
+    if (desdeISO && desdeISO > ini) ini = desdeISO;
+    if (ateISO && ateISO < fim) fim = ateISO;
+    let n = 0;
+    for (let d = ini; d <= fim; d = this.somarDias(d, 1)) {
+      const dow = this._utc(d).getUTCDay();
+      if (dow !== 0 && dow !== 6 && !(feriados && feriados.has(d))) n++;
+    }
+    return n;
+  },
+  // Custo da equipa por mês: cada pessoa custa dias úteis × horasDia × custo/hora — férias incluídas (o salário é pago), feriados não.
+  // O mês atual conta só a partir de hoje (como o reconhecimento, que é o trabalho que falta). Quem tem data de saída conta até
+  // esse dia; uma pessoa inativa sem data de saída não conta. pessoas: [{ id, precoCusto, ativo, dataSaida }].
+  custoEquipa({ pessoas, meses, hojeISO, feriados, horasDia }) {
+    const porMes = this.vazio(meses), semCusto = [];
+    let nPessoas = 0;
+    const dias = new Map();                                        // "mês|até" → dias úteis (quase toda a gente partilha o mesmo)
+    (pessoas || []).forEach(p => {
+      if (p.dataSaida ? p.dataSaida < hojeISO : p.ativo === false) return;
+      if (!(p.precoCusto > 0)) { semCusto.push(p.id); return; }
+      nPessoas++;
+      meses.forEach(m => {
+        const chave = m + '|' + (p.dataSaida || '');
+        if (!dias.has(chave)) dias.set(chave, this.diasUteisDoMes(m, feriados, hojeISO, p.dataSaida || null));
+        porMes[m] += dias.get(chave) * (horasDia || 8) * p.precoCusto;
+      });
+    });
+    return { porMes, nPessoas, semCusto };
+  },
+  // Soma a "alvo" ({ mês: € }) o custo das horas por fazer de uma pessoa numa tarefa, repartidas como no reconhecimento.
+  acumularCusto(alvo, inicio, fim, horas, custoHora, hojeISO) {
+    if (!(horas > 0) || !(custoHora > 0)) return alvo;
+    Object.entries(this.distribuirHorasPorMes(inicio, fim, horas, hojeISO)).forEach(([m, h]) => { if (m in alvo) alvo[m] += h * custoHora; });
+    return alvo;
+  },
+  diferenca(a, b, meses) { const o = {}; meses.forEach(m => { o[m] = (a[m] || 0) - (b[m] || 0); }); return o; },
+  // Margem em % da receita (null quando praticamente não há receita).
+  margemPct(margem, receita) { return receita > 49 ? margem / receita * 100 : null; },
+
   // Soma séries mensais ({ 'AAAA-MM': valor }) de várias linhas.
   somar(series, meses) {
     const out = this.vazio(meses);

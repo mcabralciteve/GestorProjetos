@@ -33,7 +33,7 @@ function montar() {
   const ler = f => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8').replace(/if \(typeof module[^\n]*\n?/g, '');
   vm.runInContext(ler('previsao-logica.js'), ctx);
   vm.runInContext(ler('previsao.js'), ctx);
-  return { Previsao: vm.runInContext('Previsao', ctx), PL: vm.runInContext('PrevisaoLogica', ctx) };
+  return { Previsao: vm.runInContext('Previsao', ctx), PL: vm.runInContext('PrevisaoLogica', ctx), ctx };
 }
 const arred = n => Math.round(n * 100) / 100;
 
@@ -99,3 +99,27 @@ test('os pressupostos explicam a repartição por equipa', () => {
   assert.match(txt, /DCS 80%/);
   assert.match(txt, /RPA 20%/);
 });
+
+test('rentabilidade: o custo das horas segue o filtro Área, como o reconhecimento; com filtro Tipo não há custo de equipa', () => {
+  const { Previsao, PL, ctx } = montar();
+  ctx.Capacidade = { HORAS_DIA: 8 };
+  const S = ctx.App.state;
+  S.feriados = [];
+  S.recursos.forEach(r => { r.precoCusto = r.id === 'rui' ? 50 : 20; });
+  const meses = PL.mesesHorizonte(HOJE, 4);
+  const { linhas, custos } = Previsao.calcular(HOJE, meses);
+  const rec = PL.somar(linhas.map(l => l.rec.porMes), meses);
+  let R = Previsao.rentabilidade(HOJE, meses, custos, rec, rec);
+  assert.equal(arred(PL.total(R.planCom, meses)), 40 * 20 + 20 * 50 + 10 * 20);
+  assert.equal(R.equipa.nPessoas, 3);
+  assert.equal(arred(PL.total(R.margemProj, meses)), arred(PL.total(rec, meses) - 2000));
+  Previsao.filtros.equipa = 'RPA';
+  R = Previsao.rentabilidade(HOJE, meses, custos, rec, rec);
+  assert.equal(arred(PL.total(R.planCom, meses)), 1000);
+  assert.equal(R.equipa.nPessoas, 1);
+  Previsao.filtros.equipa = ''; Previsao.filtros.tipo = 'Serviços';
+  R = Previsao.rentabilidade(HOJE, meses, custos, rec, rec);
+  assert.equal(R.equipa, null);
+  assert.equal(R.margemEquipa, null);
+});
+

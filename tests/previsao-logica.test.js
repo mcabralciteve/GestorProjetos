@@ -232,3 +232,39 @@ test('resolverPlano: ordena por data e devolve o mês de cada marco', () => {
   assert.deepEqual(r.map(x => [x.marco, x.mes, x.pct]), [['adjudicacao', '2026-12', 20], ['execucao', '2027-01', 50], ['final', '2027-02', 30]]);
   assert.equal(L.rotuloMarco({ marco: 'execucao', execPct: 50 }), '50% de execução');
 });
+
+test('rentabilidade: dias úteis do mês, com feriados e limites', () => {
+  const L = require('../js/previsao-logica.js');
+  assert.equal(L.diasUteisDoMes('2026-12', new Set()), 23);
+  assert.equal(L.diasUteisDoMes('2026-12', new Set(['2026-12-01', '2026-12-08', '2026-12-25', '2026-12-26'])), 20);  // 26 é sábado
+  assert.equal(L.diasUteisDoMes('2026-11', new Set(), '2026-11-27'), 2);                 // sex 27 e seg 30
+  assert.equal(L.diasUteisDoMes('2026-11', new Set(), null, '2026-11-06'), 5);
+});
+
+test('rentabilidade: custo da equipa — mês atual a partir de hoje, saídas, sem custo e inativos', () => {
+  const L = require('../js/previsao-logica.js');
+  const meses = ['2026-11', '2026-12'];
+  const r = L.custoEquipa({ hojeISO: '2026-11-27', meses, feriados: new Set(), horasDia: 8, pessoas: [
+    { id: 'a', precoCusto: 30 },
+    { id: 'b', precoCusto: 10, dataSaida: '2026-12-04', ativo: true },
+    { id: 'c', precoCusto: 50, ativo: false },
+    { id: 'd', precoCusto: 50, dataSaida: '2026-10-01' },
+    { id: 'e', precoCusto: 0 }
+  ] });
+  assert.equal(r.porMes['2026-11'], 2 * 8 * 30 + 2 * 8 * 10);
+  assert.equal(r.porMes['2026-12'], 23 * 8 * 30 + 4 * 8 * 10);
+  assert.equal(r.nPessoas, 2);
+  assert.deepEqual(r.semCusto, ['e']);
+});
+
+test('rentabilidade: custo das horas planeadas segue a repartição das horas; margem em %', () => {
+  const L = require('../js/previsao-logica.js');
+  const meses = ['2026-11', '2026-12'];
+  const c = L.acumularCusto(L.vazio(meses), '2026-11-30', '2026-12-01', 10, 20, '2026-11-27');
+  assert.deepEqual(c, { '2026-11': 100, '2026-12': 100 });
+  assert.deepEqual(L.acumularCusto(L.vazio(meses), '2026-01-01', '2026-02-01', 5, 20, '2026-11-27'), { '2026-11': 100, '2026-12': 0 });  // atrasada: mês atual
+  assert.deepEqual(L.diferenca({ '2026-11': 300, '2026-12': 0 }, c, meses), { '2026-11': 200, '2026-12': -100 });
+  assert.equal(L.margemPct(25, 100), 25);
+  assert.equal(L.margemPct(-10, 0), null);
+});
+
