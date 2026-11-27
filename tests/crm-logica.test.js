@@ -337,3 +337,21 @@ test('valorEstimadoPorOrcamento: aceite primeiro, senão a versão mais alta com
   valores.p1 = 1000;
   assert.equal(C.valorEstimadoPorOrcamento({ id: 'o1', etapa_id: 'eg' }, props, ex, p => valores[p.id]), null);  // ganha: o valor fica
 });
+
+test('filtro das oportunidades por departamento e área (escolha múltipla)', () => {
+  const C = require('../js/crm-logica.js');
+  const equipas = [{ id: 'dcs', nome: 'DCS', departamentoId: 'dtd' }, { id: 'dsa', nome: 'DSA', departamentoId: 'dtd' }, { id: 'fin', nome: 'Financiamento', departamentoId: 'dgi' }];
+  const ops = [{ id: '1', equipa_id: 'dcs' }, { id: '2', equipa_id: 'dsa' }, { id: '3', equipa_id: 'fin' }, { id: '4', equipa_id: null }, { id: '5', equipa_id: 'apagada' }];
+  const ids = (d, a) => ops.filter(o => C.passaFiltroArea(o, d, a, equipas)).map(o => o.id);
+  assert.deepEqual(ids([], []), ['1', '2', '3', '4', '5']);
+  assert.deepEqual(ids(['dtd'], []), ['1', '2']);
+  assert.deepEqual(ids(['dtd', 'dgi'], []), ['1', '2', '3']);
+  assert.deepEqual(ids([], ['dcs', 'fin']), ['1', '3']);
+  assert.deepEqual(ids(['dtd'], ['dsa']), ['2']);
+  assert.deepEqual(ids(['__sem'], []), ['4', '5']);
+  assert.deepEqual(ids(['dgi', '__sem'], []), ['3', '4', '5']);
+  assert.deepEqual(ids([], ['__sem', 'dcs']), ['1', '4', '5']);
+  assert.deepEqual(C.areasDosDepartamentos(equipas, ['dgi']).map(e => e.id), ['fin']);
+  assert.deepEqual(C.areasDosDepartamentos(equipas, []).map(e => e.id), ['dcs', 'dsa', 'fin']);
+});
+

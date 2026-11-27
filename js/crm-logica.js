@@ -104,6 +104,21 @@ const CrmLogica = {
   },
   soDigitos(s) { return String(s || '').replace(/\D+/g, ''); },
 
+  // ---------- Filtro das oportunidades por departamento e área ----------
+  // A área de uma oportunidade é a sua equipa (equipa_id) e o departamento é o dessa equipa; sem área: '__sem' nos dois.
+  SEM_AREA: '__sem',
+  // depts / areas: listas de ids escolhidos (vazia = todos). Dentro de cada lista é "um ou outro"; entre as duas é "e".
+  passaFiltroArea(op, depts, areas, equipas) {
+    const e = op.equipa_id ? (equipas || []).find(x => x.id === op.equipa_id) : null;
+    const area = e ? e.id : this.SEM_AREA, dept = (e && e.departamentoId) || this.SEM_AREA;
+    return (!(depts || []).length || depts.includes(dept)) && (!(areas || []).length || areas.includes(area));
+  },
+  // Áreas que se podem escolher com estes departamentos (todas, se não houver nenhum escolhido), por nome.
+  areasDosDepartamentos(equipas, depts) {
+    return (equipas || []).filter(e => !(depts || []).length || depts.includes(e.departamentoId || this.SEM_AREA))
+      .slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+  },
+
   // ---------- Cliente dos projetos ----------
   // A conta da casa: é a dos projetos internos sem cliente externo.
   contaCiteve(contas) { return (contas || []).find(c => this.normalizarNome(c.nome) === 'citeve') || null; },

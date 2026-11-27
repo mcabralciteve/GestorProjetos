@@ -22,7 +22,7 @@ const Crm = {
   // Ordenação das listas (clique no cabeçalho da coluna): { k: coluna, dir: 'asc'|'desc' } por lista.
   ord: { ops: { k: 'fecho', dir: 'asc' }, contas: { k: 'nome', dir: 'asc' }, contactos: { k: 'nome', dir: 'asc' }, propostas: { k: 'envio', dir: 'desc' } },
   filtros: {
-    op: { tipoId: '', vista: 'quadro', resp: 'todos', estado: 'abertas', texto: '' },
+    op: { tipoId: '', vista: 'quadro', resp: 'todos', estado: 'abertas', texto: '', depts: [], areas: [] },
     contas: { texto: '', estado: '', resp: '' },
     contactos: { texto: '' },
     propostas: { texto: '', estado: '' },
@@ -285,6 +285,14 @@ const Crm = {
     if (el._crmLigado) return;
     el._crmLigado = true;
     el.addEventListener('click', ev => {
+      const caixa = ev.target.closest('details.crm-multi > summary');
+      if (caixa) { // corre antes de o <details> mudar de estado
+        const d = caixa.parentElement;
+        this._multiAberto = d.open ? null : d.dataset.multi;
+        el.querySelectorAll('details.crm-multi[open]').forEach(x => { if (x !== d) x.removeAttribute('open'); });
+        this.ligarFechoMulti();
+        return;
+      }
       const b = ev.target.closest('[data-crm-acao]');
       if (b) this.acao(b.dataset.crmAcao, b, ev);
     });
@@ -304,6 +312,8 @@ const Crm = {
     el.addEventListener('change', ev => {
       const ed = ev.target.closest('[data-op-ed]');
       if (ed) { this.editarOpDaLista(ed); return; }
+      const multi = ev.target.closest('[data-crm-multi]');
+      if (multi) { this.escolherMulti(multi.dataset.crmMulti, multi.value, multi.checked); return; }
       if (ev.target.tagName !== 'INPUT' || ev.target.type !== 'text') filtro(ev);
     });
     // Contas: a lista completa só entra no <select> quando a pessoa o abre (evita milhares de <option> na lista).
@@ -388,6 +398,7 @@ const Crm = {
       'rascunho-tarefa': () => this.abrirRascunho(id),
       'copiar': () => this.copiar(el.dataset.texto),
       'vista': () => { this.filtros.op.vista = el.dataset.valor; this.renderAtual(); },
+      'limpar-multi': () => { this.filtros.op[el.dataset.chave] = []; this.renderAtual(); },
       'ir-conta': () => this.abrirConta(id),
       'importar-contas': () => this.abrirImportacao('contas'),
       'importar-contactos': () => this.abrirImportacao('contactos'),
@@ -406,6 +417,7 @@ const Crm = {
     return this.d.oportunidades.filter(op => {
       if (f.tipoId && op.tipo_id !== f.tipoId) return false;
       if (f.resp === 'meus' && op.responsavel_id !== meu) return false;
+      if (!CrmLogica.passaFiltroArea(op, f.depts, f.areas, App.state.equipas)) return false;
       if (!ignorarEstado && f.vista === 'lista' && f.estado !== 'todas') {
         const cat = CrmLogica.categoriaDe(op, this.idx.etapa);
         if (f.estado === 'abertas' && cat !== 'aberta') return false;
@@ -442,6 +454,7 @@ const Crm = {
     const barra = `<div class="filters crm-barra">
       ${tipoSel}
       <label class="zoom-label">Responsável <select data-crm-filtro="op.resp"><option value="todos"${f.resp === 'todos' ? ' selected' : ''}>Todos</option><option value="meus"${f.resp === 'meus' ? ' selected' : ''}>As minhas</option></select></label>
+      ${this.htmlFiltrosArea()}
       ${estadoSel}
       <label class="zoom-label">Pesquisar <input type="text" data-crm-filtro="op.texto" value="${escapeAttr(f.texto)}" placeholder="Título ou conta…"></label>
       <span class="crm-barra-fim">
@@ -452,6 +465,49 @@ const Crm = {
       </span>
     </div>`;
     el.innerHTML = kpis + barra + (f.vista === 'quadro' ? this.htmlQuadro() : this.htmlListaOps());
+  },
+  // ---------- Filtros de escolha múltipla: departamento e área ----------
+  htmlMulti(chave, rotulo, todos, opcoes) {
+    const sel = this.filtros.op[chave];
+    const escolhidas = opcoes.filter(o => sel.includes(o.id));
+    const resumo = !escolhidas.length ? todos : (escolhidas.length === 1 ? escolhidas[0].nome : `${escolhidas.length} selecionados`);
+    return `<div class="zoom-label crm-multi-wrap">${rotulo}
+      <details class="crm-multi${escolhidas.length ? ' filtro-ativo' : ''}" data-multi="${chave}"${this._multiAberto === chave ? ' open' : ''}>
+        <summary title="${escapeAttr(escolhidas.map(o => o.nome).join(', ') || todos)}">${escapeHtml(resumo)}</summary>
+        <div class="crm-multi-painel">
+          ${opcoes.map(o => `<label><input type="checkbox" data-crm-multi="${chave}" value="${escapeAttr(o.id)}"${sel.includes(o.id) ? ' checked' : ''}> ${escapeHtml(o.nome)}</label>`).join('')}
+          <button type="button" class="btn btn-sm" data-crm-acao="limpar-multi" data-chave="${chave}"${escolhidas.length ? '' : ' disabled'}>Limpar</button>
+        </div>
+      </details></div>`;
+  },
+  htmlFiltrosArea() {
+    const f = this.filtros.op, SEM = CrmLogica.SEM_AREA;
+    const semArea = { id: SEM, nome: 'Sem área atribuída' };
+    const depts = App.state.departamentos.filter(d => App.state.equipas.some(e => e.departamentoId === d.id))
+      .slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    const areas = CrmLogica.areasDosDepartamentos(App.state.equipas, f.depts);
+    const comSem = !f.depts.length || f.depts.includes(SEM);
+    return this.htmlMulti('depts', 'Departamento', 'Todos', depts.concat([semArea])) +
+      this.htmlMulti('areas', 'Área', 'Todas', comSem ? areas.concat([semArea]) : areas);
+  },
+  // Marca/desmarca uma opção. Mudar os departamentos retira as áreas escolhidas que deixam de estar à vista.
+  escolherMulti(chave, valor, marcado) {
+    const f = this.filtros.op;
+    f[chave] = f[chave].filter(x => x !== valor).concat(marcado ? [valor] : []);
+    if (chave === 'depts' && f.depts.length) {
+      const visiveis = new Set(CrmLogica.areasDosDepartamentos(App.state.equipas, f.depts).map(e => e.id));
+      if (f.depts.includes(CrmLogica.SEM_AREA)) visiveis.add(CrmLogica.SEM_AREA);
+      f.areas = f.areas.filter(x => visiveis.has(x));
+    }
+    this.renderAtual();
+  },
+  // Só uma caixa aberta de cada vez; fica aberta enquanto se escolhe (o ecrã redesenha-se) e fecha ao clicar fora.
+  ligarFechoMulti() {
+    if (this._fechoMultiLigado) return;
+    this._fechoMultiLigado = true;
+    const fechar = () => { this._multiAberto = null; document.querySelectorAll('details.crm-multi[open]').forEach(d => d.removeAttribute('open')); };
+    document.addEventListener('click', ev => { if (this._multiAberto && !(ev.target.closest && ev.target.closest('details.crm-multi'))) fechar(); });
+    document.addEventListener('keydown', ev => { if (this._multiAberto && ev.key === 'Escape') fechar(); });
   },
   htmlCardOp(op) {
     const conta = this.idx.conta.get(op.conta_id);

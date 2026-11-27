@@ -817,6 +817,19 @@ table.prev-mapa{min-width:900px;}table.prev-det{min-width:980px;}
 .gantt-topbar{flex-wrap:wrap;}
 #selClienteFiltroGantt{max-width:260px;}
 #selProjeto{max-width:520px;}
+/* Filtros de escolha múltipla (Oportunidades: departamento e área). */
+.crm-multi-wrap{margin-bottom:6px;}
+.crm-multi{position:relative;}
+.crm-multi>summary{list-style:none;cursor:pointer;min-width:130px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 28px 5px 8px;border:1px solid var(--cinza-300);border-radius:10px;background:var(--branco);font-weight:400;font-size:13px;line-height:17px;position:relative;}
+.crm-multi>summary::-webkit-details-marker{display:none;}
+.crm-multi>summary::after{content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;}
+.crm-multi.filtro-ativo>summary{border-color:var(--azul, #2563eb);box-shadow:0 0 0 2px rgba(37,99,235,.25);}
+.crm-multi-painel{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:100%;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:8px;background:var(--branco);border:1px solid var(--cinza-300);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);}
+.crm-multi-painel label{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;padding:4px 6px;white-space:nowrap;cursor:pointer;font-weight:400;border-radius:6px;}
+.crm-multi-painel label:hover{background:var(--cinza-100);}
+.crm-multi-painel label input{width:auto;margin:0;}
+.crm-multi-painel .btn{align-self:flex-start;margin-top:4px;}
+
 /* Projeto ainda sem conta do CRM associada. */
 select.sem-conta{border-color:#d97706;background:rgba(245,158,11,.12);}
 .tabela-crud select.sel-conta{min-width:210px;max-width:260px;}
