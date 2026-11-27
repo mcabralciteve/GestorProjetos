@@ -643,6 +643,7 @@ const Crm = {
     App.criarProjeto({
       nome: op.titulo,
       cliente: conta ? conta.nome : '',
+      contaId: conta ? conta.id : null,
       descricao: op.descricao || '',
       valorVendido: base ? base.total : ((vigente && this.valorProposta(vigente)) || op.valor_estimado || 0),
       horasVendidas: base ? base.horas : ((vigente && vigente.horas_estimadas) || 0),
@@ -1543,6 +1544,7 @@ const Crm = {
       });
       try {
         const g = await this.gravar('contas', nova);
+        if (id) App.atualizarClienteDosProjetos([id], g.id, g.nome); // mudar o nome da conta atualiza o cliente dos seus projetos
         this.renderAtual();
         App.toast(id ? 'Conta guardada.' : 'Conta criada.');
         if (!id) this.abrirConta(g.id);
@@ -1551,6 +1553,7 @@ const Crm = {
     const bDel = m.querySelector('#ctEliminar');
     if (bDel) bDel.addEventListener('click', async () => {
       if (this.d.oportunidades.some(o => o.conta_id === id)) { App.toast('Esta conta tem oportunidades — elimina-as primeiro (ou passa a conta a "Inativo").'); return; }
+      if (Object.values(App.state.projetos).some(p => p.contaId === id)) { App.toast('Esta conta é o cliente de um ou mais projetos — muda-lhes o cliente primeiro (ou passa a conta a "Inativo").'); return; }
       if (!confirm('Eliminar esta conta, os seus contactos, interações e follow-ups? Não se pode desfazer.')) return;
       try { await this.apagar('contas', id); App.fecharModal(); this.renderAtual(); } catch (err) { this.avisoErro(err); }
     });
@@ -2137,7 +2140,7 @@ A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
     raiz.innerHTML = `${totais}<div class="crm-lista">${resumos.map(r => {
       const nums = r.visivel ? `${this.euro(r.faturado)} / ${this.euro(r.valorVendido)} · ${this.horasFmt(r.horasReais)}${r.horasVendidas ? ' / ' + this.horasFmt(r.horasVendidas) : ''}` : 'números reservados';
       return `<div class="crm-item crm-item-linha"><span class="crm-item-texto"><b>${escapeHtml(this.rotuloProjeto(r.projeto))}</b> · ${escapeHtml(r.projeto.estado || '')}
-        ${r.origem === 'oportunidade' ? `<span class="crm-badge" title="Ligado à oportunidade">via ${escapeHtml(r.op.titulo)}</span>` : '<span class="crm-badge" title="Mesmo cliente, sem oportunidade ligada">pelo cliente</span>'}</span>
+        ${r.origem === 'oportunidade' ? `<span class="crm-badge" title="Ligado à oportunidade">via ${escapeHtml(r.op.titulo)}</span>` : (r.origem === 'conta' ? '<span class="crm-badge" title="Esta conta é o cliente do projeto">cliente</span>' : '<span class="crm-badge" title="Mesmo nome de cliente; o projeto ainda não tem a conta associada">pelo nome</span>')}</span>
         <span class="hint">${nums}</span>${App.possoVerProjeto(r.projeto.id) ? `<button type="button" class="btn btn-sm" data-sec-acao="abrir" data-id="${escapeAttr(r.projeto.id)}">Abrir</button>` : ''}</div>`;
     }).join('')}</div>`;
     this.ligarAcoes(raiz, { abrir: b => this.abrirProjetoNoGantt(b.dataset.id) });
@@ -2420,7 +2423,7 @@ A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
 
   // ============================ Fase 2: contas a partir dos projetos ============================
   abrirContasDosProjetos() {
-    const lista = CrmLogica.clientesDosProjetos(Object.values(App.state.projetos), this.d.contas);
+    const lista = CrmLogica.clientesDosProjetos(Object.values(App.state.projetos).filter(p => !p.contaId), this.d.contas);
     if (!lista.length) { App.toast('Todos os clientes dos projetos já têm conta no CRM.'); return; }
     this.abrir('Criar contas a partir dos projetos', `
       <p class="hint" style="margin:0 0 8px;">Clientes que aparecem nos projetos e ainda não têm conta. Desmarca os que não queiras criar. Ficam como contas <b>Ativas</b>, sem NIF nem contactos (completas depois). Grafias diferentes do mesmo cliente já vêm juntas.</p>
@@ -2485,6 +2488,7 @@ A previsão de faturas "por rubricas" passa a usar este orçamento.`)) return;
     if (e1) throw e1;
     const { error: e2 } = await supabaseClient.from(this.TABELAS.contas).delete().in('id', outrasIds);
     if (e2) throw e2;
+    App.atualizarClienteDosProjetos(outrasIds, manterId, manter.nome); // os projetos das contas eliminadas passam para a que fica
     await this.carregar(true);
   },
 };

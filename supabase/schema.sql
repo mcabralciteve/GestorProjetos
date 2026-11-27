@@ -1588,3 +1588,6 @@ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- Cliente do projeto ligado à conta do CRM (supabase/projeto_conta.sql). Sem chave estrangeira (o CRM não entra no backup).
+alter table public.projetos add column if not exists conta_id uuid;

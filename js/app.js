@@ -55,6 +55,7 @@ const App = {
   LIMITE_HISTORICO: 5,
   abaAtiva: 'dashboard',
   filtroGestorGantt: '',
+  filtroClienteGantt: '',
   filtroConsultorGantt: '',   // id do consultor escolhido no Gantt ('' = todos) — só mostra as tarefas dele
   filtroEquipasCap: new Set(),   // ids das equipas escolhidas na Capacidade (vazio = todas)
   tipoCap: 'total',              // 'total' | 'servicos' | 'id' | 'servicos+id'
@@ -272,6 +273,8 @@ const App = {
       btnCapExportar: document.getElementById('btnCapExportar'),
       selGestorFiltroGantt: document.getElementById('selGestorFiltroGantt'),
       selConsultorFiltroGantt: document.getElementById('selConsultorFiltroGantt'),
+      selClienteFiltroGantt: document.getElementById('selClienteFiltroGantt'),
+      projConta: document.getElementById('projConta'),
       fProjGestor: document.getElementById('fProjGestor'),
       fProjCliente: document.getElementById('fProjCliente'),
       fProjEstado: document.getElementById('fProjEstado'),
@@ -1279,6 +1282,7 @@ const App = {
       idInterno: '',
       nome: nome || 'Novo Projeto',
       cliente: '',
+      contaId: null,
       descricao: '',
       dataInicio: hoje,
       dataFim: DateUtil.toISO(DateUtil.addDays(new Date(), 30)),
@@ -1412,6 +1416,10 @@ const App = {
       <label>Gestor de Projeto
         <select id="novoProjGestor">${opcoesGestor}</select>
       </label>
+      ${Sync.temContaId !== false ? `<label><span class="rotulo-campo"><span class="obrig">*</span> Cliente <span class="nota">(conta do CRM; projetos internos: CITEVE)</span></span>
+        <select id="novoProjConta"><option value="">A carregar as contas…</option></select>
+      </label>
+      <p class="hint" style="margin:0;">Se o cliente ainda não existir, cria primeiro a conta em Comercial → Contas.</p>` : ''}
       <div class="row-2" style="align-items:end;">
         <label>Tipo de referência
           <select id="novoProjTipoRef"><option value="giaf">GIAF (faturação)</option><option value="interno">Interno (sem GIAF)</option></select>
@@ -1437,6 +1445,24 @@ const App = {
     };
     selTipoRef.addEventListener('change', atualizarRef);
     atualizarRef();
+    // Cliente: as contas do CRM carregam-se à vez. Vem escolhida a da oportunidade (ou a do mesmo nome); num projeto interno, a CITEVE.
+    const selConta = this.els.modalCorpo.querySelector('#novoProjConta');
+    let contaEscolhidaAMao = false;
+    const sugerirConta = () => {
+      if (!selConta || contaEscolhidaAMao || !Crm.carregado) return;
+      const nomeOp = CrmLogica.normalizarNome(opts.cliente);
+      const peloNome = nomeOp ? Crm.d.contas.find(c => CrmLogica.normalizarNome(c.nome) === nomeOp) : null;
+      const citeve = selTipoRef.value === 'interno' ? CrmLogica.contaCiteve(Crm.d.contas) : null;
+      selConta.value = opts.contaId || (peloNome && peloNome.id) || (citeve && citeve.id) || '';
+    };
+    if (selConta) {
+      const preencher = () => { selConta.innerHTML = this.opcoesContas(null, 'Escolhe o cliente…'); sugerirConta(); };
+      const falhar = () => { selConta.innerHTML = '<option value="">Não consegui ler as contas do CRM</option>'; selConta.dataset.falhou = '1'; };
+      if (Crm.carregado) preencher();
+      else Crm.carregar().then(() => (Crm.carregado ? preencher() : falhar())).catch(falhar);
+      selConta.addEventListener('change', () => { contaEscolhidaAMao = !!selConta.value; });
+      selTipoRef.addEventListener('change', sugerirConta);
+    }
     if (opts.nome) inpNome.value = opts.nome;
     if (opts.gestorRecursoId && [...selGestor.options].some(o => o.value === opts.gestorRecursoId)) selGestor.value = opts.gestorRecursoId;
     if (opts.refGiaf) inpRef.value = opts.refGiaf;
@@ -1444,8 +1470,12 @@ const App = {
     this.els.modalCorpo.querySelector('#btnConfirmarNovoProjeto').addEventListener('click', () => {
       const nome = inpNome.value.trim();
       if (!nome) { inpNome.focus(); return; }
+      const comContasNovo = !!selConta && !selConta.dataset.falhou;
+      const conta = comContasNovo && Crm.carregado ? Crm.idx.conta.get(selConta.value) : null;
+      if (comContasNovo && !conta) { this.toast(Crm.carregado ? 'Escolhe o cliente (conta do CRM). Nos projetos internos, a conta CITEVE.' : 'As contas ainda estão a carregar — aguarda um instante.'); selConta.focus(); return; }
       const p = this.novoProjetoBase(nome, selGestor.value || null);
       if (opts.cliente) p.cliente = opts.cliente;
+      if (conta) { p.contaId = conta.id; p.cliente = conta.nome; }
       if (opts.descricao) p.descricao = opts.descricao;
       if (opts.valorVendido) p.valorVendido = Number(opts.valorVendido) || 0;
       if (opts.horasVendidas) p.horasVendidas = Number(opts.horasVendidas) || 0;
@@ -1474,6 +1504,7 @@ const App = {
       }
       this.state.projetos[p.id] = p;
       this.state.projetoAtivoId = p.id;
+      this.limparFiltrosProjetoGantt(); // o projeto novo tem de ficar à vista
       this.persist();
       this.fecharModal();
       this.renderProjetoSelect();
@@ -1511,6 +1542,7 @@ const App = {
     copia.proximosPassos = [];
     this.state.projetos[copia.id] = copia;
     this.state.projetoAtivoId = copia.id;
+    this.limparFiltrosProjetoGantt();
     this.persist();
     this.renderProjetoSelect();
     this.renderTudo();
@@ -1696,6 +1728,8 @@ const App = {
   selecionarProjeto(id) {
     this.esconderFocoGantt();
     this.state.projetoAtivoId = id;
+    const alvo = this.state.projetos[id]; // um filtro de cliente que escondesse o projeto pedido é retirado
+    if (this.filtroClienteGantt && alvo && CrmLogica.chaveCliente(alvo.cliente) !== this.filtroClienteGantt) this.filtroClienteGantt = '';
     this.selecionadaId = null;
     this.selecionadasIds = new Set();
     this.persist();
@@ -1730,6 +1764,7 @@ const App = {
     }
     if (this.els.selGestorFiltroGantt) this.els.selGestorFiltroGantt.value = '';
     this.filtroGestorGantt = '';
+    this.filtroClienteGantt = '';
     this.selecionarProjeto(id);
     this.renderProjetoSelect();
     this.irParaAba('gantt');
@@ -4505,6 +4540,45 @@ const App = {
     sel.classList.toggle('filtro-ativo', !!this.filtroConsultorGantt);
   },
 
+  // ---------- Cliente do projeto (conta do CRM) ----------
+  // O projeto guarda a ligação à conta (contaId) e o nome dela (cliente). Escolher a conta é para quem tem acesso ao CRM; os outros veem o nome.
+  podeEscolherConta() { return Crm.podeVer() && Crm.carregado && Sync.temContaId !== false; },
+  // Carrega as contas em segundo plano (um pedido de cada vez) e redesenha as caixas de cliente quando chegarem.
+  carregarContasParaProjetos() {
+    if (!Crm.podeVer() || Crm.carregado || Sync.temContaId === false || this._contasAPedir) return;
+    this._contasAPedir = true;
+    Crm.carregar().then(() => { this._contasAPedir = false; if (Crm.carregado) { this.renderInfoProjeto(); this.renderTabelaProjetos(); } })
+      .catch(() => { this._contasAPedir = false; });
+  },
+  opcoesContas(selecionadaId, vazio) {
+    const contas = (Crm.d.contas || []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+    return `<option value="">${escapeHtml(vazio)}</option>` +
+      contas.map(c => `<option value="${escapeAttr(c.id)}"${c.id === selecionadaId ? ' selected' : ''}>${escapeHtml(c.nome)}</option>`).join('');
+  },
+  // Texto da opção vazia numa caixa de cliente: avisa que falta a conta (e mostra o texto antigo, se houver).
+  rotuloSemConta(p) { return '⚠ Sem conta associada' + (p.cliente ? ` (texto atual: ${p.cliente})` : ''); },
+  definirContaProjeto(p, contaId) {
+    const conta = Crm.idx.conta && Crm.idx.conta.get(contaId);
+    if (!p || !conta || !this.possoEditarProjeto(p.id)) { this.renderInfoProjeto(); this.renderTabelaProjetos(); return; } // escolher "sem conta" não desliga
+    p.contaId = conta.id; p.cliente = conta.nome; p._contaAlterada = true;
+    if (p.id === this.state.projetoAtivoId) this.filtroClienteGantt = '';
+    this.persist();
+    this.renderInfoProjeto(); this.renderTabelaProjetos(); this.renderProjetoSelect();
+  },
+  // Conta com o nome alterado, ou fundida noutra: os projetos das contas "antigasIds" ficam ligados a "novaId", com o seu nome.
+  atualizarClienteDosProjetos(antigasIds, novaId, nome) {
+    let mudou = 0;
+    Object.values(this.state.projetos).forEach(p => {
+      if (!p.contaId || !antigasIds.includes(p.contaId) || (p.contaId === novaId && p.cliente === nome)) return;
+      p.contaId = novaId; p.cliente = nome; p._contaAlterada = true; mudou++;
+    });
+    if (mudou) { this.persist(); this.renderProjetoSelect(); this.renderInfoProjeto(); }
+  },
+  limparFiltrosProjetoGantt() {
+    if (this.els.selGestorFiltroGantt) this.els.selGestorFiltroGantt.value = '';
+    this.filtroGestorGantt = ''; this.filtroClienteGantt = '';
+  },
+
   renderProjetoSelect() {
     const sel = this.els.selProjeto;
     const selGestor = this.els.selGestorFiltroGantt;
@@ -4523,6 +4597,17 @@ const App = {
       selGestor.value = valorAtual;
       this.filtroGestorGantt = selGestor.value;
       if (this.filtroGestorGantt) projetos = projetos.filter(p => this.ehGestorDoProjeto(p, this.filtroGestorGantt));
+    }
+    // Cliente: só os dos projetos que o filtro de gestor deixou; se o escolhido deixar de existir, volta a "todos".
+    const selCliente = this.els.selClienteFiltroGantt;
+    if (selCliente) {
+      const clientes = CrmLogica.clientesParaFiltro(projetos);
+      if (this.filtroClienteGantt && !clientes.some(c => c.chave === this.filtroClienteGantt)) this.filtroClienteGantt = '';
+      selCliente.innerHTML = '<option value="">Todos os clientes</option>' +
+        clientes.map(c => `<option value="${escapeAttr(c.chave)}">${escapeHtml(c.nome)} (${c.n})</option>`).join('');
+      selCliente.value = this.filtroClienteGantt;
+      selCliente.classList.toggle('filtro-ativo', !!this.filtroClienteGantt);
+      if (this.filtroClienteGantt) projetos = projetos.filter(p => CrmLogica.chaveCliente(p.cliente) === this.filtroClienteGantt);
     }
     // O projeto ativo pode ter ficado de fora deste filtro (ex.: escolher um Gestor cujo projeto
     // ativo não é nenhum dos dele) — sem isto, o <select> mostrava visualmente o único projeto
@@ -5356,6 +5441,16 @@ const App = {
     e.projEstado.value = p.estado || 'Por iniciar';
     e.projNome.value = p.nome;
     e.projCliente.value = p.cliente || '';
+    this.carregarContasParaProjetos();
+    const comContas = this.podeEscolherConta();
+    e.projCliente.style.display = comContas ? 'none' : '';
+    e.projCliente.readOnly = Sync.temContaId !== false; // o cliente escolhe-se pela conta do CRM
+    e.projCliente.title = e.projCliente.readOnly ? 'O cliente é a conta do CRM associada ao projeto (escolhem-na o Administrador, Diretores e Team Leaders).' : '';
+    if (e.projConta) {
+      e.projConta.style.display = comContas ? '' : 'none';
+      if (comContas) { e.projConta.innerHTML = this.opcoesContas(p.contaId, this.rotuloSemConta(p)); e.projConta.disabled = !podeEditar; }
+      e.projConta.classList.toggle('sem-conta', comContas && !p.contaId);
+    }
     e.projDescricao.value = p.descricao;
     e.projInicio.value = p.dataInicio;
     e.projFim.value = p.dataFim;
@@ -5559,13 +5654,16 @@ const App = {
         default: return (p.idInterno || '').toLowerCase();
       }
     });
+    this.carregarContasParaProjetos();
+    const comContas = this.podeEscolherConta();
     ordenadas.forEach(({ p, orc }) => {
       const tr = document.createElement('tr');
       const corNivel = { verde: 'var(--verde)', amarelo: 'var(--amarelo)', vermelho: 'var(--vermelho)', neutro: 'var(--cinza-500)' };
       const podeEditar = this.possoEditarProjeto(p.id);
       const dis = podeEditar ? '' : 'disabled';
       tr.innerHTML = `
-        <td><input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${dis}></td>
+        <td>${comContas ? `<select data-campo="conta" class="sel-conta${p.contaId ? '' : ' sem-conta'}" ${dis}>${this.opcoesContas(p.contaId, this.rotuloSemConta(p))}</select>`
+          : `<input type="text" value="${escapeAttr(p.cliente || '')}" data-campo="cliente" ${Sync.temContaId !== false ? 'readonly' : dis}>`}</td>
         <td><input type="text" value="${escapeAttr(p.nome)}" data-campo="nome" ${dis}></td>
         <td style="white-space:nowrap;"><input type="text" value="${escapeAttr(p.idInterno || '')}" data-campo="idInterno" autocomplete="new-password" spellcheck="false" readonly ${p.tipoReferencia === 'interno' ? 'disabled' : dis} style="width:${p.tipoReferencia === 'interno' ? '78' : '100'}%;">${p.tipoReferencia === 'interno' ? ' <span class="badge-interno" title="Projeto interno — sem referência GIAF">INT</span>' : ''}</td>
         <td>${escapeHtml(this.nomesGestoresProjeto(p))}${admin ? ' <button type="button" class="btn-icon" data-acao="gestores" title="Alterar os gestores deste projeto">✎</button>' : ''}</td>
@@ -5613,6 +5711,8 @@ const App = {
           if (p.id === this.state.projetoAtivoId) { this.renderInfoProjeto(); this.renderProjetoSelect(); }
         });
       });
+      const selConta = tr.querySelector('[data-campo="conta"]');
+      if (selConta) selConta.addEventListener('change', () => this.definirContaProjeto(p, selConta.value));
       tr.querySelector('[data-acao="abrir"]').addEventListener('click', () => this.abrirProjetoNoGantt(p.id));
       const btnEliminar = tr.querySelector('[data-acao="eliminar"]');
       if (btnEliminar) btnEliminar.addEventListener('click', () => this.eliminarProjeto(p.id));
@@ -11847,6 +11947,8 @@ const App = {
 
     e.selProjeto.addEventListener('change', () => this.selecionarProjeto(e.selProjeto.value));
     if (e.selGestorFiltroGantt) e.selGestorFiltroGantt.addEventListener('change', () => this.renderProjetoSelect());
+    if (e.selClienteFiltroGantt) e.selClienteFiltroGantt.addEventListener('change', () => { this.filtroClienteGantt = e.selClienteFiltroGantt.value; this.renderProjetoSelect(); });
+    if (e.projConta) e.projConta.addEventListener('change', () => this.definirContaProjeto(this.projetoAtivo(), e.projConta.value));
     if (e.selConsultorFiltroGantt) e.selConsultorFiltroGantt.addEventListener('change', () => {
       this.filtroConsultorGantt = e.selConsultorFiltroGantt.value;
       // Uma seleção que ficou escondida pelo filtro não deve continuar a ser alvo das ações em lote.

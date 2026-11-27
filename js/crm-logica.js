@@ -103,6 +103,22 @@ const CrmLogica = {
       .replace(/\s+/g, ' ').trim();
   },
   soDigitos(s) { return String(s || '').replace(/\D+/g, ''); },
+
+  // ---------- Cliente dos projetos ----------
+  // A conta da casa: é a dos projetos internos sem cliente externo.
+  contaCiteve(contas) { return (contas || []).find(c => this.normalizarNome(c.nome) === 'citeve') || null; },
+  // Chave de agrupamento do cliente de um projeto (o nome, sem maiúsculas/pontuação/"Lda"); sem cliente: '__sem'.
+  chaveCliente(nome) { return this.normalizarNome(nome) || '__sem'; },
+  // Clientes que aparecem nos projetos dados, para o filtro do Gantt: [{ chave, nome, n }], por nome; "sem cliente" no fim.
+  clientesParaFiltro(projetos) {
+    const m = new Map();
+    (projetos || []).forEach(p => {
+      const chave = this.chaveCliente(p.cliente);
+      const x = m.get(chave) || { chave, nome: chave === '__sem' ? '(sem cliente)' : String(p.cliente).trim(), n: 0 };
+      x.n++; m.set(chave, x);
+    });
+    return [...m.values()].sort((a, b) => Number(a.chave === '__sem') - Number(b.chave === '__sem') || a.nome.localeCompare(b.nome, 'pt'));
+  },
   // Primeira conta que já tenha o mesmo NIF (só dígitos, não vazio) ou o mesmo nome normalizado.
   duplicadoConta(contas, { nome, nif }, ignorarId) {
     const nifN = this.soDigitos(nif);
@@ -840,8 +856,8 @@ const CrmLogica = {
     return ops.filter(o => this.categoriaDe(o, etapaPorId) === 'ganha' && !o.projeto_id)
       .sort((a, b) => String(b.data_fecho || '').localeCompare(String(a.data_fecho || '')));
   },
-  // Projetos de uma conta: os ligados por oportunidade (projeto_id) e, a seguir, os que têm o mesmo cliente
-  // (texto livre do projeto, comparado sem maiúsculas/pontuação/"Lda"). Sem repetidos; mais recentes primeiro.
+  // Projetos de uma conta: os ligados por oportunidade (projeto_id), os que têm a conta na própria ficha (contaId) e, só para os que
+  // ainda não têm conta, os do mesmo cliente pelo nome (sem maiúsculas/pontuação/"Lda"). Sem repetidos; mais recentes primeiro.
   projetosDaConta(conta, ops, projetos) {
     const porId = new Map(projetos.map(p => [p.id, p]));
     const vistos = new Set();
@@ -851,10 +867,15 @@ const CrmLogica = {
       vistos.add(o.projeto_id);
       lista.push({ projeto: porId.get(o.projeto_id), origem: 'oportunidade', op: o });
     });
+    projetos.forEach(p => {
+      if (vistos.has(p.id) || !p.contaId || p.contaId !== conta.id) return;
+      vistos.add(p.id);
+      lista.push({ projeto: p, origem: 'conta', op: null });
+    });
     const nome = this.normalizarNome(conta.nome);
     if (nome) {
       projetos.forEach(p => {
-        if (vistos.has(p.id) || this.normalizarNome(p.cliente) !== nome) return;
+        if (vistos.has(p.id) || p.contaId || this.normalizarNome(p.cliente) !== nome) return;
         vistos.add(p.id);
         lista.push({ projeto: p, origem: 'cliente', op: null });
       });
@@ -870,7 +891,7 @@ const CrmLogica = {
     const sugeridos = [], outros = [];
     projetos.filter(p => !ocupados.has(p.id)).forEach(p => {
       const porRef = refs.size && refs.has(this.baseRefProposta(p.idInterno));
-      const porCliente = nomeConta && this.normalizarNome(p.cliente) === nomeConta;
+      const porCliente = p.contaId ? !!conta && p.contaId === conta.id : !!nomeConta && this.normalizarNome(p.cliente) === nomeConta;
       if (porRef) sugeridos.push({ projeto: p, motivo: 'mesma referência GIAF' });
       else if (porCliente) sugeridos.push({ projeto: p, motivo: 'mesmo cliente' });
       else outros.push({ projeto: p, motivo: '' });

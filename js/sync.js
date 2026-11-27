@@ -194,6 +194,9 @@ const Sync = {
     // Link da proposta adjudicada (supabase/projeto_proposta.sql): só se a coluna existir E só quando alguém o editou aqui. No resto das
     // gravações não se envia — o CRM também o preenche na base de dados, e uma cópia antiga em memória não pode passar-lhe por cima.
     if (this.temPropostaLink && projeto._propostaLinkAlterada) linhaProjeto.proposta_link = projeto.propostaLink || '';
+    // Ligação à conta do CRM (supabase/projeto_conta.sql): só se a coluna existir; uma cópia sem ligação não apaga a que está na base
+    // de dados, a não ser que alguém a tenha mudado aqui.
+    if (this.temContaId && (projeto.contaId || projeto._contaAlterada)) linhaProjeto.conta_id = projeto.contaId || null;
     // Cópia do orçamento validado (Orçamentação, Fase 2) — só se as colunas já existirem (supabase/orcamentos_fase2.sql).
     if (this.temOrcamentoBase !== false) {
       linhaProjeto.orcamento_id = projeto.orcamentoBase ? projeto.orcamentoBase.orcamentoId : null;
@@ -202,6 +205,7 @@ const Sync = {
     let r = await supabaseClient.from('projetos').upsert(linhaProjeto);
     if (r.error) throw r.error;
     if (linhaProjeto.proposta_link !== undefined) delete projeto._propostaLinkAlterada;
+    if (linhaProjeto.conta_id !== undefined) delete projeto._contaAlterada;
 
     // Tarefas, associações a consultores, faturas, pontos de situação e next steps são todos
     // substituídos por completo (apaga tudo o que lá estava, escreve a lista atual) — mas isso
@@ -365,6 +369,7 @@ const Sync = {
     this.temTipoReferencia = proj.data.length === 0 || 'tipo_referencia' in proj.data[0];
     this.temTipoProjeto = proj.data.length === 0 || 'tipo_projeto' in proj.data[0];
     this.temPropostaLink = proj.data.length === 0 || 'proposta_link' in proj.data[0];
+    this.temContaId = proj.data.length === 0 || 'conta_id' in proj.data[0];
     this.temOrcamentoBase = proj.data.length === 0 || 'orcamento_base' in proj.data[0];
     this.temOrcprevProjetos = proj.data.length === 0 || 'orcprev_ref' in proj.data[0];
     this.temGestorIds = proj.data.length === 0 || 'gestor_ids' in proj.data[0];
@@ -377,7 +382,7 @@ const Sync = {
         valorVendido: Number(p.valor_vendido) || 0, estado: p.estado, gestorId: p.gestor_id, equipaId: p.equipa_id || null, ativo: p.ativo !== false,
         gestorIds: PessoasLogica.gestoresDoProjeto({ gestorId: p.gestor_id, gestorIds: Array.isArray(p.gestor_ids) ? p.gestor_ids : [] }),
         orcamentoBase: p.orcamento_base || null, orcprevRef: p.orcprev_ref || '',
-        tipoProjeto: p.tipo_projeto || '', semFaturacao: !!p.sem_faturacao, propostaLink: p.proposta_link || '',
+        tipoProjeto: p.tipo_projeto || '', semFaturacao: !!p.sem_faturacao, propostaLink: p.proposta_link || '', contaId: p.conta_id || null,
         versao: p.atualizado_em || new Date().toISOString(), tarefas: [], faturas: [],
         pontosSituacao: [], proximosPassos: []
       };

@@ -812,7 +812,14 @@ table.prev-mapa{min-width:900px;}table.prev-det{min-width:980px;}
 .gantt-foco{flex-shrink:0;padding:8px 14px;background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.45);font-size:13px;max-height:34vh;overflow-y:auto;}
 .gantt-foco-cab{display:flex;align-items:center;gap:8px;}
 .gantt-foco-cab .spacer{flex:1;}
-#selConsultorFiltroGantt.filtro-ativo{border-color:var(--azul, #2563eb);box-shadow:0 0 0 2px rgba(37,99,235,.25);}
+#selClienteFiltroGantt.filtro-ativo,#selConsultorFiltroGantt.filtro-ativo{border-color:var(--azul, #2563eb);box-shadow:0 0 0 2px rgba(37,99,235,.25);}
+/* Os nomes legais dos clientes são longos: a barra do Gantt passa para a linha seguinte em vez de se esticar. */
+.gantt-topbar{flex-wrap:wrap;}
+#selClienteFiltroGantt{max-width:260px;}
+#selProjeto{max-width:520px;}
+/* Projeto ainda sem conta do CRM associada. */
+select.sem-conta{border-color:#d97706;background:rgba(245,158,11,.12);}
+.tabela-crud select.sel-conta{min-width:210px;max-width:260px;}
 
 .toast{
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);

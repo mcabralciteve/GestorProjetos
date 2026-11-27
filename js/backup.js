@@ -59,7 +59,7 @@ const Backup = {
       valor_vendido: p.valorVendido || 0, estado: p.estado || 'Por iniciar', gestor_id: p.gestorId || null,
       gestor_ids: JSON.stringify(PessoasLogica.gestoresDoProjeto(p)),
       tipo_referencia: p.tipoReferencia === 'interno' ? 'interno' : 'giaf',
-      tipo_projeto: p.tipoProjeto || '', sem_faturacao: !!p.semFaturacao, proposta_link: p.propostaLink || '',
+      tipo_projeto: p.tipoProjeto || '', sem_faturacao: !!p.semFaturacao, proposta_link: p.propostaLink || '', conta_id: p.contaId || null,
       atualizado_em: p.versao || null
     }));
 

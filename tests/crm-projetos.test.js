@@ -23,6 +23,23 @@ test('projetos da conta: por oportunidade primeiro, depois pelo nome do cliente,
   assert.equal(r[0].op.id, 'a');
 });
 
+test('projetos da conta: a ligação na ficha do projeto manda; o nome só vale para projetos ainda sem conta', () => {
+  const conta = { id: 'c1', nome: 'Têxtil do Ave' };
+  const projetos = [proj('1', { contaId: 'c1', cliente: 'Nome antigo' }), proj('2', { contaId: 'c2' }), proj('3')];
+  assert.deepEqual(C.projetosDaConta(conta, [], projetos).map(x => [x.projeto.id, x.origem]), [['1', 'conta'], ['3', 'cliente']]);
+  const s = C.sugerirProjetos(op('x'), conta, [], [op('x')], projetos);
+  assert.deepEqual(s.sugeridos.map(x => x.projeto.id).sort(), ['1', '3']); // o 2 é de outra conta, apesar do mesmo nome
+});
+
+test('cliente dos projetos: conta CITEVE, chave e lista para o filtro do Gantt', () => {
+  assert.equal(C.contaCiteve([{ id: 'a', nome: 'Outra' }, { id: 'b', nome: 'CITEVE' }]).id, 'b');
+  assert.equal(C.contaCiteve([]), null);
+  assert.equal(C.chaveCliente('Têxtil do Ave, Lda.'), C.chaveCliente('textil do ave'));
+  assert.equal(C.chaveCliente(''), '__sem');
+  const lista = C.clientesParaFiltro([proj('1', { cliente: '' }), proj('2', { cliente: 'Zeta' }), proj('3', { cliente: 'Alfa' }), proj('4', { cliente: 'Alfa, Lda' })]);
+  assert.deepEqual(lista.map(c => [c.nome, c.n]), [['Alfa', 2], ['Zeta', 1], ['(sem cliente)', 1]]);
+});
+
 test('sugerir projetos: referência GIAF e mesmo cliente primeiro; os ligados a outra oportunidade ficam de fora', () => {
   const conta = { id: 'c1', nome: 'Têxtil do Ave' };
   const o = op('x');
