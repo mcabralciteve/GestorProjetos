@@ -196,12 +196,13 @@ const PrevisaoLogica = {
   // ---------- Plano de faturação por marcos ----------
   // Cada fatura do plano está ligada a um marco do projeto: 'adjudicacao' (data prevista de fecho), 'execucao' (quando o trabalho
   // chega a X%: início + X% da duração, em dias — um projeto de 60 dias com 50% dá o dia 30), 'final' (último dia do trabalho).
-  // Sem marco = mês fixo (o plano de antes).
+  // Sem marco = outra data (ou o mês fixo do plano de antes). Uma data escrita à mão (dataFixa) vale sempre mais que o marco.
   MARCOS: { adjudicacao: 'Adjudicação', execucao: 'X% de execução', final: 'Final do projeto' },
   diasEntre(de, ate) { return Math.round((Date.parse(ate + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 86400000); },
   somarDias(iso, n) { return this._iso(new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000)); },
-  // Data (AAAA-MM-DD) de um marco. f: { marco, execPct, mes }; ctx: { fechoISO, inicioMes, duracao }.
+  // Data (AAAA-MM-DD) de uma fatura do plano. f: { marco, execPct, mes, dataFixa }; ctx: { fechoISO, inicioMes, duracao }.
   dataDoMarco(f, ctx) {
+    if (f.dataFixa) return f.dataFixa;
     const t = this.datasDoTrabalho(ctx.inicioMes, ctx.duracao);
     if (f.marco === 'adjudicacao') return ctx.fechoISO || t.inicio;
     if (f.marco === 'final') return t.fim;
@@ -211,17 +212,17 @@ const PrevisaoLogica = {
     }
     return this.ultimoDiaDoMes(f.mes);   // mês fixo
   },
-  // Plano de faturação com as datas calculadas: [{ marco, execPct, pct, data, mes }] por ordem de data. linhas: [{ marco, execPct, mes, pct }].
+  // Plano de faturação com as datas: [{ marco, execPct, pct, dataFixa, data, mes }] por ordem de data. linhas: [{ marco, execPct, mes, pct, dataFixa }].
   resolverPlano(linhas, ctx) {
     return (linhas || []).map(f => {
       const data = this.dataDoMarco(f, ctx);
-      return { marco: f.marco || null, execPct: f.marco === 'execucao' ? (Number(f.execPct) || 0) : null, pct: Number(f.pct) || 0, data, mes: data.slice(0, 7) };
+      return { marco: f.marco || null, execPct: f.marco === 'execucao' ? (Number(f.execPct) || 0) : null, pct: Number(f.pct) || 0, dataFixa: f.dataFixa || null, data, mes: data.slice(0, 7) };
     }).sort((a, b) => a.data.localeCompare(b.data));
   },
-  // Texto curto de um marco ("Adjudicação", "50% de execução", "Final do projeto", "Mês fixo").
+  // Texto curto de um marco ("Adjudicação", "50% de execução", "Final do projeto"; sem marco: "Outra data" ou "Mês fixo").
   rotuloMarco(f) {
     if (f.marco === 'execucao') return `${Math.round((Number(f.execPct) || 0) * 100) / 100}% de execução`;
-    return this.MARCOS[f.marco] || 'Mês fixo';
+    return this.MARCOS[f.marco] || (f.dataFixa ? 'Outra data' : 'Mês fixo');
   },
 
   // Início do trabalho de uma oportunidade: o previsto (se definido), senão "N meses depois da data prevista de fecho" (N do

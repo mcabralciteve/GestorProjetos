@@ -82,6 +82,7 @@ const Crm = {
       try {
         this.d.oportunidadeFaturas = await this._lerTudo(this.TABELA_FATURAS_OP);
         this.temMarcos = this.d.oportunidadeFaturas.length === 0 || 'marco' in this.d.oportunidadeFaturas[0];   // plano_faturacao_marcos.sql
+        this.temDataFatura = this.d.oportunidadeFaturas.length === 0 || 'data_faturacao' in this.d.oportunidadeFaturas[0];   // plano_faturacao_data.sql
         this.temPrevisao = this.d.oportunidades.length === 0 || 'inicio_previsto' in this.d.oportunidades[0];
       } catch (e) { this.d.oportunidadeFaturas = []; this.temPrevisao = false; }
       this.carregado = true;
@@ -760,11 +761,12 @@ const Crm = {
       ${campo('fatura com', 'prev_fat_atraso_meses', 0, 24, temAtraso ? Number(t.prev_fat_atraso_meses) || 0 : 1, !temAtraso, temAtraso ? 'Sem plano de faturação, a faturação acompanha o trabalho com este atraso.' : 'Corre supabase/previsao_fase_c.sql.')} mês(es) de atraso (sem plano de faturação)
       ${temAtraso ? '' : '<span class="hint">— corre supabase/previsao_fase_c.sql para editar o atraso.</span>'}</div>`;
   },
-  // Plano de faturação da oportunidade, já com a data de cada marco calculada (ver PrevisaoLogica.dataDoMarco): [{ marco, execPct, pct, data, mes }].
+  // Plano de faturação da oportunidade, já com a data de cada fatura — a escrita à mão ou a calculada pelo marco (ver
+  // PrevisaoLogica.dataDoMarco): [{ marco, execPct, pct, dataFixa, data, mes }].
   planoFaturasDaOp(opId) {
     const op = this.idx.op.get(opId);
     const linhas = (this.d.oportunidadeFaturas || []).filter(f => f.oportunidade_id === opId)
-      .map(f => ({ marco: f.marco || null, execPct: f.execucao_pct === null || f.execucao_pct === undefined ? null : Number(f.execucao_pct), mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0 }));
+      .map(f => ({ marco: f.marco || null, execPct: f.execucao_pct === null || f.execucao_pct === undefined ? null : Number(f.execucao_pct), mes: String(f.mes).slice(0, 7), pct: Number(f.percentagem) || 0, dataFixa: f.data_faturacao ? String(f.data_faturacao).slice(0, 10) : null }));
     return PrevisaoLogica.resolverPlano(linhas, this.contextoPlano(op));
   },
   // O que os marcos precisam da oportunidade: data de fecho (adjudicação), início e duração (execução e final). Os valores podem vir do
@@ -819,8 +821,9 @@ const Crm = {
       <div id="opPlanoFat" style="margin-top:6px;"></div>`;
   },
   // Editor do plano de faturação: cada fatura liga-se a um marco do projeto (Adjudicação, X% de execução, Final do projeto) e a data
-  // calcula-se a partir do fecho, início e duração da oportunidade — mudar esses campos reajusta as datas. Linhas antigas (mês fixo)
-  // mantêm-se. Sem plano, a Previsão fatura ao ritmo do trabalho, com 1 mês de atraso.
+  // calcula-se a partir do fecho, início e duração da oportunidade — mudar esses campos reajusta as datas. A data pode também ser
+  // escrita à mão (fica fixa até se carregar em ↺ ou mudar o marco); "Outra data" não tem marco. Sem plano, a Previsão fatura ao
+  // ritmo do trabalho, com 1 mês de atraso.
   ligarPrevisaoOp(m, o, op) {
     const ver = m.querySelector('#opVerFaturacao');
     if (ver) ver.addEventListener('click', () => { App.fecharModal(); App.irParaFaturacaoDoProjeto(o.projeto_id); });
@@ -831,7 +834,13 @@ const Crm = {
     const plano = inicial.map(p => Object.assign({}, p));
     const valorForm = id => { const el = m.querySelector(id); return el ? el.value : ''; };
     const ctx = () => this.contextoPlano(op || {}, { tipoId: valorForm('#opTipo') || (op && op.tipo_id), fecho: valorForm('#opFecho'), inicio: valorForm('#opInicioPrev'), duracao: valorForm('#opDuracaoPrev') });
-    const dataTxt = p => { try { return this.data(L.dataDoMarco(p, ctx())); } catch (e) { return '—'; } };
+    const dataISO = p => { try { return L.dataDoMarco(p, ctx()) || ''; } catch (e) { return ''; } };
+    const editaData = this.temDataFatura !== false;   // sem a coluna (SQL por correr) as datas só se mostram
+    const celulaData = (p, i) => {
+      if (!editaData) return `<span data-pf-data="${i}">${escapeHtml(dataISO(p) ? this.data(dataISO(p)) : '—')}</span>`;
+      return `<input type="date" data-pf="data" data-pf-data="${i}" data-i="${i}" value="${escapeAttr(dataISO(p))}" aria-label="Data de faturação" title="Data de faturação — podes escrever outra">
+        <button type="button" class="btn btn-sm" data-pf-auto="${i}" title="Voltar à data calculada pelo marco"${p.marco && p.dataFixa ? '' : ' style="display:none;"'}>↺</button>`;
+    };
     const somaPct = () => plano.reduce((s, p) => s + (Number(p.pct) || 0), 0);
     const atualizarNota = () => {
       const s = somaPct(), nota = raiz.querySelector('#opPlanoNota');
@@ -839,34 +848,55 @@ const Crm = {
       nota.textContent = !plano.length ? 'Sem plano: a faturação acompanha o trabalho, com 1 mês de atraso.' : (s === 100 ? 'Soma 100% ✓' : `A soma é ${s}% (devia dar 100%).`);
       nota.style.color = s > 100 ? 'var(--vermelho)' : '';
     };
-    const atualizarDatas = () => raiz.querySelectorAll('[data-pf-data]').forEach(td => { td.textContent = dataTxt(plano[Number(td.dataset.pfData)]); });
-    const opcoesMarco = p => Object.keys(L.MARCOS).concat(p.marco ? [] : ['mes']).map(k => {
-      const sel = (p.marco || 'mes') === k;
-      return `<option value="${k}"${sel ? ' selected' : ''}>${k === 'mes' ? 'Mês fixo (antigo)' : (k === 'execucao' ? 'Execução (X%)' : L.MARCOS[k])}</option>`;
+    // Só as datas calculadas acompanham o formulário; as escritas à mão ficam como estão.
+    const atualizarDatas = () => raiz.querySelectorAll('[data-pf-data]').forEach(el => {
+      const p = plano[Number(el.dataset.pfData)];
+      if (el.tagName === 'INPUT') { if (!p.dataFixa) el.value = dataISO(p); }
+      else el.textContent = dataISO(p) ? this.data(dataISO(p)) : '—';
+    });
+    const opcoesMarco = p => Object.keys(L.MARCOS).concat(editaData || !p.marco ? ['outra'] : []).map(k => {
+      const sel = (p.marco || 'outra') === k;
+      return `<option value="${k}"${sel ? ' selected' : ''}>${k === 'outra' ? 'Outra data' : (k === 'execucao' ? 'Execução (X%)' : L.MARCOS[k])}</option>`;
     }).join('');
     const desenhar = () => {
       raiz.innerHTML = `<div style="font-weight:600;margin-bottom:4px;">Plano de faturação <span class="hint" style="font-weight:400;">(opcional — cada fatura fica ligada a um marco do projeto)</span></div>
-        ${plano.length ? `<table class="crm-plano"><thead><tr><th>Marco</th><th>Data prevista</th><th>% do valor</th><th></th></tr></thead><tbody>${plano.map((p, i) =>
+        ${plano.length ? `<table class="crm-plano"><thead><tr><th>Marco</th><th>Data de faturação</th><th>% do valor</th><th></th></tr></thead><tbody>${plano.map((p, i) =>
           `<tr><td><select data-pf="marco" data-i="${i}">${opcoesMarco(p)}</select>
-            ${p.marco === 'execucao' ? ` <input type="number" data-pf="execPct" data-i="${i}" min="0" max="100" step="1" value="${Number(p.execPct) || 0}" style="width:64px" title="Percentagem de execução do projeto em que se fatura"> %` : ''}
-            ${!p.marco ? ` <input type="month" data-pf="mes" data-i="${i}" value="${escapeAttr(p.mes)}">` : ''}</td>
-          <td data-pf-data="${i}">${escapeHtml(dataTxt(p))}</td>
+            ${p.marco === 'execucao' ? ` <input type="number" data-pf="execPct" data-i="${i}" min="0" max="100" step="1" value="${Number(p.execPct) || 0}" style="width:64px" title="Percentagem de execução do projeto em que se fatura"> %` : ''}</td>
+          <td class="crm-plano-data">${celulaData(p, i)}</td>
           <td><input type="number" data-pf="pct" data-i="${i}" min="0" max="100" step="1" value="${p.pct}" style="width:80px"></td>
           <td><button type="button" class="btn btn-sm" data-pf-del="${i}" title="Remover">✕</button></td></tr>`).join('')}</tbody></table>` : ''}
         <button type="button" class="btn btn-sm" id="opPlanoAdd">+ Fatura</button>
         <span class="hint" id="opPlanoNota" style="margin-left:8px;"></span>
-        <p class="hint" style="margin:6px 0 0;">Adjudicação: na data prevista de fecho · X% de execução: início + X% da duração (50% de um projeto de 60 dias = dia 30) · Final: último dia do trabalho.</p>`;
+        <p class="hint" style="margin:6px 0 0;">Adjudicação: na data prevista de fecho · X% de execução: início + X% da duração (50% de um projeto de 60 dias = dia 30) · Final: último dia do trabalho.${editaData ? ' Podes escrever outra data; ↺ volta à calculada.' : ''}</p>`;
       atualizarNota();
       raiz.querySelectorAll('[data-pf]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
         const p = plano[Number(el.dataset.i)], campo = el.dataset.pf;
         if (campo === 'marco') {
-          if (el.value === 'mes') { p.marco = null; p.mes = p.mes || ctx().inicioMes; p.execPct = null; }
-          else { p.marco = el.value; p.execPct = el.value === 'execucao' ? (p.execPct === null || p.execPct === undefined ? 50 : p.execPct) : null; }
+          if (el.value === 'outra') {
+            // Passa a "Outra data" partindo da data que estava no ecrã.
+            const atual = dataISO(p) || this.hoje();
+            p.marco = null; p.execPct = null; p.mes = atual.slice(0, 7); p.dataFixa = editaData ? atual : null;
+          } else {
+            // Ao escolher um marco, a data volta a ser a calculada.
+            p.marco = el.value; p.dataFixa = null; p.execPct = el.value === 'execucao' ? (p.execPct === null || p.execPct === undefined ? 50 : p.execPct) : null;
+          }
           desenhar(); return;
         }
-        p[campo] = campo === 'mes' ? el.value : Number(el.value);
+        if (campo === 'data') {
+          // Sem redesenhar: quem escreve a data não perde o cursor.
+          p.dataFixa = el.value || null;
+          if (!p.marco && el.value) p.mes = el.value.slice(0, 7);
+          const auto = raiz.querySelector(`[data-pf-auto="${el.dataset.i}"]`);
+          if (auto) auto.style.display = p.marco && p.dataFixa ? '' : 'none';
+          return;
+        }
+        p[campo] = Number(el.value);
         atualizarDatas(); atualizarNota();
       }));
+      // Uma data apagada volta, ao sair do campo, à que vale (a calculada).
+      raiz.querySelectorAll('input[data-pf="data"]').forEach(el => el.addEventListener('blur', () => { if (!el.value) el.value = dataISO(plano[Number(el.dataset.i)]); }));
+      raiz.querySelectorAll('[data-pf-auto]').forEach(b => b.addEventListener('click', () => { plano[Number(b.dataset.pfAuto)].dataFixa = null; desenhar(); }));
       raiz.querySelectorAll('[data-pf-del]').forEach(b => b.addEventListener('click', () => { plano.splice(Number(b.dataset.pfDel), 1); desenhar(); }));
       raiz.querySelector('#opPlanoAdd').addEventListener('click', () => {
         // Sugere o próximo marco por usar: Adjudicação, 50% de execução, Final do projeto.
@@ -886,10 +916,10 @@ const Crm = {
   },
   // Forma estável das linhas do plano (para o editor e para saber se mudou): só o que é gravado.
   normalizarPlano(linhas) {
-    return linhas.map(p => ({ marco: p.marco || null, execPct: p.marco === 'execucao' ? (Number(p.execPct) || 0) : null, pct: Number(p.pct) || 0, mes: p.marco ? '' : String(p.mes || '').slice(0, 7) }));
+    return linhas.map(p => ({ marco: p.marco || null, execPct: p.marco === 'execucao' ? (Number(p.execPct) || 0) : null, pct: Number(p.pct) || 0, mes: p.marco ? '' : String(p.mes || '').slice(0, 7), dataFixa: p.dataFixa || null }));
   },
-  // Substitui o plano de faturação da oportunidade (apaga e volta a inserir; são poucas linhas). "mes" guarda o mês calculado do marco
-  // na altura da gravação (a app recalcula sempre a partir do marco). op = a oportunidade já gravada.
+  // Substitui o plano de faturação da oportunidade (apaga e volta a inserir; são poucas linhas). "mes" guarda o mês da fatura na
+  // altura da gravação (a app recalcula sempre: data escrita à mão, em data_faturacao, ou o marco). op = a oportunidade já gravada.
   async gravarPlanoFaturasOp(op, plano) {
     const { error: e1 } = await supabaseClient.from(this.TABELA_FATURAS_OP).delete().eq('oportunidade_id', op.id);
     if (e1) throw e1;
@@ -898,6 +928,7 @@ const Crm = {
       const mes = PrevisaoLogica.dataDoMarco(p, ctx).slice(0, 7) + '-01';
       const l = { oportunidade_id: op.id, mes, percentagem: Number(p.pct) || 0 };
       if (this.temMarcos !== false) { l.marco = p.marco || null; l.execucao_pct = p.marco === 'execucao' ? (Number(p.execPct) || 0) : null; }
+      if (this.temDataFatura !== false) l.data_faturacao = p.dataFixa || null;
       return l;
     });
     let novas = [];
@@ -1038,6 +1069,8 @@ const Crm = {
         const soma = planoNovo.reduce((s, p) => s + (Number(p.pct) || 0), 0);
         if (soma > 100.0001) { msg.textContent = `O plano de faturação soma ${soma}% — não pode passar de 100%.`; return; }
         if (planoNovo.some(p => p.marco === 'execucao' && !(p.execPct >= 0 && p.execPct <= 100))) { msg.textContent = 'No plano de faturação, a % de execução tem de estar entre 0 e 100.'; return; }
+        // Um ano escrito a meio ("0026") passa pelo campo de data: só se aceitam anos plausíveis.
+        if (planoNovo.some(p => p.dataFixa && !/^20\d\d-\d\d-\d\d$/.test(p.dataFixa))) { msg.textContent = 'No plano de faturação há uma data de faturação inválida.'; return; }
       }
     }
     const v = CrmLogica.validarMudancaEtapa(novo, etapa, novo.motivo_perda_id, CrmLogica.motivosDoTipo(this.d.motivos, tipoId, false).map(x => x.id));

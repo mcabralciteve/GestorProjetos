@@ -232,6 +232,18 @@ test('resolverPlano: ordena por data e devolve o mês de cada marco', () => {
   assert.deepEqual(r.map(x => [x.marco, x.mes, x.pct]), [['adjudicacao', '2026-12', 20], ['execucao', '2027-01', 50], ['final', '2027-02', 30]]);
   assert.equal(L.rotuloMarco({ marco: 'execucao', execPct: 50 }), '50% de execução');
 });
+test('plano de faturação: a data escrita à mão vale mais que o marco e que o mês fixo', () => {
+  const L = require('../js/previsao-logica.js');
+  const ctx = { fechoISO: '2026-12-15', inicioMes: '2027-01', duracao: 2 };
+  assert.equal(L.dataDoMarco({ marco: 'adjudicacao', dataFixa: '2027-04-10' }, ctx), '2027-04-10');
+  assert.equal(L.dataDoMarco({ marco: null, mes: '2027-03', dataFixa: '2027-03-05' }, ctx), '2027-03-05');
+  assert.equal(L.dataDoMarco({ marco: 'final', dataFixa: null }, ctx), '2027-02-28');
+  const r = L.resolverPlano([{ marco: 'adjudicacao', pct: 40, dataFixa: '2027-05-20' }, { marco: 'final', pct: 60 }], ctx);
+  assert.deepEqual(r.map(x => [x.marco, x.data, x.mes, x.dataFixa]), [['final', '2027-02-28', '2027-02', null], ['adjudicacao', '2027-05-20', '2027-05', '2027-05-20']]);
+  assert.equal(L.rotuloMarco({ marco: null, dataFixa: '2027-03-05' }), 'Outra data');
+  assert.equal(L.rotuloMarco({ marco: null }), 'Mês fixo');
+  assert.equal(L.rotuloMarco({ marco: 'adjudicacao', dataFixa: '2027-05-20' }), 'Adjudicação');
+});
 
 test('rentabilidade: dias úteis do mês, com feriados e limites', () => {
   const L = require('../js/previsao-logica.js');

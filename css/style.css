@@ -679,6 +679,8 @@ label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--cinz
 table.crm-plano{border-collapse:collapse;margin-bottom:4px;}
 .crm-plano th{font-size:11px;color:var(--cinza-500);font-weight:600;text-align:left;padding:2px 6px 2px 0;}
 .crm-plano td{padding:2px 6px 2px 0;}
+.crm-plano td.crm-plano-data{white-space:nowrap;}
+.crm-plano input[type=date]{width:155px;}
 .prev-classificar{background:var(--cinza-100);border:1px solid var(--cinza-200);border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;}
 .prev-classificar summary{cursor:pointer;}
 table.prev-class{width:100%;border-collapse:collapse;}

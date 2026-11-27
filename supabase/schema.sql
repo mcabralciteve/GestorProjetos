@@ -1254,6 +1254,7 @@ create index if not exists crm_oportunidade_faturas_op_idx on public.crm_oportun
 -- Plano de faturação por marcos (ver plano_faturacao_marcos.sql): marco 'adjudicacao' | 'execucao' (+ execucao_pct) | 'final'; NULL = mês fixo.
 alter table public.crm_oportunidade_faturas add column if not exists marco text;
 alter table public.crm_oportunidade_faturas add column if not exists execucao_pct numeric;
+alter table public.crm_oportunidade_faturas add column if not exists data_faturacao date;   -- data escrita à mão (ver plano_faturacao_data.sql); NULL = calculada pelo marco
 do $$ begin
   alter table public.crm_oportunidade_faturas add constraint crm_oportunidade_faturas_marco_chk check (
     (marco is null and execucao_pct is null)
